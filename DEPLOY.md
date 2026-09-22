@@ -13,7 +13,7 @@ O banco de dados de produção foi inicializado limpo (zero-state) com a conta m
 - **Senha:** `Ma191095.`
 - **Perfil:** Administrador Geral (Acesso irrestrito a todos os módulos, aprovações e auditoria)
 
-> **Nota:** Também foram mantidos perfis de demonstração rápida (Diretoria, Orçamento, Engenharia, Almoxarifado, Compras) com botões de 1 clique na tela de login para demonstrações a clientes e parceiros.
+> **Nota:** A tela de login possui autenticação segura via e-mail e senha, com sessão persistente via JWT.
 
 ---
 
@@ -104,7 +104,7 @@ Para que os dados cadastrados (materiais, notas fiscais, orçamentos, estoque e 
    - Proteção de rotas e persistência de sessão no navegador.
    - Botão de logout no menu lateral e cabeçalho.
 2. **Entrada de Materiais via NF-e (Leitor XML):**
-   - Na página de **Materiais** e no **Estoque**, clique em **"Entrada via NF-e (XML)"**.
+   - Na página de **Materiais**, clique em **"Entrada via NF-e (XML)"**.
    - O sistema lê a nota fiscal oficial da SEFAZ, importa os produtos, converte as unidades de medida (kg para metros/m² quando aplicável) e **atualiza o preço de referência da base para o valor unitário da última compra real**.
 3. **Calibração Contínua da IA por Documentos Técnicos:**
    - No **Hub de Aprendizado IA**, envie plantas e memoriais em PDF e/ou planilhas de medição/consumo real em XLSX.
