@@ -1,0 +1,259 @@
+import React, { useState, useEffect } from 'react';
+import { ClipboardList, Plus, Search, Filter, HardHat, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { MaterialRequest } from '../types';
+import { api } from '../services/api';
+import { StatusBadge } from '../components/common/StatusBadge';
+import { NewRequestModal } from '../components/modals/NewRequestModal';
+
+export const RequestsPage: React.FC = () => {
+  const [requests, setRequests] = useState<MaterialRequest[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedPriority, setSelectedPriority] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+
+  // Conjunto de solicitações expandidas na lista (accordion retraível)
+  const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
+
+  const toggleRequestExpanded = (id: number) => {
+    setExpandedRequests(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (selectedStatus) params.status = selectedStatus;
+      if (selectedPriority) params.priority = selectedPriority;
+
+      const data = await api.getRequests(params);
+      setRequests(data);
+    } catch (err) {
+      console.error('Erro ao carregar solicitações:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+  }, [selectedStatus, selectedPriority]);
+
+  return (
+    <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-sabrar-950/70 border border-sabrar-500/40 flex items-center justify-center text-sabrar-400">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Solicitações de Materiais
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Módulo da Engenharia: solicitações de obra, reservas automáticas e cálculo de déficit
+          </p>
+        </div>
+
+        <button
+          onClick={() => setIsNewRequestModalOpen(true)}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Nova Solicitação</span>
+        </button>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="bg-dark-900 p-3.5 sm:p-4 rounded-3xl border border-dark-750 shadow-md flex items-center gap-2 overflow-x-auto text-xs">
+        <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0">
+          <Filter className="w-3.5 h-3.5 text-sabrar-400" />
+          <span>Filtros:</span>
+        </div>
+
+        <select
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value)}
+          className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+        >
+          <option value="">Todos os Status</option>
+          <option value="Solicitado">Solicitado</option>
+          <option value="Reservado">Reservado</option>
+          <option value="Em separação">Em separação</option>
+          <option value="Separado">Separado</option>
+          <option value="Entregue">Entregue</option>
+        </select>
+
+        <select
+          value={selectedPriority}
+          onChange={(e) => setSelectedPriority(e.target.value)}
+          className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+        >
+          <option value="">Todas as Prioridades</option>
+          <option value="Normal">Normal</option>
+          <option value="Urgente">Urgente</option>
+        </select>
+
+        {(selectedStatus || selectedPriority) && (
+          <button
+            onClick={() => {
+              setSelectedStatus('');
+              setSelectedPriority('');
+            }}
+            className="text-xs text-rose-400 font-semibold hover:underline shrink-0 ml-auto"
+          >
+            Limpar
+          </button>
+        )}
+      </div>
+
+      {loading && (
+        <div className="py-20 text-center text-sm text-slate-500">
+          Carregando solicitações da engenharia...
+        </div>
+      )}
+
+      {/* Requests List */}
+      {!loading && (
+        <div className="space-y-3.5">
+          {requests.length === 0 ? (
+            <div className="py-16 text-center bg-dark-900 rounded-3xl border border-dark-750 text-xs text-slate-500">
+              Nenhuma solicitação encontrada para os filtros selecionados.
+            </div>
+          ) : (
+            requests.map((r) => (
+              <div
+                key={r.id}
+                className="bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-md space-y-3 hover:border-sabrar-500/40 transition-all"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-xs bg-dark-800 border border-dark-700 px-2 py-0.5 rounded text-sabrar-400">
+                      {r.code}
+                    </span>
+                    <span className="font-extrabold text-sm sm:text-base text-white">
+                      {r.project_name || 'Obra não especificada'}
+                    </span>
+                    <StatusBadge status={r.priority} size="sm" />
+                    <StatusBadge status={r.status} size="sm" />
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    Por: <span className="font-semibold text-slate-200">{r.requested_by_name}</span> •{' '}
+                    {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                  </div>
+                </div>
+
+                {/* Itens Solicitados com Accordion Retraível */}
+                {(() => {
+                  const isExpanded = expandedRequests.has(r.id);
+                  const items = r.items || [];
+                  const totalItemsCount = items.length;
+                  const totalDeficit = items.reduce((acc: number, it: any) => acc + (it.deficit || 0), 0);
+                  const totalReserved = items.reduce((acc: number, it: any) => acc + (it.quantity_reserved || 0), 0);
+
+                  return (
+                    <div className="bg-dark-850 rounded-2xl border border-dark-700 overflow-hidden">
+                      {/* Linha Resumo Retraível */}
+                      <div
+                        onClick={() => toggleRequestExpanded(r.id)}
+                        className="flex items-center justify-between p-3 cursor-pointer hover:bg-dark-800 transition-colors select-none"
+                      >
+                        <div className="flex items-center gap-2.5 flex-wrap text-xs">
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5 text-sabrar-400" />
+                            {totalItemsCount} {totalItemsCount === 1 ? 'item solicitado' : 'itens solicitados'}
+                          </span>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-amber-400 font-semibold text-[11px]">
+                            Reservados: {totalReserved}
+                          </span>
+                          {totalDeficit > 0 ? (
+                            <span className="text-rose-400 font-bold bg-rose-950/80 border border-rose-800/60 px-2 py-0.5 rounded text-[11px]">
+                              Déficit: {totalDeficit}
+                            </span>
+                          ) : (
+                            <span className="text-teal-400 font-medium text-[11px]">
+                              ✓ Sem déficit
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleRequestExpanded(r.id);
+                          }}
+                          className="flex items-center gap-1 text-xs font-bold text-sabrar-400 hover:text-sabrar-300 px-2.5 py-1 rounded-xl bg-dark-800 hover:bg-dark-750 border border-dark-700 transition-colors shrink-0"
+                        >
+                          <span>{isExpanded ? 'Ocultar Materiais' : `Ver Materiais (${totalItemsCount})`}</span>
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                      </div>
+
+                      {/* Conteúdo Retraível Expandido */}
+                      {isExpanded && (
+                        <div className="p-3 border-t border-dark-700 space-y-2 bg-dark-900/40 animate-fadeIn">
+                          {items.map((it: any) => (
+                            <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1 py-1 border-b border-dark-800 last:border-0">
+                              <div>
+                                <span className="font-bold text-white">{it.material_name}</span>
+                                <span className="text-[11px] text-slate-400 ml-2 font-mono">({it.material_code})</span>
+                              </div>
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="text-slate-300">
+                                  Solicitado: <span className="font-bold text-white">{it.quantity_requested} {it.material_unit}</span>
+                                </span>
+                                <span className="text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700 font-semibold text-[11px]">
+                                  Reservado: {it.quantity_reserved}
+                                </span>
+                                {it.deficit > 0 && (
+                                  <span className="text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700 font-bold text-[11px]">
+                                    Déficit: {it.deficit}
+                                  </span>
+                                )}
+                                {it.quantity_delivered > 0 && (
+                                  <span className="text-sabrar-300 bg-sabrar-950 px-2 py-0.5 rounded border border-sabrar-500/40 text-[11px] font-bold">
+                                    Entregue: {it.quantity_delivered}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {r.notes && (
+                  <div className="text-[11px] text-slate-400 bg-dark-850 p-2.5 rounded-xl border border-dark-700">
+                    <span className="font-bold text-slate-300">Observações: </span>
+                    {r.notes}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Modal */}
+      <NewRequestModal
+        isOpen={isNewRequestModalOpen}
+        onClose={() => setIsNewRequestModalOpen(false)}
+        onSuccess={() => fetchRequests()}
+      />
+    </div>
+  );
+};

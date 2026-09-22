@@ -1,0 +1,232 @@
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+
+export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers
+    },
+    ...options
+  });
+
+  if (!res.ok) {
+    let errorMsg = 'Erro na requisição';
+    try {
+      const data = await res.json();
+      errorMsg = data.error || errorMsg;
+    } catch {
+      errorMsg = await res.text();
+    }
+    throw new Error(errorMsg);
+  }
+
+  return res.json();
+}
+
+export const api = {
+  // Auth & Usuários
+  login: (credentials: { email: string; password: string }) =>
+    fetchJson<any>('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+  getUsers: () => fetchJson<any[]>('/auth/users'),
+  getRoles: () => fetchJson<any[]>('/auth/roles'),
+  getUser: (id: number) => fetchJson<any>(`/auth/user/${id}`),
+  createUser: (data: any) => fetchJson<any>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Projetos
+  getProjects: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/projects${qs}`);
+  },
+  getProject: (id: number | string) => fetchJson<any>(`/projects/${id}`),
+  createProject: (data: any) => fetchJson<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  updateProjectStatus: (id: number | string, status: string, userId?: number) =>
+    fetchJson<any>(`/projects/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, userId }) }),
+  addProjectFile: (id: number | string, data: any) =>
+    fetchJson<any>(`/projects/${id}/files`, { method: 'POST', body: JSON.stringify(data) }),
+  uploadProjectFiles: async (projectId: number | string, files: File[], autoAnalyze?: boolean) => {
+    const formData = new FormData();
+    for (const f of files) {
+      formData.append('files', f);
+    }
+    if (autoAnalyze) formData.append('autoAnalyze', 'true');
+    const res = await fetch(`${API_BASE}/projects/${projectId}/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro no upload' }));
+      throw new Error(err.error || 'Erro no upload');
+    }
+    return res.json();
+  },
+  importProjectSpreadsheet: async (projectId: number | string, file: File, userId?: number) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (userId) formData.append('userId', String(userId));
+    const res = await fetch(`${API_BASE}/projects/${projectId}/import-spreadsheet`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao importar planilha' }));
+      throw new Error(err.error || 'Erro ao importar planilha');
+    }
+    return res.json();
+  },
+
+  // IA
+  analyzeProject: (projectId: number | string, customText?: string, userId?: number) =>
+    fetchJson<any>(`/ai/analyze/${projectId}`, { method: 'POST', body: JSON.stringify({ customText, userId }) }),
+  getAIMetrics: () => fetchJson<any>('/ai/metrics'),
+  getProjectAnalyses: (projectId: number | string) => fetchJson<any[]>(`/ai/analyses/${projectId}`),
+
+  // Orçamentos
+  getBudget: (projectId: number | string) => fetchJson<any>(`/budgets/project/${projectId}`),
+  saveBudget: (data: any) => fetchJson<any>('/budgets/save', { method: 'POST', body: JSON.stringify(data) }),
+  approveBudget: (budgetId: number | string, userId?: number, userName?: string) =>
+    fetchJson<any>(`/budgets/${budgetId}/approve`, { method: 'POST', body: JSON.stringify({ userId, userName }) }),
+  sendBudgetToClient: (budgetId: number | string, userId?: number) =>
+    fetchJson<any>(`/budgets/${budgetId}/send-to-client`, { method: 'POST', body: JSON.stringify({ userId }) }),
+
+  // Materiais & Estoque
+  getMaterials: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/materials${qs}`);
+  },
+  getMaterial: (id: number | string) => fetchJson<any>(`/materials/${id}`),
+  createMaterial: (data: any) => fetchJson<any>('/materials', { method: 'POST', body: JSON.stringify(data) }),
+  updateMaterial: (id: number | string, data: any) =>
+    fetchJson<any>(`/materials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  quickStockEntry: (materialId: number, quantity: number, notes?: string, userId?: number) =>
+    fetchJson<any>('/materials/quick-entry', { method: 'POST', body: JSON.stringify({ materialId, quantity, notes, userId }) }),
+
+  // Solicitações
+  getRequests: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/requests${qs}`);
+  },
+  createRequest: (data: any) => fetchJson<any>('/requests', { method: 'POST', body: JSON.stringify(data) }),
+  updateRequestStatus: (id: number | string, status: string, notes?: string, userId?: number) =>
+    fetchJson<any>(`/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, notes, userId }) }),
+
+  // Compras
+  getPurchases: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/purchases${qs}`);
+  },
+  createPurchase: (data: any) => fetchJson<any>('/purchases', { method: 'POST', body: JSON.stringify(data) }),
+  updatePurchase: (id: number | string, data: any) =>
+    fetchJson<any>(`/purchases/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  receivePurchase: (id: number | string, userId?: number) =>
+    fetchJson<any>(`/purchases/${id}/receive`, { method: 'POST', body: JSON.stringify({ userId }) }),
+
+  // Devoluções
+  getReturns: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/returns${qs}`);
+  },
+  createReturn: (data: any) => fetchJson<any>('/returns', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Movimentações & Sumário
+  getStockMovements: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/stock/movements${qs}`);
+  },
+  getStockSummary: () => fetchJson<any>('/stock/summary'),
+
+  // Fornecedores
+  getSuppliers: (search?: string) => {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    return fetchJson<any[]>(`/suppliers${qs}`);
+  },
+  createSupplier: (data: any) => fetchJson<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  updateSupplier: (id: number | string, data: any) =>
+    fetchJson<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Dashboards & Relatórios
+  getDashboardOverview: () => fetchJson<any>('/dashboard/overview'),
+  getDashboardOrcamento: () => fetchJson<any>('/dashboard/orcamento'),
+  getDashboardAlmoxarifado: () => fetchJson<any>('/dashboard/almoxarifado'),
+  getDashboardCompras: () => fetchJson<any>('/dashboard/compras'),
+  getProjectReports: () => fetchJson<any[]>('/reports/projects'),
+  getMaterialReports: () => fetchJson<any[]>('/reports/materials'),
+  getPurchaseReports: () => fetchJson<any>('/reports/purchases'),
+  getStockReports: () => fetchJson<any>('/reports/stock'),
+
+  // Notificações & Auditoria
+  getNotifications: (role?: string, userId?: number) => {
+    const params = new URLSearchParams();
+    if (role) params.set('role', role);
+    if (userId) params.set('user_id', String(userId));
+    return fetchJson<{ notifications: any[]; unreadCount: number }>(`/notifications?${params.toString()}`);
+  },
+  markNotificationRead: (id: number | string) =>
+    fetchJson<any>(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllNotificationsRead: () =>
+    fetchJson<any>('/notifications/read-all', { method: 'POST' }),
+  getAuditLogs: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJson<any[]>(`/audit${qs}`);
+  },
+
+  // Busca Global
+  globalSearch: (query: string) => fetchJson<any>(`/search?q=${encodeURIComponent(query)}`),
+
+  // Carga em Massa & Base de IA
+  downloadBulkTemplate: () => {
+    window.location.href = `${API_BASE}/bulk-import/template`;
+  },
+  uploadBulkData: async (file: File, userId?: number) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (userId) formData.append('userId', String(userId));
+    const res = await fetch(`${API_BASE}/bulk-import/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao processar carga em massa' }));
+      throw new Error(err.error || 'Erro ao processar carga em massa');
+    }
+    return res.json();
+  },
+  uploadBulkJson: (data: any) =>
+    fetchJson<any>('/bulk-import/json', { method: 'POST', body: JSON.stringify(data) }),
+  getBulkSummary: () => fetchJson<any>('/bulk-import/summary'),
+  getAIAgentContext: () => fetchJson<any>('/ai/agent-context'),
+
+  // Leitor de XML de NF-e
+  previewNfeXml: async (file: File) => {
+    const formData = new FormData();
+    formData.append('xmlFile', file);
+    const res = await fetch(`${API_BASE}/nfe/preview`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao processar XML da NF-e' }));
+      throw new Error(err.error || 'Erro ao processar XML da NF-e');
+    }
+    return res.json();
+  },
+  confirmNfeXml: (data: any) =>
+    fetchJson<any>('/nfe/confirm', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Calibração de IA por Documentos Reais (Projetos + Levantamento / Consumo Real)
+  calibrateAIDocuments: async (files: File[], userId?: number) => {
+    const formData = new FormData();
+    for (const f of files) {
+      formData.append('files', f);
+    }
+    if (userId) formData.append('userId', String(userId));
+    const res = await fetch(`${API_BASE}/ai-calibration/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao processar calibração da IA' }));
+      throw new Error(err.error || 'Erro ao processar calibração da IA');
+    }
+    return res.json();
+  }
+};

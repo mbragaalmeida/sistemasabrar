@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-dark-950: #0A0A0A;
+  --bg-dark-900: #121212;
+  --bg-dark-850: #1A1A1A;
+  --bg-dark-800: #222222;
+  --border-dark-750: #2C2C2C;
+  --border-dark-700: #383838;
+  --text-dark-600: #525252;
+  --text-dark-500: #737373;
+}
+
+:root.light, body.light {
+  --bg-dark-950: #F8FAFC; /* Slate-50: Fundo suave e moderno */
+  --bg-dark-900: #FFFFFF; /* Branco puro: Cards, Header, Sidebar */
+  --bg-dark-850: #F1F5F9; /* Slate-100: Subcards, containers, inputs */
+  --bg-dark-800: #E2E8F0; /* Slate-200: Botões secundários, hover */
+  --border-dark-750: #E2E8F0; /* Slate-200: Linhas divisórias limpas */
+  --border-dark-700: #CBD5E1; /* Slate-300: Bordas de inputs e caixas */
+  --text-dark-600: #64748B;
+  --text-dark-500: #94A3B8;
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+:root.dark, body.dark {
+  background-color: #0A0A0A;
+  color: #F5F5F5;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+    font-family: 'Inter', sans-serif;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Regras de tipografia e contraste para o tema claro */
+.light {
+  color-scheme: light;
+}
+
+.light .text-white {
+  color: #0F172A;
+}
+
+.light .text-slate-400 {
+  color: #64748B;
+}
+
+.light .text-slate-300 {
+  color: #334155;
+}
+
+.light .text-slate-200 {
+  color: #1E293B;
+}
+
+.light .text-slate-100 {
+  color: #0F172A;
+}
+
+/* Preserva texto branco em botões e elementos com cor de destaque */
+.light button[class*="bg-sabrar-"],
+.light button[class*="bg-teal-"],
+.light button[class*="bg-rose-"],
+.light button[class*="bg-emerald-"],
+.light button[class*="bg-blue-"],
+.light button[class*="bg-indigo-"],
+.light .bg-sabrar-600,
+.light .bg-sabrar-500,
+.light .bg-teal-600,
+.light .bg-rose-600,
+.light [class*="bg-sabrar-600"],
+.light [class*="bg-sabrar-500"] {
+  color: #FFFFFF !important;
+}
+
+.light button[class*="bg-sabrar-"] *,
+.light button[class*="bg-teal-"] *,
+.light button[class*="bg-rose-"] *,
+.light button[class*="bg-blue-"] * {
+  color: #FFFFFF !important;
+}
+
+/* Verde SABRAR refinado com alto contraste no tema claro */
+.light .text-sabrar-400 {
+  color: #16A34A !important;
+}
+
+.light .text-sabrar-300 {
+  color: #15803D !important;
+}
+
+.light .bg-sabrar-950,
+.light .bg-sabrar-950\/70,
+.light .bg-sabrar-950\/80,
+.light .bg-sabrar-950\/90 {
+  background-color: #ECFDF5 !important;
+  border-color: #A7F3D0 !important;
+}
+
+/* Sombras suaves e elegantes para o tema claro */
+.light .shadow-xl, .light .shadow-2xl, .light .shadow-md {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+
+/* Utilitários de área segura para iPhone e Android com notch */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Custom dark scrollbar em chumbo e verde Sabrar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #121212;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #1F8F47;
+}
+
+/* Print styles para proposta comercial do cliente */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+  }
+}

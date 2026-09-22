@@ -1,0 +1,12 @@
+{
+  "name": "sistema-sabrar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema SABRAR - Orçamento Inteligente, Gestão de Materiais e Obras",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "server": "node server/src/index.js",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build"
+  }
+}
