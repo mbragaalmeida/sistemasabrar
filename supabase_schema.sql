@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS materials (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   category VARCHAR(100) NOT NULL,
-  unit VARCHAR(20) NOT NULL,
+  unit VARCHAR(100) NOT NULL,
   brand VARCHAR(100),
   reference_price NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
   supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,

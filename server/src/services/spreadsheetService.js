@@ -4,6 +4,7 @@ const XLSX = require('xlsx');
 
 import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
+import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
 
 export class SpreadsheetService {
   /**
@@ -300,8 +301,7 @@ export class SpreadsheetService {
     const totalFinal = grandTotalMaterials + defaultServicesCost;
 
     if (!budget) {
-      const count = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
-      const budgetCode = `ORC-2026-${String(count).padStart(3, '0')}`;
+      const budgetCode = await generateUniqueBudgetCode(db);
 
       const resB = await db.prepare(`
         INSERT INTO budgets (

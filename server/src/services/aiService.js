@@ -3,6 +3,7 @@ import { LearningService } from './learningService.js';
 import { SABRAR_BUDGET_AGENT_SYSTEM_PROMPT, buildAgentContextPrompt } from '../prompts/budgetAgentPrompt.js';
 import { convertMaterialUnits } from '../utils/unitConversion.js';
 import { findSabrarEconomicPrice } from './sabrarEconomicBase.js';
+import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
 
 /**
  * SERVIÇO DE ANÁLISE E ORÇAMENTO DA IA — SISTEMA SABRAR
@@ -174,6 +175,9 @@ export class AIAnalysisService {
 
     // 2. Tenta buscar por nome exato
     let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
+    if (!byName && economic.matched && economic.matchedItem) {
+      byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(economic.matchedItem.toLowerCase());
+    }
     if (byName) {
       if (economic.matched && officialPrice) {
         await db.prepare('UPDATE materials SET reference_price = ?, unit = ?, category = ? WHERE id = ?')
@@ -208,7 +212,7 @@ export class AIAnalysisService {
     }
 
     // 4. Se não existe, cria material oficial na Base Central SABRAR com preço oficial Sabrar
-    const autoCode = itemDef.code || `MAT-SABRAR-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
+    const autoCode = itemDef.code || `SAB-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
     const insertMat = db.prepare(`
       INSERT INTO materials (code, name, category, unit, reference_price, status)
       VALUES (?, ?, ?, ?, ?, 'Ativo')
@@ -699,8 +703,7 @@ export class AIAnalysisService {
     let budgetId;
 
     if (!budget) {
-      const budgetCount = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
-      const budgetCode = `ORC-2026-${String(budgetCount).padStart(3, '0')}`;
+      const budgetCode = await generateUniqueBudgetCode(db);
 
       const resBudget = await db.prepare(`
         INSERT INTO budgets (

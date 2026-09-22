@@ -6,6 +6,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
+import { generateUniqueProjectCode } from '../utils/codeGenerator.js';
 
 import os from 'os';
 
@@ -246,9 +247,8 @@ projectsRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Nome do projeto e cliente são obrigatórios' });
     }
 
-    // Gera código automático: PRJ-2026-00X
-    const count = ((await db.prepare('SELECT COUNT(*) as count FROM projects').get())?.count || 0) + 1;
-    const code = `PRJ-2026-${String(count).padStart(3, '0')}`;
+    // Gera código automático único: PRJ-2026-00X
+    const code = await generateUniqueProjectCode(db);
 
     const insert = db.prepare(`
       INSERT INTO projects (

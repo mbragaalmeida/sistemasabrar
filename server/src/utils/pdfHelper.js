@@ -23,9 +23,16 @@ try {
 export async function extractTextFromPdfBuffer(buffer) {
   if (!PDFParse) return '';
   try {
-    const parser = new PDFParse(new Uint8Array(buffer));
-    const result = await parser.getText();
-    return (result && result.text) ? result.text : '';
+    if (typeof PDFParse === 'function' && !PDFParse.prototype?.getText) {
+      // pdf-parse 1.1.1: função direta, 100% estável em Serverless Linux / Vercel
+      const data = await PDFParse(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+      return (data && data.text) ? data.text : '';
+    } else {
+      // Fallback para versões orientadas a classe
+      const parser = new PDFParse(new Uint8Array(buffer));
+      const result = await parser.getText();
+      return (result && result.text) ? result.text : '';
+    }
   } catch (err) {
     console.warn('[PDFHelper] Erro ao processar buffer do PDF:', err.message);
     return '';

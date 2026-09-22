@@ -1,6 +1,7 @@
 import express from 'express';
 import { db } from '../db/connection.js';
 import { LearningService } from '../services/learningService.js';
+import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
 
 export const budgetsRouter = express.Router();
 
@@ -69,8 +70,7 @@ budgetsRouter.post('/save', async (req, res) => {
     let budgetId;
 
     if (!budget) {
-      const count = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
-      const budgetCode = `ORC-2026-${String(count).padStart(3, '0')}`;
+      const budgetCode = await generateUniqueBudgetCode(db);
 
       const insertBudget = db.prepare(`
         INSERT INTO budgets (

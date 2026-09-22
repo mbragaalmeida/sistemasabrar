@@ -115,7 +115,7 @@ export const MaterialsPage: React.FC = () => {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pesquisar por código (ex: MAT-000101), nome, marca ou categoria..."
+              placeholder="Pesquisar por código (ex: SAB-0001), nome, marca ou categoria..."
               className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-dark-700 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white bg-dark-850 placeholder-slate-500"
             />
           </div>
@@ -144,7 +144,18 @@ export const MaterialsPage: React.FC = () => {
             Todas
           </button>
 
-          {['Climatização', 'Elétrica', 'Hidráulica', 'Civil', 'Estrutura', 'Drywall', 'Pintura', 'Acabamento'].map((cat) => (
+          {[
+            'Administrativo / logística',
+            'Automação',
+            'Dutos',
+            'Elétrica',
+            'Hidráulica / acessórios',
+            'Isolamento',
+            'Linha frigorígena',
+            'Mão de obra',
+            'Rede hidráulica',
+            'Outros'
+          ].map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
@@ -212,6 +223,11 @@ export const MaterialsPage: React.FC = () => {
                   <div className="text-[11px] text-slate-400 mt-1">
                     {m.category} • Marca: <span className="font-medium text-slate-300">{m.brand || 'Padrão SABRAR'}</span>
                   </div>
+                  {m.description && (
+                    <div className="text-[11px] text-teal-400/90 font-medium mt-1.5 line-clamp-2 bg-dark-850/80 rounded-xl px-2.5 py-1 border border-dark-700/60">
+                      {m.description}
+                    </div>
+                  )}
 
                   {/* Diagnóstico de Estoque: Físico, Reservado, Disponível */}
                   <div className="mt-3 grid grid-cols-3 gap-1.5 p-2.5 rounded-2xl bg-dark-850 border border-dark-700 text-center">
