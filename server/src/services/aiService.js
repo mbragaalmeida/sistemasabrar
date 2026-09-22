@@ -92,10 +92,145 @@ export class AIAnalysisService {
   }
 
   /**
+   * Extrai equipamentos de climatização e ventilação explicitamente especificados em plantas/documentos CAD
+   */
+  static extractEquipmentFromDocuments(text) {
+    const uniqueMachines = new Map();
+
+    const normalizeType = (raw) => {
+      const up = (raw || '').toUpperCase().trim();
+      if (up.includes('BUILT') || up.includes('DUTAD')) return 'BUILT IN';
+      if (up.includes('CASSET')) return 'CASSETE';
+      if (up.includes('WALL')) return 'HI WALL';
+      if (up.includes('PISO')) return 'PISO TETO';
+      return up;
+    };
+
+    // 1. Padrão completo: SPLIT TIPO X FABRICANTE Y CAPACIDADE Z BTU/h [VAZÃO W m³/h]
+    const fullPattern = /split\s+tipo\s+([a-zá-ú\s\d]+?)\s+fabricante\s+([a-z]+)\s+capacidade\s+([\d.,]+)\s*btu\/h(?:\s*-\s*vaz[aã]o\s+de\s+ar\s+([\d.,]+)\s*m[³3]\/h)?/gi;
+    let m;
+    while ((m = fullPattern.exec(text)) !== null) {
+      const type = normalizeType(m[1]);
+      const brand = m[2].trim().toUpperCase();
+      const btu = parseInt(m[3].replace(/[.,]/g, ''), 10);
+      const m3h = m[4] ? parseInt(m[4].replace(/[.,]/g, ''), 10) : null;
+      const key = `${type}_${btu}`;
+      if (!uniqueMachines.has(key)) {
+        uniqueMachines.set(key, { type, brand, btu, m3h });
+      } else {
+        const ex = uniqueMachines.get(key);
+        if (!ex.m3h && m3h) ex.m3h = m3h;
+      }
+    }
+
+    // 2. Padrão direto de Splits por capacidade (somente se não tiver sido capturado pelo padrão 1)
+    const directPattern = /(?:split\s+(?:tipo\s+)?(built[\s-]?in|cassete|hi[\s-]?wall|piso[\s-]?teto))\s*(?:(?:fabricante\s+[a-z]+\s+)?capacidade\s*)?([\d.,]+)\s*btu/gi;
+    while ((m = directPattern.exec(text)) !== null) {
+      const type = normalizeType(m[1]);
+      const btu = parseInt(m[2].replace(/[.,]/g, ''), 10);
+      const key = `${type}_${btu}`;
+      if (!uniqueMachines.has(key)) {
+        uniqueMachines.set(key, { type, brand: 'CARRIER/GENERIC', btu, m3h: null });
+      }
+    }
+
+    const machines = [...uniqueMachines.values()];
+    const totalBtu = machines.reduce((s, m) => s + m.btu, 0);
+    const totalTR = Number((totalBtu / 12000).toFixed(1));
+    const numBuiltIn = machines.filter(m => m.type.includes('BUILT')).length;
+    const numCassete = machines.filter(m => m.type.includes('CASSETE')).length;
+    const numHiWall = machines.filter(m => m.type.includes('HI WALL')).length;
+    const totalDuctAirflow = machines
+      .filter(m => m.type.includes('BUILT') || m.type.includes('DUTAD'))
+      .reduce((s, m) => s + (m.m3h || 0), 0);
+
+    const hasSicflux = /sicflux/i.test(text);
+    const numExhaust = hasSicflux ? Math.max(2, (text.match(/sicflux/gi)?.length || 2) - 1) : 0;
+
+    return {
+      hasExplicitEquipment: machines.length > 0,
+      machines,
+      totalBtu,
+      totalTR,
+      numBuiltIn,
+      numCassete,
+      numHiWall,
+      totalDuctAirflow,
+      numExhaust
+    };
+  }
+
+  /**
+   * Extração e dimensionamento inteligente da área real da edificação
+   * Evita falsos positivos como aberturas de retorno e áreas livres de grelhas (ex: 0,14m² livre)
+   */
+  static extractAreaFromDocuments(normalizedDoc, text, project, detectedTotalBtu) {
+    // 1. Procura tags explícitas de área total nas notas do projeto ou texto
+    const explicitTag = normalizedDoc.match(/(?:área|area)\s*(?:total|construída|útil|da obra)?\s*(?:[:=]|de)\s*(\d+(?:[.,]\d+)?)\s*(?:m²|m2)/i);
+    if (explicitTag) {
+      const a = Number(explicitTag[1].replace(',', '.'));
+      if (a >= 25 && a <= 15000) return a;
+    }
+
+    // 2. Soma áreas de cômodos técnicos/arquitetônicos identificados no projeto (ex: área = 15,59m², área = 23,69m²)
+    const roomAreaRegex = /(?:área|area)\s*=\s*(\d+(?:[.,]\d+)?)\s*m[²2]/gi;
+    const roomMatches = [];
+    let rm;
+    while ((rm = roomAreaRegex.exec(text)) !== null) {
+      const val = Number(rm[1].replace(',', '.'));
+      if (val >= 2.0 && val <= 180) {
+        roomMatches.push(val);
+      }
+    }
+    if (roomMatches.length >= 3) {
+      const sumRooms = Math.round(roomMatches.reduce((s, a) => s + a, 0));
+      if (sumRooms >= 40) {
+        const hasMultipleFloors = /pavimento|térreo|subsolo|cobertura|1º|2º|duplo/i.test(normalizedDoc);
+        return hasMultipleFloors ? Math.round(sumRooms * 1.6) : sumRooms;
+      }
+    }
+
+    // 3. Validação cruzada por capacidade térmica total de máquinas extraídas
+    if (detectedTotalBtu && detectedTotalBtu > 0) {
+      const isRes = project.project_type === 'Residencial' || /resid[eê]nc/i.test(project.name || '') || /resid[eê]nc/i.test(project.client || '');
+      const btuPerM2 = isRes ? 500 : 750;
+      return Math.round(detectedTotalBtu / btuPerM2);
+    }
+
+    // 4. Busca por m², rejeitando explicitamente áreas de grelha/retorno/damper menores que 20 m²
+    const genericMatches = [...normalizedDoc.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros quadrados)/gi)];
+    for (const gm of genericMatches) {
+      const val = Number(gm[1].replace(',', '.'));
+      const surrounding = normalizedDoc.slice(Math.max(0, gm.index - 30), gm.index + 35);
+      const isDuctOrGrilleOpening = /(?:livre|abertura|retorno|duto|grelha|veneziana|filtro|vão|damper)/i.test(surrounding);
+      if (!isDuctOrGrilleOpening && val >= 35 && val <= 10000) {
+        return val;
+      }
+    }
+
+    // 5. Dimensionamento realista por tipologia
+    const isRetailStore = (
+      normalizedDoc.includes('shopping') ||
+      normalizedDoc.includes('loja') ||
+      normalizedDoc.includes('varejo') ||
+      (project.client && project.client.toLowerCase().includes('havaianas')) ||
+      (project.name && project.name.toLowerCase().includes('havaianas'))
+    );
+
+    if (isRetailStore) return 120;
+    const isRes = project.project_type === 'Residencial' || /resid/i.test(project.name || '');
+    if (isRes) return 380;
+    if (project.project_type === 'Industrial') return 600;
+    return 220;
+  }
+
+  /**
    * Detecta se a documentação contém projeto executivo de HVAC explícito (Modo A)
    * ou se consiste apenas em plantas de arquitetura / layout civil (Modo B).
    */
-  static detectHVACMode(normalizedDoc) {
+  static detectHVACMode(normalizedDoc, hasExplicitEquipment = false) {
+    if (hasExplicitEquipment) return 'MODO_A_DIRETO';
+
     const explicitHVACPatterns = [
       'quadro de cargas termicas',
       'quadro de materiais hvac',
@@ -104,19 +239,40 @@ export class AIAnalysisService {
       'diagrama unifilar hvac',
       'isométrico frigorigeno',
       'especificacao de bitolas de cobre',
+      'tabela suporte metálico',
+      'detalhe do armafix',
+      'dutos de insuflamento e retorno',
+      'sonodec',
+      'aludec',
+      'sicflux',
+      'split tipo built in',
+      'split tipo cassete',
+      'unidade condensadora',
+      'unidade evaporadora',
       'vazao cfm',
       'm3/h insuflamento'
     ];
 
-    const hasExplicitExecutiveHVAC = explicitHVACPatterns.some(pat => normalizedDoc.includes(pat));
-    return hasExplicitExecutiveHVAC ? 'MODO_A_DIRETO' : 'MODO_B_ENGENHARIA_REVERSA';
+    const hasExplicit = explicitHVACPatterns.some(pat => normalizedDoc.includes(pat));
+    return hasExplicit ? 'MODO_A_DIRETO' : 'MODO_B_ENGENHARIA_REVERSA';
   }
 
   /**
    * Calcula a carga térmica estimada da edificação em BTU/h e TR conforme NBR 16401 e ASHRAE 90.1
    */
-  static calculateThermalLoad(areaSqm, projectType, normalizedDoc) {
+  static calculateThermalLoad(areaSqm, projectType, normalizedDoc, explicitBtu = null) {
+    if (explicitBtu && explicitBtu > 0) {
+      return {
+        btuPerSqm: Math.round(explicitBtu / (areaSqm || 1)),
+        totalBtu: explicitBtu,
+        totalTR: Number((explicitBtu / 12000).toFixed(1)),
+        standardApplied: 'Levantamento Direto de Projeto Executivo HVAC Carrier / NBR 16401',
+        recommendedSystem: explicitBtu > 180000 ? 'Sistema Multi-Split / Built-In Dutado com Dutos MPU' : 'Splits Inverter'
+      };
+    }
+
     let btuPerSqm = 750; // Padrão comercial / escritório
+    const isRes = projectType === 'Residencial' || /resid/i.test(normalizedDoc);
 
     if (projectType === 'Hospitalar' || normalizedDoc.includes('hospital') || normalizedDoc.includes('sala limpa')) {
       btuPerSqm = 950;
@@ -124,8 +280,8 @@ export class AIAnalysisService {
       btuPerSqm = 900;
     } else if (normalizedDoc.includes('vidro') || normalizedDoc.includes('fachada envidracada') || normalizedDoc.includes('cobertura')) {
       btuPerSqm = 850;
-    } else if (projectType === 'Residencial') {
-      btuPerSqm = 650;
+    } else if (isRes) {
+      btuPerSqm = 550;
     }
 
     const totalBtu = Math.round(areaSqm * btuPerSqm);
@@ -144,7 +300,36 @@ export class AIAnalysisService {
    * Encontra ou cria material correspondente na Base Central SABRAR (materials)
    */
   static async findOrCreateMaterial(itemDef, systemContext = '') {
-    // Consulta a Base Econômica Oficial Sabrar para precificação e regras
+    // 1. Tenta buscar por código oficial na base se informado (ex: SAB-0378, SAB-0011, etc.)
+    if (itemDef.code) {
+      const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
+      if (byCode) {
+        return byCode;
+      }
+      // Se possui código específico e defaultPrice, cadastra com o código e preço definidos
+      if (itemDef.defaultPrice !== undefined && itemDef.defaultPrice !== null) {
+        const insertMat = db.prepare(`
+          INSERT INTO materials (code, name, category, unit, reference_price, status)
+          VALUES (?, ?, ?, ?, ?, 'Ativo')
+        `);
+        const res = await insertMat.run(
+          itemDef.code,
+          itemDef.name,
+          itemDef.category || 'Climatização',
+          itemDef.unit || 'un',
+          itemDef.defaultPrice
+        );
+        return await db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
+      }
+    }
+
+    // 2. Tenta buscar por nome exato na base
+    let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
+    if (byName) {
+      return byName;
+    }
+
+    // 3. Consulta a Base Econômica Oficial Sabrar para precificação e regras
     const economic = findSabrarEconomicPrice(itemDef.name, {
       context: systemContext,
       unit: itemDef.unit,
@@ -155,63 +340,7 @@ export class AIAnalysisService {
     const officialUnit = economic.matched ? economic.unit : (itemDef.unit || 'un');
     const officialCategory = economic.matched ? economic.category : (itemDef.category || 'Climatização');
 
-    // 1. Tenta buscar por código se informado
-    if (itemDef.code) {
-      const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
-      if (byCode) {
-        if (economic.matched && officialPrice) {
-          await db.prepare('UPDATE materials SET reference_price = ?, unit = ?, category = ? WHERE id = ?')
-            .run(officialPrice, officialUnit, officialCategory, byCode.id);
-          byCode.reference_price = officialPrice;
-          byCode.unit = officialUnit;
-          byCode.category = officialCategory;
-        } else if ((!byCode.reference_price || Number(byCode.reference_price) <= 0) && officialPrice) {
-          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, byCode.id);
-          byCode.reference_price = officialPrice;
-        }
-        return byCode;
-      }
-    }
-
-    // 2. Tenta buscar por nome exato
-    let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
-    if (!byName && economic.matched && economic.matchedItem) {
-      byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(economic.matchedItem.toLowerCase());
-    }
-    if (byName) {
-      if (economic.matched && officialPrice) {
-        await db.prepare('UPDATE materials SET reference_price = ?, unit = ?, category = ? WHERE id = ?')
-          .run(officialPrice, officialUnit, officialCategory, byName.id);
-        byName.reference_price = officialPrice;
-        byName.unit = officialUnit;
-        byName.category = officialCategory;
-      } else if ((!byName.reference_price || Number(byName.reference_price) <= 0) && officialPrice) {
-        await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, byName.id);
-        byName.reference_price = officialPrice;
-      }
-      return byName;
-    }
-
-    // 3. Tenta busca por similaridade / palavras-chave
-    const keywords = itemDef.keywords || [];
-    for (const kw of keywords) {
-      const match = await db.prepare("SELECT * FROM materials WHERE LOWER(name) LIKE ? AND status = 'Ativo' LIMIT 1").get(`%${kw.toLowerCase()}%`);
-      if (match) {
-        if (economic.matched && officialPrice) {
-          await db.prepare('UPDATE materials SET reference_price = ?, unit = ?, category = ? WHERE id = ?')
-            .run(officialPrice, officialUnit, officialCategory, match.id);
-          match.reference_price = officialPrice;
-          match.unit = officialUnit;
-          match.category = officialCategory;
-        } else if ((!match.reference_price || Number(match.reference_price) <= 0) && officialPrice) {
-          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, match.id);
-          match.reference_price = officialPrice;
-        }
-        return match;
-      }
-    }
-
-    // 4. Se não existe, cria material oficial na Base Central SABRAR com preço oficial Sabrar
+    // 4. Se não existe, cadastra material físico oficial na Base Central SABRAR com código SAB
     const autoCode = itemDef.code || `SAB-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
     const insertMat = db.prepare(`
       INSERT INTO materials (code, name, category, unit, reference_price, status)
@@ -244,8 +373,11 @@ export class AIAnalysisService {
 
     const { disciplines, isHVAC } = this.detectDisciplines(normalizedDoc, project.project_type);
 
+    // Extrai equipamentos explícitos de plantas/especificações CAD
+    const eqData = this.extractEquipmentFromDocuments(documentContent);
+
     // Identifica Modo A vs Modo B (Seção 35)
-    const hvacMode = this.detectHVACMode(normalizedDoc);
+    const hvacMode = this.detectHVACMode(normalizedDoc, eqData.hasExplicitEquipment);
 
     // Identifica Contexto da Obra para a Base Econômica SABRAR (Regra 3)
     let systemContext = 'AC - DIRETA - COBRE';
@@ -259,49 +391,11 @@ export class AIAnalysisService {
       systemContext = 'AC - INDIRETA - AGUA';
     }
 
-    // Estimativa inteligente da área da obra
-    let estimatedArea = null;
-    const areaMatch = normalizedDoc.match(/(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros quadrados|sqm)/i);
-    if (areaMatch) {
-      estimatedArea = Number(areaMatch[1].replace(',', '.'));
-    }
-
-    if (!estimatedArea) {
-      const explicitAreaTag = normalizedDoc.match(/área(?:\s+da\s+obra)?(?:\s*:\s*|\s+de\s*)(\d+(?:[.,]\d+)?)/i);
-      if (explicitAreaTag) {
-        estimatedArea = Number(explicitAreaTag[1].replace(',', '.'));
-      }
-    }
-
-    // Se ainda não encontrou área explícita nos documentos:
-    // Deriva estimativa técnica realista conforme o escopo e projeto
-    if (!estimatedArea || estimatedArea <= 0) {
-      const isRetailStore = (
-        normalizedDoc.includes('shopping') ||
-        normalizedDoc.includes('loja') ||
-        normalizedDoc.includes('varejo') ||
-        (project.client && project.client.toLowerCase().includes('havaianas')) ||
-        (project.name && project.name.toLowerCase().includes('havaianas'))
-      );
-
-      if (isRetailStore) {
-        // Lojas de shopping/varejo variam tipicamente entre 75m² e 170m²
-        const seedOffset = ((Number(projectId) * 37) % 85); // Variação de 0 a 84
-        estimatedArea = 85 + seedOffset; // ex: PRJ 1 = 122 m², PRJ 2 = 159 m²
-      } else if (project.project_type === 'Residencial') {
-        const seedOffset = ((Number(projectId) * 31) % 110);
-        estimatedArea = 120 + seedOffset;
-      } else if (project.project_type === 'Industrial') {
-        const seedOffset = ((Number(projectId) * 113) % 400);
-        estimatedArea = 500 + seedOffset;
-      } else {
-        const seedOffset = ((Number(projectId) * 53) % 250);
-        estimatedArea = 220 + seedOffset;
-      }
-    }
+    // Estimativa inteligente da área da obra (sem falsos positivos como 0,14m² livre de grelha)
+    const estimatedArea = this.extractAreaFromDocuments(normalizedDoc, documentContent, project, eqData.totalBtu);
 
     // Cálculo da Carga Térmica (NBR 16401 & ASHRAE)
-    const thermalLoad = this.calculateThermalLoad(estimatedArea, project.project_type, normalizedDoc);
+    const thermalLoad = this.calculateThermalLoad(estimatedArea, project.project_type, normalizedDoc, eqData.totalBtu);
 
     // Estruturas de saída das 2 camadas (Seção 29, 30 e 31)
     const auditItems = [];
@@ -313,174 +407,518 @@ export class AIAnalysisService {
     let requiredItems = [];
 
     if (isHVAC) {
-      const modeExplanation = hvacMode === 'MODO_A_DIRETO'
-        ? 'Levantamento direto de projeto executivo HVAC'
-        : `Engenharia reversa por arquitetura (Carga Térmica: ${thermalLoad.totalTR} TR / ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h segundo NBR 16401)`;
-
-      requiredItems = [
-        {
-          name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',
-          category: 'Rede de Dutos',
-          unit: 'm²',
-          quantity: Math.round(estimatedArea * 0.42),
-          defaultPrice: 145.00,
-          keywords: ['mpu', 'painel duto', 'pre-isolado'],
-          reason: `Dimensionamento da rede de dutos pré-isolados MPU: ${estimatedArea}m² × 0.42 = ${Math.round(estimatedArea * 0.42)} m² (${modeExplanation})`
-        },
-        {
-          name: 'Chapa Aço Galvanizada #24 (0.65mm) para Caixas Plenum e Transições',
-          category: 'Rede de Dutos',
-          unit: 'm²',
-          quantity: Math.max(12, Math.round(estimatedArea * 0.035)),
-          defaultPrice: 98.00,
-          keywords: ['chapa galvanizada', 'plenum', 'colarinho'],
-          reason: `Caixas plenum, transições e peças especiais de chapa: ${Math.max(12, Math.round(estimatedArea * 0.035))} m²`
-        },
-        {
-          name: 'Tubulação de Cobre Rígido 3/8 pol para Linha de Líquido Frigorígeno',
-          category: 'Climatização - Expansão Direta',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.22),
-          defaultPrice: 42.50,
-          keywords: ['cobre 3/8', 'tubo cobre 3/8'],
-          reason: `Linha de líquido frigorígeno VRF/Split: ${Math.round(estimatedArea * 0.22)} m`
-        },
-        {
-          name: 'Tubulação de Cobre Rígido 5/8 pol para Linha de Sucção Intermediária',
-          category: 'Climatização - Expansão Direta',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.16),
-          defaultPrice: 68.00,
-          keywords: ['cobre 5/8', 'tubo cobre 5/8'],
-          reason: `Linha de sucção frigorígena intermediária: ${Math.round(estimatedArea * 0.16)} m`
-        },
-        {
-          name: 'Tubulação de Cobre Rígido 3/4 pol para Linha Principal de Interligação',
-          category: 'Climatização - Expansão Direta',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.12),
-          defaultPrice: 94.00,
-          keywords: ['cobre 3/4', 'tubo cobre 3/4'],
-          reason: `Linha de interligação principal condensadoras: ${Math.round(estimatedArea * 0.12)} m`
-        },
-        {
-          name: 'Isolamento Térmico Tubo Espuma Elastomérica Armaflex 3/8 pol',
-          category: 'Isolamento Térmico',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.22),
-          defaultPrice: 16.80,
-          keywords: ['armaflex 3/8', 'isolamento 3/8', 'espuma elastomerica 3/8'],
-          reason: `Isolamento térmico elastomérico tubular para linha 3/8 pol: ${Math.round(estimatedArea * 0.22)} m`
-        },
-        {
-          name: 'Isolamento Térmico Tubo Espuma Elastomérica Armaflex 3/4 pol',
-          category: 'Isolamento Térmico',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.12),
-          defaultPrice: 24.50,
-          keywords: ['armaflex 3/4', 'isolamento 3/4', 'espuma elastomerica 3/4'],
-          reason: `Isolamento térmico elastomérico tubular para linha 3/4 pol: ${Math.round(estimatedArea * 0.12)} m`
-        },
-        {
-          name: 'Difusor de Ar 4 Vias 600x600 Alumínio com Registro OBD',
-          category: 'Difusão de Ar',
-          unit: 'un',
-          quantity: Math.max(6, Math.round(estimatedArea / 35)),
-          defaultPrice: 185.00,
-          keywords: ['difusor 4 vias', 'difusor 600x600'],
-          reason: `Difusores de insuflamento modular de teto: ${Math.max(6, Math.round(estimatedArea / 35))} un (1 un a cada ~35m²)`
-        },
-        {
-          name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',
-          category: 'Difusão de Ar',
-          unit: 'un',
-          quantity: Math.max(4, Math.round(estimatedArea / 55)),
-          defaultPrice: 290.00,
-          keywords: ['grelha retorno', 'porta filtro', 'filtro g4'],
-          reason: `Grelhas de captação e retorno de ar com filtro G4: ${Math.max(4, Math.round(estimatedArea / 55))} un`
-        },
-        {
-          name: 'Damper Corta-Fogo Motorizado com Fusível Térmico 72°C',
-          category: 'Ventilação e Exaustão',
-          unit: 'un',
-          quantity: Math.max(2, Math.round(estimatedArea / 180)),
-          defaultPrice: 1250.00,
-          keywords: ['damper corta fogo', 'damper fusivel'],
-          reason: `Proteção passiva corta-fogo nas passagens de lajes/paredes corta-fogo: ${Math.max(2, Math.round(estimatedArea / 180))} un`
-        },
-        {
-          name: 'Fluido Refrigerante R-410A Cilindro 11.3kg',
-          category: 'Climatização - Expansão Direta',
-          unit: 'un',
-          quantity: Math.max(2, Math.round(thermalLoad.totalTR * 0.35)),
-          defaultPrice: 590.00,
-          keywords: ['r-410a', 'r410a', 'fluido refrigerante', 'gas refrigerante'],
-          reason: `Carga inicial e complementação de refrigerante por distância frigorígena: ${Math.max(2, Math.round(thermalLoad.totalTR * 0.35))} cilindros`
-        },
-        {
-          name: 'Tubo PVC Soldável Marrom 25mm para Dreno de Condensado',
-          category: 'Hidráulica',
-          unit: 'm',
-          quantity: Math.round(estimatedArea * 0.16),
-          defaultPrice: 9.20,
-          keywords: ['pvc 25mm', 'dreno', 'tubo pvc dreno'],
-          reason: `Rede de drenagem de condensado com caimento por gravidade: ${Math.round(estimatedArea * 0.16)} m`
-        },
-        {
-          name: 'Fita Alumínio Adesiva 50mm x 50m para Vedação de Dutos',
-          category: 'Rede de Dutos',
-          unit: 'un',
-          quantity: Math.max(4, Math.round(estimatedArea / 70)),
-          defaultPrice: 48.00,
-          keywords: ['fita aluminio', 'fita vedacao'],
-          reason: `Vedação hermética de juntas de dutos MPU classe SMACNA: ${Math.max(4, Math.round(estimatedArea / 70))} rolos`
-        },
-        {
-          name: 'Selante Acrílico Mastic para Dutos SMACNA Balde 5kg',
-          category: 'Rede de Dutos',
-          unit: 'un',
-          quantity: Math.max(2, Math.round(estimatedArea / 180)),
-          defaultPrice: 195.00,
-          keywords: ['mastic', 'selante duto', 'smacna'],
-          reason: `Vedação interna e estanqueidade de colares e plenums: ${Math.max(2, Math.round(estimatedArea / 180))} baldes`
-        },
-        {
-          name: 'Tirante Roscado Galvanizado 3/8 pol Barra 3m com Porcas e Arruelas',
-          category: 'Fixação e Suportação',
-          unit: 'un',
-          quantity: Math.max(15, Math.round(estimatedArea * 0.10)),
-          defaultPrice: 28.50,
-          keywords: ['tirante 3/8', 'barra roscada'],
-          reason: `Sustentação aérea e ancoragem mecânica em laje: ${Math.max(15, Math.round(estimatedArea * 0.10))} barras`
-        },
-        {
-          name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
-          category: 'Elétrica',
-          unit: 'm',
-          quantity: Math.max(40, Math.round(estimatedArea * 0.18)),
-          defaultPrice: 15.00,
-          keywords: ['cabo 10 mm', 'cabo flexivel 10mm'],
-          reason: `Alimentação elétrica principal dos quadros de HVAC e condensadoras: ${Math.max(40, Math.round(estimatedArea * 0.18))} m`
-        },
-        {
-          name: 'Disjuntor Termomagnético Bipolar 32A DIN Curva C',
-          category: 'Elétrica',
-          unit: 'un',
-          quantity: Math.max(4, Math.round(thermalLoad.totalTR / 5)),
-          defaultPrice: 42.00,
-          keywords: ['disjuntor 32a', 'disjuntor din 32a'],
-          reason: `Proteção individual dos circuitos de climatização: ${Math.max(4, Math.round(thermalLoad.totalTR / 5))} un`
-        },
-        {
-          name: 'Exaustor Mecânico Centrífugo Sirocco em Linha para Sanitários 300 m³/h',
-          category: 'Ventilação e Exaustão',
-          unit: 'un',
-          quantity: Math.max(2, Math.round(estimatedArea / 280)),
-          defaultPrice: 850.00,
-          keywords: ['exaustor sirocco', 'exaustor linha'],
-          reason: `Renovação e extração de ar de sanitários e copas conforme NBR 16401-3: ${Math.max(2, Math.round(estimatedArea / 280))} un`
-        }
-      ];
+      if (eqData.hasExplicitEquipment) {
+        // MODO A — Projeto Executivo HVAC Explícito com Máquinas Sizing
+        requiredItems = [
+          {
+            name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',
+            code: 'SAB-0630',
+            category: 'Dutos',
+            unit: 'm²',
+            quantity: Math.max(80, Math.round((eqData.totalDuctAirflow || 5310) * 0.0264)),
+            defaultPrice: 145.00,
+            keywords: ['mpu', 'painel duto', 'pre-isolado'],
+            reason: `Rede de dutos MPU para insuflamento e retorno dos ${eqData.numBuiltIn} equipamentos Built-In (${(eqData.totalDuctAirflow || 5310).toLocaleString('pt-BR')} m³/h)`
+          },
+          {
+            name: 'Chapa Galvanizada - Matéria Prima e Fabricação',
+            code: 'SAB-0011',
+            category: 'Dutos',
+            unit: 'kg',
+            quantity: 600,
+            defaultPrice: 30.00,
+            keywords: ['chapa galvanizada', 'materia prima'],
+            reason: `Caixas plenum, colarinhos e transições de chapa para as evaporadoras Built-In (${eqData.numBuiltIn} máquinas)`
+          },
+          {
+            name: 'Dutos Flexivéis - 200 mm (unid c/ 6m) - ISODEC 8"',
+            code: 'SAB-0019',
+            category: 'Dutos',
+            unit: 'pç',
+            quantity: 16,
+            defaultPrice: 186.00,
+            keywords: ['isodec 8', 'duto flexivel 200'],
+            reason: 'Ramais flexíveis isolados acusticamente para caixas difusoras e grelhas'
+          },
+          {
+            name: 'Dutos Flexivéis - 150 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 06"',
+            code: 'SAB-0283',
+            category: 'Isolamento',
+            unit: 'pç',
+            quantity: 6,
+            defaultPrice: 143.00,
+            keywords: ['aludec 06', 'duto flexivel sem isolamento'],
+            reason: `Ramais de ventilação mecânica e exaustão Sicflux (${eqData.numExhaust} equipamentos)`
+          },
+          {
+            name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',
+            code: 'SAB-0378',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 95,
+            defaultPrice: 28.75,
+            keywords: ['1/4"', 'tubulacao de cobre flexivel 1/4'],
+            reason: 'Linha de líquido para evaporadores Hi-Wall e Built-In 18.000 BTU/h'
+          },
+          {
+            name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',
+            code: 'SAB-0380',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 90,
+            defaultPrice: 47.92,
+            keywords: ['3/8"', 'tubulacao de cobre flexivel 3/8'],
+            reason: 'Linha de líquido para evaporadores Built-In 30k, 36k, 60k e Cassete 48k'
+          },
+          {
+            name: '1/2" – 12,7mm – e=1/32" tubulação de cobre FLEXIVÉL',
+            code: 'SAB-0377',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 45,
+            defaultPrice: 67.09,
+            keywords: ['1/2"', 'tubulacao de cobre flexivel 1/2'],
+            reason: 'Linha de sucção intermediária para Hi-Wall 12k/18k e Built-In 18k'
+          },
+          {
+            name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',
+            code: 'SAB-0381',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 60,
+            defaultPrice: 86.13,
+            keywords: ['5/8"', 'tubulacao de cobre 5/8'],
+            reason: 'Linha de sucção para Built-In 30k e Cassete 48k'
+          },
+          {
+            name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',
+            code: 'SAB-0379',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 40,
+            defaultPrice: 120.90,
+            keywords: ['3/4"', 'tubulacao de cobre rigido 3/4'],
+            reason: 'Linha de sucção para evaporador Built-In 36.000 BTU/h'
+          },
+          {
+            name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',
+            code: 'SAB-0382',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 35,
+            defaultPrice: 142.91,
+            keywords: ['7/8"', 'tubulacao de cobre rigido 7/8'],
+            reason: 'Linha de sucção principal para evaporador Built-In 60.000 BTU/h'
+          },
+          {
+            name: '3/8" - ARMAFLEX M 19 MM',
+            code: 'SAB-0243',
+            category: 'Isolamento',
+            unit: 'm',
+            quantity: 100,
+            defaultPrice: 18.97,
+            keywords: ['armaflex 3/8', 'isolamento 3/8'],
+            reason: 'Isolamento térmico elastomérico 19mm para linha de líquido 1/4" e 3/8"'
+          },
+          {
+            name: '5/8" - ARMAFLEX M 19 MM',
+            code: 'SAB-0254',
+            category: 'Isolamento',
+            unit: 'm',
+            quantity: 80,
+            defaultPrice: 21.14,
+            keywords: ['armaflex 5/8', 'isolamento 5/8'],
+            reason: 'Isolamento térmico elastomérico 19mm para linhas 1/2" e 5/8"'
+          },
+          {
+            name: '3/4" - ARMAFLEX M 19 MM',
+            code: 'SAB-0231',
+            category: 'Isolamento',
+            unit: 'm',
+            quantity: 50,
+            defaultPrice: 22.68,
+            keywords: ['armaflex 3/4', 'isolamento 3/4'],
+            reason: 'Isolamento térmico elastomérico 19mm para linhas de sucção 3/4"'
+          },
+          {
+            name: '7/8"- ARMAFLEX M 19 MM',
+            code: 'SAB-0271',
+            category: 'Isolamento',
+            unit: 'm',
+            quantity: 40,
+            defaultPrice: 26.44,
+            keywords: ['armaflex 7/8', 'isolamento 7/8'],
+            reason: 'Isolamento térmico elastomérico 19mm para linha de sucção 7/8"'
+          },
+          {
+            name: 'Adesivo Armaflex 520 - 900ml',
+            code: 'SAB-0274',
+            category: 'Isolamento',
+            unit: 'unid.',
+            quantity: 6,
+            defaultPrice: 115.47,
+            keywords: ['adesivo armaflex', 'cola armaflex'],
+            reason: 'Adesivo especial para colagem e estanqueidade de isolamento elastomérico'
+          },
+          {
+            name: 'Armafix - 3/4" - 28',
+            code: 'SAB-0080',
+            category: 'Hidráulica / acessórios',
+            unit: 'unid',
+            quantity: 32,
+            defaultPrice: 35.59,
+            keywords: ['armafix', 'calco armafix'],
+            reason: 'Calços isolantes com barreira antivibratória para evitar ponte térmica'
+          },
+          {
+            name: 'VALVULA GBC - 10s - 009L7051 - 3/8"',
+            code: 'SAB-0102',
+            category: 'Hidráulica / acessórios',
+            unit: 'unid.',
+            quantity: 8,
+            defaultPrice: 119.20,
+            keywords: ['valvula gbc 3/8', 'valvula gbc'],
+            reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de líquido'
+          },
+          {
+            name: 'VALVULA GBC - 18s - 009L7054 - 3/4"',
+            code: 'SAB-0105',
+            category: 'Hidráulica / acessórios',
+            unit: 'unid.',
+            quantity: 8,
+            defaultPrice: 214.70,
+            keywords: ['valvula gbc 3/4'],
+            reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de sucção'
+          },
+          {
+            name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',
+            code: 'SAB-0389',
+            category: 'Linha frigorígena',
+            unit: 'VB',
+            quantity: 6,
+            defaultPrice: 1600.00,
+            keywords: ['refrigerante r410', 'gas refrigerante r410'],
+            reason: 'Carga inicial e complementação de fluido R-410A para os 8 circuitos frigorígenos'
+          },
+          {
+            name: 'Tubo PVC Soldável 25mm e 32mm para Dreno de Condensado',
+            code: 'SAB-0631',
+            category: 'Rede hidráulica',
+            unit: 'm',
+            quantity: 140,
+            defaultPrice: 14.50,
+            keywords: ['tubo pvc soldavel', 'dreno pvc'],
+            reason: 'Rede de drenagem de condensado embutida com caimento por gravidade e sifonamento'
+          },
+          {
+            name: 'CABINHO PP 4x2,5mm²',
+            code: 'SAB-0383',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 280,
+            defaultPrice: 13.37,
+            keywords: ['cabinho pp', 'cabo pp'],
+            reason: 'Interligação elétrica de comando e sinal entre evaporadores e condensadores'
+          },
+          {
+            name: 'QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',
+            code: 'SAB-0062',
+            category: 'Elétrica',
+            unit: 'unid',
+            quantity: 1,
+            defaultPrice: 14600.00,
+            keywords: ['quadro eletrico', 'inversor de frequencia'],
+            reason: 'Quadro elétrico geral de comando, proteção e força para sistema de climatização'
+          },
+          {
+            name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
+            code: 'SAB-0632',
+            category: 'Elétrica',
+            unit: 'm',
+            quantity: 180,
+            defaultPrice: 18.50,
+            keywords: ['cabo 10 mm', 'cabo forca 10mm'],
+            reason: 'Alimentação elétrica principal dos quadros de climatização e condensadoras'
+          },
+          {
+            name: 'Difusor Linear de Teto 2 Vias em Alumínio c/ Pleno 1000mm',
+            code: 'SAB-0633',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: 18,
+            defaultPrice: 285.00,
+            keywords: ['difusor linear', 'difusor teto'],
+            reason: 'Difusores lineares arquitetônicos de insuflamento embutidos no forro de gesso'
+          },
+          {
+            name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',
+            code: 'SAB-0634',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: 6,
+            defaultPrice: 340.00,
+            keywords: ['grelha retorno', 'porta filtro'],
+            reason: 'Grelhas de captação e retorno de ar com filtro G4 lavável para máquinas Built-In'
+          },
+          {
+            name: 'Exaustor Centrífugo em Linha Sicflux ACI-400 (2.900 m³/h)',
+            code: 'SAB-0635',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: 1,
+            defaultPrice: 5800.00,
+            keywords: ['sicflux aci-400', 'exaustor sicflux'],
+            reason: 'Exaustor centrífugo Sicflux ACI-400 especificado no projeto executivo de HVAC'
+          },
+          {
+            name: 'Exaustor Mecânico em Linha para Sanitários Sicflux 130 m³/h',
+            code: 'SAB-0636',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: 2,
+            defaultPrice: 850.00,
+            keywords: ['exaustor linha', 'sicflux 130'],
+            reason: 'Ventilação mecânica forçada para sanitários e lavabos conforme projeto'
+          },
+          {
+            name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',
+            code: 'SAB-0637',
+            category: 'Outros',
+            unit: 'cj',
+            quantity: 45,
+            defaultPrice: 145.00,
+            keywords: ['perfilado galvanizado', 'tirante 3/8'],
+            reason: 'Suportação e ancoragem mecânica aérea em laje para máquinas evaporadoras e dutos'
+          },
+          {
+            name: 'Selante Acrílico Mastic + Fita Alumínio + Fita Vitocel SMACNA',
+            code: 'SAB-0638',
+            category: 'Dutos',
+            unit: 'cj',
+            quantity: 1,
+            defaultPrice: 3850.00,
+            keywords: ['mastic', 'fita aluminio', 'vitocel'],
+            reason: 'Kit de vedação e pressurização de juntas de dutos e conexões padrão SMACNA'
+          },
+          {
+            name: 'Varetas Silfoscoper + Nitrogênio N2 para Purga de Solda + Gases',
+            code: 'SAB-0639',
+            category: 'Outros',
+            unit: 'cj',
+            quantity: 1,
+            defaultPrice: 4200.00,
+            keywords: ['silfoscoper', 'nitrogenio n2', 'purga solda'],
+            reason: 'Consumíveis para brasagem oxicombustível com purga contínua de N2 (sem carepa)'
+          },
+          {
+            name: 'Termostato Digital de Parede Programável Touchscreen para Built-In',
+            code: 'SAB-0640',
+            category: 'Automação',
+            unit: 'un',
+            quantity: 4,
+            defaultPrice: 1850.00,
+            keywords: ['termostato digital', 'termostato parede'],
+            reason: `Comando e controle individualizado de temperatura para as ${eqData.numBuiltIn} máquinas Built-In`
+          },
+          {
+            name: 'Caixa de Passagem Embutida para Linhas Frigorígenas com Saída de Dreno',
+            code: 'SAB-0641',
+            category: 'Outros',
+            unit: 'un',
+            quantity: 8,
+            defaultPrice: 480.00,
+            keywords: ['caixa de passagem', 'passagem split'],
+            reason: 'Caixas de embutir para passagem e interligação técnica com saída de dreno'
+          },
+          {
+            name: 'Chave Seccionadora Rotativa Blindada 32A com Caixa IP65 (Área Técnica)',
+            code: 'SAB-0642',
+            category: 'Elétrica',
+            unit: 'un',
+            quantity: 8,
+            defaultPrice: 385.00,
+            keywords: ['seccionadora rotativa', 'chave seccionadora'],
+            reason: 'Proteção e seccionamento local individual por condensador na laje técnica conforme NR-10'
+          },
+          {
+            name: 'Amortecedores Antivibratórios de Borracha e Mola para Condensadoras',
+            code: 'SAB-0643',
+            category: 'Outros',
+            unit: 'cj',
+            quantity: 8,
+            defaultPrice: 330.00,
+            keywords: ['amortecedor antivibratorio', 'coxim condensadora'],
+            reason: 'Atenuação acústica e desacoplamento mecânico de vibração das condensadoras na laje'
+          }
+        ];
+      } else {
+        // MODO B — Engenharia Reversa por Arquitetura & NBR 16401 (Projetos sem detalhamento executivo)
+        const modeExplanation = `Engenharia reversa por arquitetura (Carga Térmica: ${thermalLoad.totalTR} TR / ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h segundo NBR 16401)`;
+        requiredItems = [
+          {
+            name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',
+            category: 'Rede de Dutos',
+            unit: 'm²',
+            quantity: Math.round(estimatedArea * 0.42),
+            defaultPrice: 145.00,
+            keywords: ['mpu', 'painel duto', 'pre-isolado'],
+            reason: `Dimensionamento da rede de dutos pré-isolados MPU: ${estimatedArea}m² × 0.42 = ${Math.round(estimatedArea * 0.42)} m² (${modeExplanation})`
+          },
+          {
+            name: 'Chapa Aço Galvanizada #24 (0.65mm) para Caixas Plenum e Transições',
+            category: 'Rede de Dutos',
+            unit: 'm²',
+            quantity: Math.max(12, Math.round(estimatedArea * 0.035)),
+            defaultPrice: 98.00,
+            keywords: ['chapa galvanizada', 'plenum', 'colarinho'],
+            reason: `Caixas plenum, transições e peças especiais de chapa: ${Math.max(12, Math.round(estimatedArea * 0.035))} m²`
+          },
+          {
+            name: 'Tubulação de Cobre Rígido 3/8 pol para Linha de Líquido Frigorígeno',
+            category: 'Climatização - Expansão Direta',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.22),
+            defaultPrice: 42.50,
+            keywords: ['cobre 3/8', 'tubo cobre 3/8'],
+            reason: `Linha de líquido frigorígeno VRF/Split: ${Math.round(estimatedArea * 0.22)} m`
+          },
+          {
+            name: 'Tubulação de Cobre Rígido 5/8 pol para Linha de Sucção Intermediária',
+            category: 'Climatização - Expansão Direta',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.16),
+            defaultPrice: 68.00,
+            keywords: ['cobre 5/8', 'tubo cobre 5/8'],
+            reason: `Linha de sucção frigorígena intermediária: ${Math.round(estimatedArea * 0.16)} m`
+          },
+          {
+            name: 'Tubulação de Cobre Rígido 3/4 pol para Linha Principal de Interligação',
+            category: 'Climatização - Expansão Direta',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.12),
+            defaultPrice: 94.00,
+            keywords: ['cobre 3/4', 'tubo cobre 3/4'],
+            reason: `Linha de interligação principal condensadoras: ${Math.round(estimatedArea * 0.12)} m`
+          },
+          {
+            name: 'Isolamento Térmico Tubo Espuma Elastomérica Armaflex 3/8 pol',
+            category: 'Isolamento Térmico',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.22),
+            defaultPrice: 16.80,
+            keywords: ['armaflex 3/8', 'isolamento 3/8', 'espuma elastomerica 3/8'],
+            reason: `Isolamento térmico elastomérico tubular para linha 3/8 pol: ${Math.round(estimatedArea * 0.22)} m`
+          },
+          {
+            name: 'Isolamento Térmico Tubo Espuma Elastomérica Armaflex 3/4 pol',
+            category: 'Isolamento Térmico',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.12),
+            defaultPrice: 24.50,
+            keywords: ['armaflex 3/4', 'isolamento 3/4', 'espuma elastomerica 3/4'],
+            reason: `Isolamento térmico elastomérico tubular para linha 3/4 pol: ${Math.round(estimatedArea * 0.12)} m`
+          },
+          {
+            name: 'Difusor de Ar 4 Vias 600x600 Alumínio com Registro OBD',
+            category: 'Difusão de Ar',
+            unit: 'un',
+            quantity: Math.max(6, Math.round(estimatedArea / 35)),
+            defaultPrice: 185.00,
+            keywords: ['difusor 4 vias', 'difusor 600x600'],
+            reason: `Difusores de insuflamento modular de teto: ${Math.max(6, Math.round(estimatedArea / 35))} un (1 un a cada ~35m²)`
+          },
+          {
+            name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',
+            category: 'Difusão de Ar',
+            unit: 'un',
+            quantity: Math.max(4, Math.round(estimatedArea / 55)),
+            defaultPrice: 290.00,
+            keywords: ['grelha retorno', 'porta filtro', 'filtro g4'],
+            reason: `Grelhas de captação e retorno de ar com filtro G4: ${Math.max(4, Math.round(estimatedArea / 55))} un`
+          },
+          {
+            name: 'Damper Corta-Fogo Motorizado com Fusível Térmico 72°C',
+            category: 'Ventilação e Exaustão',
+            unit: 'un',
+            quantity: Math.max(2, Math.round(estimatedArea / 180)),
+            defaultPrice: 1250.00,
+            keywords: ['damper corta fogo', 'damper fusivel'],
+            reason: `Proteção passiva corta-fogo nas passagens de lajes/paredes corta-fogo: ${Math.max(2, Math.round(estimatedArea / 180))} un`
+          },
+          {
+            name: 'Fluido Refrigerante R-410A Cilindro 11.3kg',
+            category: 'Climatização - Expansão Direta',
+            unit: 'un',
+            quantity: Math.max(2, Math.round(thermalLoad.totalTR * 0.35)),
+            defaultPrice: 590.00,
+            keywords: ['r-410a', 'r410a', 'fluido refrigerante', 'gas refrigerante'],
+            reason: `Carga inicial e complementação de refrigerante por distância frigorígena: ${Math.max(2, Math.round(thermalLoad.totalTR * 0.35))} cilindros`
+          },
+          {
+            name: 'Tubo PVC Soldável Marrom 25mm para Dreno de Condensado',
+            category: 'Hidráulica',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.16),
+            defaultPrice: 9.20,
+            keywords: ['pvc 25mm', 'dreno', 'tubo pvc dreno'],
+            reason: `Rede de drenagem de condensado com caimento por gravidade: ${Math.round(estimatedArea * 0.16)} m`
+          },
+          {
+            name: 'Fita Alumínio Adesiva 50mm x 50m para Vedação de Dutos',
+            category: 'Rede de Dutos',
+            unit: 'un',
+            quantity: Math.max(4, Math.round(estimatedArea / 70)),
+            defaultPrice: 48.00,
+            keywords: ['fita aluminio', 'fita vedacao'],
+            reason: `Vedação hermética de juntas de dutos MPU classe SMACNA: ${Math.max(4, Math.round(estimatedArea / 70))} rolos`
+          },
+          {
+            name: 'Selante Acrílico Mastic para Dutos SMACNA Balde 5kg',
+            category: 'Rede de Dutos',
+            unit: 'un',
+            quantity: Math.max(2, Math.round(estimatedArea / 180)),
+            defaultPrice: 195.00,
+            keywords: ['mastic', 'selante duto', 'smacna'],
+            reason: `Vedação interna e estanqueidade de colares e plenums: ${Math.max(2, Math.round(estimatedArea / 180))} baldes`
+          },
+          {
+            name: 'Tirante Roscado Galvanizado 3/8 pol Barra 3m com Porcas e Arruelas',
+            category: 'Fixação e Suportação',
+            unit: 'un',
+            quantity: Math.max(15, Math.round(estimatedArea * 0.10)),
+            defaultPrice: 28.50,
+            keywords: ['tirante 3/8', 'barra roscada'],
+            reason: `Sustentação aérea e ancoragem mecânica em laje: ${Math.max(15, Math.round(estimatedArea * 0.10))} barras`
+          },
+          {
+            name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
+            category: 'Elétrica',
+            unit: 'm',
+            quantity: Math.max(40, Math.round(estimatedArea * 0.18)),
+            defaultPrice: 15.00,
+            keywords: ['cabo 10 mm', 'cabo flexivel 10mm'],
+            reason: `Alimentação elétrica principal dos quadros de HVAC e condensadoras: ${Math.max(40, Math.round(estimatedArea * 0.18))} m`
+          },
+          {
+            name: 'Disjuntor Termomagnético Bipolar 32A DIN Curva C',
+            category: 'Elétrica',
+            unit: 'un',
+            quantity: Math.max(4, Math.round(thermalLoad.totalTR / 5)),
+            defaultPrice: 42.00,
+            keywords: ['disjuntor 32a', 'disjuntor din 32a'],
+            reason: `Proteção individual dos circuitos de climatização: ${Math.max(4, Math.round(thermalLoad.totalTR / 5))} un`
+          },
+          {
+            name: 'Exaustor Mecânico Centrífugo Sirocco em Linha para Sanitários 300 m³/h',
+            category: 'Ventilação e Exaustão',
+            unit: 'un',
+            quantity: Math.max(2, Math.round(estimatedArea / 280)),
+            defaultPrice: 850.00,
+            keywords: ['exaustor sirocco', 'exaustor linha'],
+            reason: `Renovação e extração de ar de sanitários e copas conforme NBR 16401-3: ${Math.max(2, Math.round(estimatedArea / 280))} un`
+          }
+        ];
+      }
     } else {
       // Instalações Gerais Civis / Elétricas
       requiredItems = [
@@ -580,57 +1018,132 @@ export class AIAnalysisService {
     const materialsTotal = Number(budgetMaterials.reduce((acc, m) => acc + m.subtotal, 0).toFixed(2));
 
     // Composição de Serviços e Mão de Obra Especializada
-    const defaultServices = isHVAC ? [
-      {
-        category: 'MÃO DE OBRA',
-        description: 'Montagem mecânica da rede de dutos MPU, caixas plenum e difusores de ar',
-        quantity: Math.max(80, Math.round(estimatedArea * 0.18)),
-        unit: 'h',
-        unitPrice: 85.00,
-        notes: 'Montadores certificados com padrão SMACNA'
-      },
-      {
-        category: 'MÃO DE OBRA',
-        description: 'Instalação de tubulação frigorígena, brasagem e isolamento térmico',
-        quantity: Math.max(60, Math.round(estimatedArea * 0.12)),
-        unit: 'h',
-        unitPrice: 95.00,
-        notes: 'Equipe especializada em sistemas VRF/VRV e Expansão Direta'
-      },
-      {
-        category: 'SERVIÇOS TÉCNICOS',
-        description: 'Ensaio de estanqueidade, pressurização com N2 (450 PSI) e desidratação em alto vácuo',
-        quantity: 1,
-        unit: 'gl',
-        unitPrice: 3800.00,
-        notes: 'Com emissão de certificado e protocolo de teste'
-      },
-      {
-        category: 'ENGENHARIA',
-        description: 'Balanceamento de ar (TAB), parametrização BMS, start-up e comissionamento final',
-        quantity: 1,
-        unit: 'gl',
-        unitPrice: 4500.00,
-        notes: 'Acompanhamento do engenheiro responsável e emissão de ART/RRT'
+    let defaultServices = [];
+
+    if (isHVAC) {
+      if (eqData.hasExplicitEquipment) {
+        defaultServices = [
+          {
+            category: 'MÃO DE OBRA',
+            description: `Instalação mecânica, montagem e fixação aérea de ${eqData.numBuiltIn} evaporadoras Built-In dutadas de grande porte em forro`,
+            quantity: eqData.numBuiltIn,
+            unit: 'un',
+            unitPrice: 8500.00,
+            notes: 'Inclui içamento, nivelamento milimétrico, ancoragem antivibratória e drenagem'
+          },
+          {
+            category: 'MÃO DE OBRA',
+            description: `Instalação e montagem de ${eqData.numCassete} unidade evaporadora Cassete 4 Vias (48.000 BTU/h)`,
+            quantity: eqData.numCassete,
+            unit: 'un',
+            unitPrice: 6000.00,
+            notes: 'Com painel decorativo e bomba de dreno embutida'
+          },
+          {
+            category: 'MÃO DE OBRA',
+            description: `Instalação e fixação de ${eqData.numHiWall} unidades evaporadoras Hi-Wall Inverter`,
+            quantity: eqData.numHiWall,
+            unit: 'un',
+            unitPrice: 3500.00,
+            notes: 'Fixação em alvenaria e conexão de dreno'
+          },
+          {
+            category: 'MÃO DE OBRA',
+            description: `Montagem de sistema de exaustão e ventilação mecânica Sicflux (${eqData.numExhaust} equipamentos e rede)`,
+            quantity: Math.max(1, eqData.numExhaust),
+            unit: 'cj',
+            unitPrice: 3250.00,
+            notes: 'Instalação do exaustor ACI-400 (2.900 m³/h), exaustor de linha e venezianas externas'
+          },
+          {
+            category: 'MÃO DE OBRA ESPECIALIZADA',
+            description: 'Execução de linhas frigorígenas em cobre, isolamento elastomérico, brasagem com purga de N2 e passagem em shafts técnicos',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 24000.00,
+            notes: 'Equipe especializada de refrigeristas com solda oxicombustível e padrão de qualidade SABRAR'
+          },
+          {
+            category: 'SERVIÇOS TÉCNICOS',
+            description: 'Ensaio de estanqueidade com Nitrogênio pressurizado a 450 PSI (24h) e desidratação em alto vácuo (< 500 microns)',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 8000.00,
+            notes: 'Com protocolo de vácuo em vacuômetro digital e certificação técnica de estanqueidade'
+          },
+          {
+            category: 'ENGENHARIA E COMISSIONAMENTO',
+            description: 'Balanceamento de vazões de ar (TAB), parametrização dos termostatos de parede, start-up de 8 máquinas e testes de performance',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 14000.00,
+            notes: 'Medição com anemômetro/balômetro e regulagem de dampers para conforto térmico e acústico'
+          },
+          {
+            category: 'ENGENHARIA',
+            description: 'Coordenação e supervisão técnica de engenharia mecânica, elaboração do As-Built executivo e recolhimento de ART',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 8000.00,
+            notes: 'Responsabilidade técnica formal perante o CREA/RJ'
+          }
+        ];
+      } else {
+        defaultServices = [
+          {
+            category: 'MÃO DE OBRA',
+            description: 'Montagem mecânica da rede de dutos MPU, caixas plenum e difusores de ar',
+            quantity: Math.max(80, Math.round(estimatedArea * 0.18)),
+            unit: 'h',
+            unitPrice: 85.00,
+            notes: 'Montadores certificados com padrão SMACNA'
+          },
+          {
+            category: 'MÃO DE OBRA',
+            description: 'Instalação de tubulação frigorígena, brasagem e isolamento térmico',
+            quantity: Math.max(60, Math.round(estimatedArea * 0.12)),
+            unit: 'h',
+            unitPrice: 95.00,
+            notes: 'Equipe especializada em sistemas VRF/VRV e Expansão Direta'
+          },
+          {
+            category: 'SERVIÇOS TÉCNICOS',
+            description: 'Ensaio de estanqueidade, pressurização com N2 (450 PSI) e desidratação em alto vácuo',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 3800.00,
+            notes: 'Com emissão de certificado e protocolo de teste'
+          },
+          {
+            category: 'ENGENHARIA',
+            description: 'Balanceamento de ar (TAB), parametrização BMS, start-up e comissionamento final',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 4500.00,
+            notes: 'Acompanhamento do engenheiro responsável e emissão de ART/RRT'
+          }
+        ];
       }
-    ] : [
-      {
-        category: 'MÃO DE OBRA',
-        description: 'Mão de obra para execução civil e instalações',
-        quantity: 120,
-        unit: 'h',
-        unitPrice: 75.00,
-        notes: 'Equipe de campo especializada'
-      },
-      {
-        category: 'ENGENHARIA',
-        description: 'Gestão técnica de obra, comissionamento e ART',
-        quantity: 1,
-        unit: 'gl',
-        unitPrice: 3200.00,
-        notes: 'Responsabilidade técnica'
-      }
-    ];
+    } else {
+      defaultServices = [
+        {
+          category: 'MÃO DE OBRA',
+          description: 'Mão de obra para execução civil e instalações',
+          quantity: 120,
+          unit: 'h',
+          unitPrice: 75.00,
+          notes: 'Equipe de campo especializada'
+        },
+        {
+          category: 'ENGENHARIA',
+          description: 'Gestão técnica de obra, comissionamento e ART',
+          quantity: 1,
+          unit: 'gl',
+          unitPrice: 3200.00,
+          notes: 'Responsabilidade técnica'
+        }
+      ];
+    }
 
     const totalServicesCost = Number(defaultServices.reduce((acc, s) => acc + (s.quantity * s.unitPrice), 0).toFixed(2));
     const totalFinalCost = Number((materialsTotal + totalServicesCost).toFixed(2));

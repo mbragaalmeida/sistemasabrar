@@ -1,34 +1,48 @@
 import { db } from './connection.js';
 import { SABRAR_ECONOMIC_BASE_ITEMS } from '../services/sabrarEconomicBase.js';
 
+export function isNonMaterial(it) {
+  // 1. Exclui categorias inteiras que não são materiais (Mão de Obra e Logística/ADM)
+  if (it.category === 'Administrativo / logística') return true;
+  if (it.category === 'Mão de obra') return true;
+
+  const itemLower = it.item.toLowerCase();
+  const unitLower = (it.unit || '').toLowerCase();
+
+  // 2. Exclui custos administrativos, combustíveis, diárias, salários, taxas
+  if (/(gasolina|alimentação|hospedagem|passagem|salário|diária|supervisor|engenheiro|art|as built|databook|gem|manual)/i.test(itemLower)) return true;
+
+  // 3. Exclui serviços técnicos, manutenção e limpeza
+  if (/(limpeza de duto|pintura dos duto|remanejamento|teste de estanqueidade|interligações elétricas|verba de manutenção)/i.test(itemLower)) return true;
+  if (itemLower === 'tab' || itemLower === 'remanejamento') return true;
+
+  // 4. Exclui locações de equipamentos e veículos
+  if (/(andaime|carro \(strada\)|içamento|plataforma elevatória|picagem\/trepanação)/i.test(itemLower)) return true;
+
+  // 5. Exclui taxas horárias e serviços embutidos
+  if (/(horario comercial|horario extra|residencial alto padrão)/i.test(itemLower)) return true;
+  if (/(capacidade total das evaporadoras|infra \(distância)/i.test(itemLower)) return true;
+
+  // 6. Unidades de tempo não pertencem a materiais físicos
+  if (unitLower === 'mês' || unitLower === 'diária' || unitLower === 'hora' || unitLower === 'h') return true;
+
+  return false;
+}
+
 export async function migrateMaterialsToSabrarBase() {
-  console.log('[Migration] Iniciando migração para a Base Oficial SABRAR...');
-  console.log(`[Migration] Total de itens na base econômica: ${SABRAR_ECONOMIC_BASE_ITEMS.length}`);
+  console.log('[Migration] Iniciando filtro rigoroso da Base Oficial SABRAR (Apenas Materiais Físicos)...');
+  
+  const genuineMaterials = SABRAR_ECONOMIC_BASE_ITEMS.filter(it => !isNonMaterial(it));
+  console.log(`[Migration] Total original: ${SABRAR_ECONOMIC_BASE_ITEMS.length} | Materiais físicos identificados: ${genuineMaterials.length} | Itens não-materiais excluídos: ${SABRAR_ECONOMIC_BASE_ITEMS.length - genuineMaterials.length}`);
 
-  // 1. Exclui qualquer material que não siga a nova diretriz oficial Sabrar (ex: MAT-HVAC-...)
-  const deleteResult = await db.query("DELETE FROM materials WHERE code NOT LIKE 'SAB-%'");
-  console.log(`[Migration] Materiais legados/antigos removidos.`);
+  // 1. Limpa completamente a tabela de materiais para garantir que nenhum item legado ou não-material permaneça
+  await db.query("DELETE FROM materials");
+  console.log(`[Migration] Tabela de materiais resetada.`);
 
-  // 2. Verifica se os materiais SAB já estão inseridos
-  const existingCountRes = await db.query("SELECT COUNT(*) as count FROM materials WHERE code LIKE 'SAB-%'");
-  const existingCount = parseInt(existingCountRes.rows?.[0]?.count || 0, 10);
-  console.log(`[Migration] Materiais SAB já existentes: ${existingCount}`);
-
-  if (existingCount >= SABRAR_ECONOMIC_BASE_ITEMS.length) {
-    console.log('[Migration] Base Oficial SABRAR já está completamente populada.');
-    return;
-  }
-
-  // Se houver registros parciais de SAB, limpa para reinserção consistente
-  if (existingCount > 0) {
-    await db.query("DELETE FROM materials WHERE code LIKE 'SAB-%'");
-    console.log('[Migration] Registros parciais anteriores limpos.');
-  }
-
-  // 3. Insere todos os 906 registros oficiais em lotes de 50 para máxima performance
+  // 2. Insere todos os materiais físicos em lotes de 50
   const batchSize = 50;
-  for (let i = 0; i < SABRAR_ECONOMIC_BASE_ITEMS.length; i += batchSize) {
-    const batch = SABRAR_ECONOMIC_BASE_ITEMS.slice(i, i + batchSize);
+  for (let i = 0; i < genuineMaterials.length; i += batchSize) {
+    const batch = genuineMaterials.slice(i, i + batchSize);
     
     const valuePlaceholders = [];
     const params = [];
@@ -64,7 +78,7 @@ export async function migrateMaterialsToSabrarBase() {
 
   const finalCountRes = await db.query('SELECT COUNT(*) as count FROM materials');
   const finalCount = parseInt(finalCountRes.rows?.[0]?.count || 0, 10);
-  console.log(`[Migration] Migração concluída com sucesso! Total atual na Base Central: ${finalCount} materiais.`);
+  console.log(`[Migration] Migração concluída com sucesso! Total atual na Base Central: ${finalCount} materiais físicos reais.`);
 }
 
 // Execução direta via node

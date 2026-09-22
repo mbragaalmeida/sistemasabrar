@@ -7311,12 +7311,32 @@ const MATERIAL_KEYWORDS = [
   'silicone', 'fita', 'limpeza'
 ];
 
+export function isNonMaterial(it) {
+  if (!it) return true;
+  if (it.category === 'Administrativo / logística') return true;
+  if (it.category === 'Mão de obra') return true;
+
+  const itemLower = (it.item || '').toLowerCase();
+  const unitLower = (it.unit || '').toLowerCase();
+
+  if (/(gasolina|alimentação|hospedagem|passagem|salário|diária|supervisor|engenheiro|art|as built|databook|gem|manual)/i.test(itemLower)) return true;
+  if (/(limpeza de duto|pintura dos duto|remanejamento|teste de estanqueidade|interligações elétricas|verba de manutenção)/i.test(itemLower)) return true;
+  if (itemLower === 'tab' || itemLower === 'remanejamento') return true;
+  if (/(andaime|carro \(strada\)|içamento|plataforma elevatória|picagem\/trepanação)/i.test(itemLower)) return true;
+  if (/(horario comercial|horario extra|residencial alto padrão)/i.test(itemLower)) return true;
+  if (/(capacidade total das evaporadoras|infra \(distância)/i.test(itemLower)) return true;
+  if (unitLower === 'mês' || unitLower === 'diária' || unitLower === 'hora' || unitLower === 'h') return true;
+
+  return false;
+}
+
 /**
- * Localiza o item e preço ideal na Base Econômica Sabrar conforme as 5 regras de negócio
- * 
- * @param {string} itemName Nome ou descrição técnica do material identificado
- * @param {Object} options Critérios de refinamento
- * @param {string} [options.context] Contexto/sistema da obra (ex: 'AC - DIRETA - COBRE', 'EX Cozinha', 'Pressurização')
+ * Consulta a Base Econômica Oficial Sabrar para precificação e correspondência técnica.
+ * Implementa integralmente as 5 regras da "BASE ECONÔMICA SABRar — COMPLEMENTO DO AGENTE".
+ *
+ * @param {string} itemName Nome do material ou serviço identificado pelo agente
+ * @param {Object} options Critérios técnicos adicionais
+ * @param {string} [options.context] Contexto do sistema (ex: 'AC - DIRETA - COBRE', 'EX_AE')
  * @param {string} [options.unit] Unidade de medida esperada (ex: 'm', 'm²', 'unid', 'kg', 'mês')
  * @param {string} [options.spec] Especificação complementar (bitola, espessura, potência)
  * @returns {Object} Resultado da busca com preço, unidade, contexto e status
@@ -7337,6 +7357,9 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
   const candidates = [];
 
   for (const entry of SABRAR_ECONOMIC_BASE_ITEMS) {
+    // Rejeita custos administrativos, logística e serviços não materiais (Diretriz SABRAR)
+    if (isNonMaterial(entry)) continue;
+
     // Regra 4: Preço zero não é preço válido
     if (!entry.price || entry.price <= 0) continue;
 

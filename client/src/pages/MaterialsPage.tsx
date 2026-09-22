@@ -145,15 +145,13 @@ export const MaterialsPage: React.FC = () => {
           </button>
 
           {[
-            'Administrativo / logística',
-            'Automação',
             'Dutos',
-            'Elétrica',
-            'Hidráulica / acessórios',
             'Isolamento',
             'Linha frigorígena',
-            'Mão de obra',
+            'Hidráulica / acessórios',
+            'Elétrica',
             'Rede hidráulica',
+            'Automação',
             'Outros'
           ].map((cat) => (
             <button
