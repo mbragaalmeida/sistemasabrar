@@ -94,10 +94,15 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Unhandled Rejection]', reason);
 });
 
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 [SISTEMA SABRAR] Servidor rodando na porta ${PORT}`);
-  console.log(`📡 API pronta em: http://localhost:${PORT}/api/health`);
-  console.log(`=======================================================`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 [SISTEMA SABRAR] Servidor rodando na porta ${PORT}`);
+    console.log(`📡 API pronta em: http://localhost:${PORT}/api/health`);
+    console.log(`=======================================================`);
+  });
+}
+
+export { app };
+export default app;
 
