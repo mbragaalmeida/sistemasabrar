@@ -167,7 +167,7 @@ export class LearningService {
         SUM(hu.actual_consumed_qty) as total_actual_consumed_qty
       FROM historical_usage hu
       JOIN materials m ON hu.material_id = m.id
-      GROUP BY hu.material_id
+      GROUP BY m.id, m.code, m.name, m.category, m.unit
       ORDER BY occurrences DESC, total_actual_consumed_qty DESC
       LIMIT 15
     `).all();
