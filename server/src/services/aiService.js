@@ -2,6 +2,7 @@ import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
 import { SABRAR_BUDGET_AGENT_SYSTEM_PROMPT, buildAgentContextPrompt } from '../prompts/budgetAgentPrompt.js';
 import { convertMaterialUnits } from '../utils/unitConversion.js';
+import { findSabrarEconomicPrice } from './sabrarEconomicBase.js';
 
 /**
  * SERVIÇO DE ANÁLISE E ORÇAMENTO DA IA — SISTEMA SABRAR
@@ -141,26 +142,55 @@ export class AIAnalysisService {
   /**
    * Encontra ou cria material correspondente na Base Central SABRAR (materials)
    */
-  static async findOrCreateMaterial(itemDef) {
+  static async findOrCreateMaterial(itemDef, systemContext = '') {
+    // Consulta a Base Econômica Oficial Sabrar para precificação e regras
+    const economic = findSabrarEconomicPrice(itemDef.name, {
+      context: systemContext,
+      unit: itemDef.unit,
+      spec: itemDef.spec
+    });
+
+    const officialPrice = economic.matched ? economic.price : (itemDef.defaultPrice || null);
+    const officialUnit = economic.matched ? economic.unit : (itemDef.unit || 'un');
+    const officialCategory = economic.matched ? economic.category : (itemDef.category || 'Climatização');
+
     // 1. Tenta buscar por código se informado
     if (itemDef.code) {
       const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
-      if (byCode) return byCode;
+      if (byCode) {
+        if ((!byCode.reference_price || Number(byCode.reference_price) <= 0) && officialPrice) {
+          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, byCode.id);
+          byCode.reference_price = officialPrice;
+        }
+        return byCode;
+      }
     }
 
     // 2. Tenta buscar por nome exato
     let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
-    if (byName) return byName;
+    if (byName) {
+      if ((!byName.reference_price || Number(byName.reference_price) <= 0) && officialPrice) {
+        await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, byName.id);
+        byName.reference_price = officialPrice;
+      }
+      return byName;
+    }
 
     // 3. Tenta busca por similaridade / palavras-chave
     const keywords = itemDef.keywords || [];
     for (const kw of keywords) {
       const match = await db.prepare("SELECT * FROM materials WHERE LOWER(name) LIKE ? AND status = 'Ativo' LIMIT 1").get(`%${kw.toLowerCase()}%`);
-      if (match) return match;
+      if (match) {
+        if ((!match.reference_price || Number(match.reference_price) <= 0) && officialPrice) {
+          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(officialPrice, match.id);
+          match.reference_price = officialPrice;
+        }
+        return match;
+      }
     }
 
-    // 4. Se não existe, cria material oficial na Base Central SABRAR
-    const autoCode = itemDef.code || `MAT-HVAC-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
+    // 4. Se não existe, cria material oficial na Base Central SABRAR com preço oficial Sabrar
+    const autoCode = itemDef.code || `MAT-SABRAR-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
     const insertMat = db.prepare(`
       INSERT INTO materials (code, name, category, unit, reference_price, status)
       VALUES (?, ?, ?, ?, ?, 'Ativo')
@@ -168,9 +198,9 @@ export class AIAnalysisService {
     const res = await insertMat.run(
       autoCode,
       itemDef.name,
-      itemDef.category || 'Climatização',
-      itemDef.unit || 'un',
-      itemDef.defaultPrice || 0.0
+      officialCategory,
+      officialUnit,
+      officialPrice
     );
 
     return await db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
@@ -194,6 +224,18 @@ export class AIAnalysisService {
 
     // Identifica Modo A vs Modo B (Seção 35)
     const hvacMode = this.detectHVACMode(normalizedDoc);
+
+    // Identifica Contexto da Obra para a Base Econômica SABRAR (Regra 3)
+    let systemContext = 'AC - DIRETA - COBRE';
+    if (normalizedDoc.includes('cozinha')) {
+      systemContext = 'EX Cozinha';
+    } else if (normalizedDoc.includes('pressuriz')) {
+      systemContext = 'Pressurização';
+    } else if (normalizedDoc.includes('exaust') || normalizedDoc.includes('ventilacao')) {
+      systemContext = 'EX_AE';
+    } else if (normalizedDoc.includes('chiller') || normalizedDoc.includes('fancoil') || normalizedDoc.includes('agua gelada') || normalizedDoc.includes('indireta')) {
+      systemContext = 'AC - INDIRETA - AGUA';
+    }
 
     // Estimativa da área da obra
     const areaMatch = normalizedDoc.match(/(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros quadrados)/i);
@@ -415,7 +457,7 @@ export class AIAnalysisService {
 
     // Processa cada material necessário, buscando na Base Central SABRAR
     for (const itemDef of requiredItems) {
-      const mat = await this.findOrCreateMaterial(itemDef);
+      const mat = await this.findOrCreateMaterial(itemDef, systemContext);
       const technicalQuantity = itemDef.quantity;
 
       // Aplica ajuste empírico histórico se houver calibração anterior

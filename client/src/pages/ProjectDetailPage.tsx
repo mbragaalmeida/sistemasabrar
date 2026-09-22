@@ -242,9 +242,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             {budget && hasPermission(['orcamento']) && (
               <button
                 onClick={() => setIsProposalModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold active:scale-95 transition-all whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-dark-800 hover:bg-slate-200 dark:hover:bg-dark-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-dark-700 text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-xs"
               >
-                <Printer className="w-4 h-4 text-sabrar-400" />
+                <Printer className="w-4 h-4 text-emerald-600 dark:text-sabrar-400" />
                 <span>Proposta Cliente</span>
               </button>
             )}
@@ -262,11 +262,13 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         </div>
 
         {/* Tab Navigation (Filtrada por perfil para foco e sem duplicidade) */}
-        <div className="flex items-center gap-1.5 border-t border-dark-750 pt-3 overflow-x-auto text-xs font-bold text-slate-400">
+        <div className="flex items-center gap-1.5 border-t border-slate-200 dark:border-dark-750 pt-3 overflow-x-auto text-xs font-bold">
           <button
             onClick={() => setActiveTab('geral')}
             className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${
-              activeTab === 'geral' ? 'bg-sabrar-950/90 text-sabrar-300 border border-sabrar-500/40' : 'hover:bg-dark-800 hover:text-white'
+              activeTab === 'geral'
+                ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
             }`}
           >
             Visão Geral & Docs
@@ -275,13 +277,19 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           {hasPermission(['orcamento']) && (
             <button
               onClick={() => setActiveTab('orcamento')}
-              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1 ${
-                activeTab === 'orcamento' ? 'bg-sabrar-950/90 text-sabrar-300 border border-sabrar-500/40' : 'hover:bg-dark-800 hover:text-white'
+              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                activeTab === 'orcamento'
+                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
               <span>Orçamento & Revisão</span>
               {editableMaterials.length > 0 && (
-                <span className="text-[10px] px-1.5 rounded-full bg-dark-800 text-sabrar-300 border border-dark-700">
+                <span className={`text-[10px] px-1.5 rounded-full border ${
+                  activeTab === 'orcamento'
+                    ? 'bg-emerald-100 dark:bg-sabrar-900 text-emerald-800 dark:text-sabrar-200 border-emerald-300 dark:border-sabrar-700'
+                    : 'bg-slate-200 dark:bg-dark-800 text-slate-700 dark:text-slate-400 border-slate-300 dark:border-dark-700'
+                }`}>
                   {editableMaterials.length}
                 </span>
               )}
@@ -291,12 +299,18 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           {hasPermission(['orcamento', 'engenharia', 'almoxarifado']) && (
             <button
               onClick={() => setActiveTab('solicitacoes')}
-              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1 ${
-                activeTab === 'solicitacoes' ? 'bg-sabrar-950/90 text-sabrar-300 border border-sabrar-500/40' : 'hover:bg-dark-800 hover:text-white'
+              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                activeTab === 'solicitacoes'
+                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
               <span>Solicitações da Obra</span>
-              <span className="text-[10px] px-1.5 rounded-full bg-dark-800 text-slate-400 border border-dark-700">
+              <span className={`text-[10px] px-1.5 rounded-full border ${
+                activeTab === 'solicitacoes'
+                  ? 'bg-emerald-100 dark:bg-sabrar-900 text-emerald-800 dark:text-sabrar-200 border-emerald-300 dark:border-sabrar-700'
+                  : 'bg-slate-200 dark:bg-dark-800 text-slate-700 dark:text-slate-400 border-slate-300 dark:border-dark-700'
+              }`}>
                 {data.requests?.length || 0}
               </span>
             </button>
@@ -306,7 +320,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             <button
               onClick={() => setActiveTab('movimentacoes')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${
-                activeTab === 'movimentacoes' ? 'bg-sabrar-950/90 text-sabrar-300 border border-sabrar-500/40' : 'hover:bg-dark-800 hover:text-white'
+                activeTab === 'movimentacoes'
+                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
               Almoxarifado & Devoluções
@@ -317,10 +333,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             <button
               onClick={() => setActiveTab('comparativo')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'comparativo' ? 'bg-sabrar-950/90 text-sabrar-300 border border-sabrar-500/40 font-bold' : 'hover:bg-dark-800 hover:text-white'
+                activeTab === 'comparativo'
+                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
-              <BarChart2 className="w-3.5 h-3.5 text-sabrar-400" />
+              <BarChart2 className="w-3.5 h-3.5 text-emerald-600 dark:text-sabrar-400" />
               <span>Previsto × Realizado</span>
             </button>
           )}
@@ -521,14 +539,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </button>
               <button
                 onClick={handleAddMaterialRow}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-dark-700 bg-dark-850 hover:bg-dark-800 text-slate-200 text-xs font-bold"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-dark-700 bg-slate-100 dark:bg-dark-850 hover:bg-slate-200 dark:hover:bg-dark-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ Material</span>
               </button>
               <button
                 onClick={handleAddServiceRow}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-dark-700 bg-dark-850 hover:bg-dark-800 text-slate-200 text-xs font-bold"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-dark-700 bg-slate-100 dark:bg-dark-850 hover:bg-slate-200 dark:hover:bg-dark-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ Serviço</span>

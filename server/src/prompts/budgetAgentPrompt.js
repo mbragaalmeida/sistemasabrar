@@ -5,6 +5,10 @@
  * para a análise técnica de projetos e geração de orçamentos de materiais na SABRAR.
  */
 
+import { SABRAR_ECONOMIC_BASE_TEXT } from '../services/sabrarEconomicBase.js';
+
+export { SABRAR_ECONOMIC_BASE_TEXT };
+
 export const SABRAR_BUDGET_AGENT_SYSTEM_PROMPT = `SYSTEM PROMPT — AGENTE DE IA PARA LEVANTAMENTO DE MATERIAIS E ORÇAMENTO SABRAR
 1. IDENTIDADE E FUNÇÃO
 
@@ -922,7 +926,11 @@ Ativado quando a obra possuir apenas plantas civis, arquitetônicas ou layouts s
   6. Infraestrutura Elétrica e Automação:
      - Cabos de força e comando (cabo flexível 4mm², 6mm² ou 10mm² conforme capacidade das máquinas), disjuntores termomagnéticos bipolares/tripolares e termostatos/sensores de controle de zona.
   7. Exaustão Mecânica Sanitários/Copas:
-     - Exaustores mecânicos em linha com grelhas de captação e venezianas de sobrepressão externa para renovação e descarte de ar conforme NBR 16401-3.`;
+     - Exaustores mecânicos em linha com grelhas de captação e venezianas de sobrepressão externa para renovação e descarte de ar conforme NBR 16401-3.
+
+=======================================================
+${SABRAR_ECONOMIC_BASE_TEXT}
+=======================================================`;
 
 /**
  * Monta o payload completo do prompt injetando o contexto dinâmico do projeto,

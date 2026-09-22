@@ -2,6 +2,7 @@ import express from 'express';
 import { AIAnalysisService } from '../services/aiService.js';
 import { LearningService } from '../services/learningService.js';
 import { db } from '../db/connection.js';
+import { SABRAR_ECONOMIC_BASE_ITEMS } from '../services/sabrarEconomicBase.js';
 
 export const aiRouter = express.Router();
 
@@ -52,11 +53,37 @@ aiRouter.get('/metrics', async (req, res) => {
   }
 });
 
+
 // Benchmarks históricos e contexto estruturado para enriquecer o Prompt do Agente de IA
 aiRouter.get('/agent-context', async (req, res) => {
   try {
     const context = await LearningService.getAgentContext();
+    context.economicBase = {
+      totalRecords: SABRAR_ECONOMIC_BASE_ITEMS.length,
+      categories: [...new Set(SABRAR_ECONOMIC_BASE_ITEMS.map(i => i.category))],
+      contexts: [...new Set(SABRAR_ECONOMIC_BASE_ITEMS.map(i => i.context))]
+    };
     res.json(context);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Consulta registros da Base Econômica Oficial Sabrar
+aiRouter.get('/economic-base', (req, res) => {
+  try {
+    const { category, context, q } = req.query;
+    let items = SABRAR_ECONOMIC_BASE_ITEMS;
+    if (category) items = items.filter(i => i.category === category);
+    if (context) items = items.filter(i => i.context === context);
+    if (q) {
+      const qNorm = q.toLowerCase();
+      items = items.filter(i => i.item.toLowerCase().includes(qNorm));
+    }
+    res.json({
+      total: items.length,
+      items: items.slice(0, 100)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

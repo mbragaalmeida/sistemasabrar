@@ -21,13 +21,13 @@ export const Header: React.FC<HeaderProps> = ({
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-30 bg-dark-900/95 backdrop-blur-md text-white border-b border-dark-750 px-3 sm:px-6 py-2.5 shadow-xl">
+    <header className="sticky top-0 z-30 bg-[#0B0F17]/95 backdrop-blur-md text-white border-b border-[#1E293B] px-3 sm:px-6 py-2.5 shadow-xl">
       <div className="flex items-center justify-between gap-2 max-w-7xl mx-auto">
         {/* Left: Mobile Menu Toggle & Brand Logo Oficial */}
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors md:hidden focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#1E293B] transition-colors md:hidden focus:outline-none focus:ring-2 focus:ring-sabrar-500"
             aria-label="Abrir menu"
           >
             <Menu className="w-5 h-5" />
@@ -46,9 +46,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center: Global Search Bar Trigger */}
         <button
           onClick={onOpenSearch}
-          className="hidden sm:flex items-center gap-2 bg-dark-850 hover:bg-dark-800 text-slate-400 hover:text-white px-3.5 py-1.5 rounded-2xl border border-dark-700/80 text-xs transition-all w-48 md:w-64 lg:w-80 shadow-inner group"
+          className="hidden sm:flex items-center gap-2 bg-[#131B2E] hover:bg-[#1E293B] text-slate-300 hover:text-white px-3.5 py-1.5 rounded-2xl border border-[#1E293B] text-xs transition-all w-48 md:w-64 lg:w-80 shadow-inner group"
         >
-          <Search className="w-4 h-4 text-slate-500 group-hover:text-sabrar-400 transition-colors" />
+          <Search className="w-4 h-4 text-slate-400 group-hover:text-sabrar-400 transition-colors" />
           <span className="truncate">Buscar em todo o sistema...</span>
         </button>
 
@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Mobile Search Icon */}
           <button
             onClick={onOpenSearch}
-            className="sm:hidden p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+            className="sm:hidden p-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#1E293B] transition-colors"
             title="Buscar"
           >
             <Search className="w-5 h-5" />
@@ -67,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="relative">
             <button
               onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-              className="flex items-center gap-2 bg-dark-850 hover:bg-dark-800 text-white pl-2 pr-2.5 py-1.5 rounded-2xl border border-dark-700 text-xs transition-all shadow-sm"
+              className="flex items-center gap-2 bg-[#131B2E] hover:bg-[#1E293B] text-white pl-2 pr-2.5 py-1.5 rounded-2xl border border-[#1E293B] text-xs transition-all shadow-sm"
               title="Trocar perfil de acesso rápido"
             >
               <div className="w-6 h-6 rounded-lg bg-sabrar-500/20 text-sabrar-400 border border-sabrar-500/30 flex items-center justify-center font-bold text-xs shrink-0">
@@ -86,8 +86,8 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Dropdown Menu */}
             {roleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-dark-900 rounded-2xl shadow-2xl border border-dark-700 py-2 z-50 text-slate-100 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="px-3 py-2 border-b border-dark-750">
+              <div className="absolute right-0 mt-2 w-64 bg-[#0F172A] rounded-2xl shadow-2xl border border-[#1E293B] py-2 z-50 text-slate-100 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="px-3 py-2 border-b border-[#1E293B]">
                   <div className="text-xs font-bold uppercase tracking-wider text-sabrar-400">
                     Alternar Perfil (Simulação)
                   </div>
@@ -109,13 +109,13 @@ export const Header: React.FC<HeaderProps> = ({
                         className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
                           isSelected
                             ? 'bg-sabrar-950/90 text-sabrar-300 font-semibold border border-sabrar-500/40'
-                            : 'hover:bg-dark-800 text-slate-300'
+                            : 'hover:bg-[#1E293B] text-slate-300'
                         }`}
                       >
                         <img
                           src={u.avatar}
                           alt={u.name}
-                          className="w-7 h-7 rounded-full object-cover border border-dark-700 shrink-0"
+                          className="w-7 h-7 rounded-full object-cover border border-[#1E293B] shrink-0"
                         />
                         <div className="flex-1 truncate">
                           <div className="font-bold text-white truncate">{u.name}</div>
@@ -127,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                   })}
                 </div>
 
-                <div className="p-1 border-t border-dark-750 mt-1">
+                <div className="p-1 border-t border-[#1E293B] mt-1">
                   <button
                     onClick={() => {
                       setRoleDropdownOpen(false);
@@ -146,21 +146,21 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Botão Alternar Tema Claro / Escuro */}
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#1E293B] transition-colors"
             title={theme === 'dark' ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
             aria-label="Alternar tema de cores"
           >
             {theme === 'dark' ? (
               <Sun className="w-5 h-5 text-amber-400 hover:rotate-45 transition-transform" />
             ) : (
-              <Moon className="w-5 h-5 text-indigo-500 hover:-rotate-12 transition-transform" />
+              <Moon className="w-5 h-5 text-indigo-400 hover:-rotate-12 transition-transform" />
             )}
           </button>
 
           {/* Notifications Bell with Unread Badge */}
           <button
             onClick={onOpenNotifications}
-            className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+            className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#1E293B] transition-colors"
             title="Notificações"
           >
             <Bell className="w-5 h-5" />

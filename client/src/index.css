@@ -14,15 +14,15 @@
 }
 
 :root.light, body.light {
-  --bg-dark-950: #F1F5F9;
+  --bg-dark-950: #F8FAFC;
   --bg-dark-900: #FFFFFF;
-  --bg-dark-850: #F8FAFC;
+  --bg-dark-850: #F1F5F9;
   --bg-dark-800: #E2E8F0;
   --border-dark-750: #E2E8F0;
   --border-dark-700: #CBD5E1;
   --text-dark-600: #64748B;
   --text-dark-500: #94A3B8;
-  background-color: #F1F5F9;
+  background-color: #F8FAFC;
   color: #0F172A;
 }
 
@@ -45,140 +45,169 @@
 }
 
 /* ========================================================
-   TEMA CLARO (LIGHT THEME) — 100% ROBUSTO E COMPLETO
+   TEMA CLARO (LIGHT THEME) — REFINADO, ELEGANTE E ROBUSTO
    ======================================================== */
 .light,
 html.light,
 body.light {
-  background-color: #F1F5F9 !important;
+  background-color: #F8FAFC !important;
   color: #0F172A !important;
   color-scheme: light;
 }
 
-/* Fundo da tela inteira (canvas e containers principais) */
+/* Fundo geral da aplicação */
 .light #root,
-.light .min-h-screen,
-.light main,
-.light .bg-dark-950:not(aside) {
-  background-color: #F1F5F9 !important;
-}
-
-/* Cards principais, seções elevadas e modais em BRANCO PURO */
-.light .bg-dark-900:not(header):not(aside),
-.light [class*="bg-dark-900"]:not(header):not(aside) {
-  background-color: #FFFFFF !important;
-}
-
-/* Subcards, containers internos, inputs e tabelas em cinza clarinho */
-.light .bg-dark-850,
-.light [class*="bg-dark-850"] {
+.light .min-h-screen {
   background-color: #F8FAFC !important;
 }
 
-/* Botões neutros, badges secundários e chips */
-.light .bg-dark-800,
-.light [class*="bg-dark-800"] {
-  background-color: #E2E8F0 !important;
+/* ========================================================
+   HEADER INTACTO — SEMPRE ESCURO E EXECUTIVO EM AMBOS OS TEMAS
+   ======================================================== */
+header,
+.light header,
+html.light header {
+  background-color: rgba(11, 15, 23, 0.98) !important;
+  border-color: #1E293B !important;
+  color: #F8FAFC !important;
 }
 
-/* Bordas em cinza suave e elegante */
-.light .border-dark-750:not(header):not(aside),
-.light [class*="border-dark-750"]:not(header):not(aside) {
-  border-color: #E2E8F0 !important;
+header .text-white,
+.light header .text-white {
+  color: #FFFFFF !important;
 }
 
-.light .border-dark-700:not(header):not(aside),
-.light [class*="border-dark-700"]:not(header):not(aside) {
-  border-color: #CBD5E1 !important;
+header .text-slate-400,
+.light header .text-slate-400 {
+  color: #94A3B8 !important;
 }
 
-/* Tipografia de alto contraste no tema claro (fora de header e sidebar) */
-.light main .text-white,
-.light [role="main"] .text-white,
-.light .bg-dark-900 .text-white,
-.light .bg-dark-850 .text-white,
-.light table .text-white,
-.light h1.text-white,
-.light h2.text-white,
-.light h3.text-white,
-.light h4.text-white,
-.light p.text-white,
-.light span.text-white:not([class*="bg-sabrar"]):not([class*="bg-rose"]):not([class*="bg-teal"]) {
+header .text-slate-300,
+.light header .text-slate-300 {
+  color: #CBD5E1 !important;
+}
+
+header input,
+.light header input {
+  background-color: #131B2E !important;
+  color: #F8FAFC !important;
+  border-color: #1E293B !important;
+}
+
+/* ========================================================
+   TIPOGRAFIA & CONTRASTE NO MODO DIURNO (EXCETO HEADER)
+   ======================================================== */
+.light h1:not(header *),
+.light h2:not(header *),
+.light h3:not(header *),
+.light h4:not(header *),
+.light h5:not(header *),
+.light h6:not(header *) {
   color: #0F172A !important;
 }
 
-.light main .text-slate-100,
-.light .bg-dark-900 .text-slate-100 {
+/* Inversão seletiva de text-white para dark text (preserva botões coloridos) */
+.light .text-white:not(header *):not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]) {
   color: #0F172A !important;
 }
 
-.light main .text-slate-200,
-.light .bg-dark-900 .text-slate-200 {
+.light .text-slate-100:not(header *) {
+  color: #0F172A !important;
+}
+
+.light .text-slate-200:not(header *) {
   color: #1E293B !important;
 }
 
-.light main .text-slate-300,
-.light .bg-dark-900 .text-slate-300 {
+.light .text-slate-300:not(header *) {
   color: #334155 !important;
 }
 
-.light main .text-slate-400,
-.light .bg-dark-900 .text-slate-400 {
+.light .text-slate-400:not(header *) {
   color: #64748B !important;
 }
 
-.light main .text-slate-500,
-.light .bg-dark-900 .text-slate-500 {
-  color: #94A3B8 !important;
+.light .text-slate-500:not(header *) {
+  color: #64748B !important;
 }
 
-/* Inputs, selects e textareas no tema claro */
-.light input:not([type="checkbox"]):not([type="radio"]),
-.light select,
-.light textarea {
-  background-color: #FFFFFF !important;
-  color: #0F172A !important;
-  border-color: #CBD5E1 !important;
-}
-
-.light input::placeholder,
-.light textarea::placeholder {
-  color: #94A3B8 !important;
-}
-
-/* Preserva texto branco em botões com cores de destaque */
+/* Preserva texto branco puro em botões com cores de destaque */
 .light button[class*="bg-sabrar-"],
 .light button[class*="bg-sabrar-"] *,
-.light button[class*="bg-teal-"],
-.light button[class*="bg-teal-"] *,
-.light button[class*="bg-rose-"],
-.light button[class*="bg-rose-"] *,
 .light button[class*="bg-emerald-"],
 .light button[class*="bg-emerald-"] *,
+.light button[class*="bg-rose-"],
+.light button[class*="bg-rose-"] *,
+.light button[class*="bg-teal-"],
+.light button[class*="bg-teal-"] *,
 .light button[class*="bg-blue-"],
 .light button[class*="bg-blue-"] *,
 .light .bg-sabrar-600,
 .light .bg-sabrar-600 *,
-.light .bg-sabrar-500,
-.light .bg-sabrar-500 *,
+.light .bg-emerald-600,
+.light .bg-emerald-600 *,
 .light .bg-rose-600,
 .light .bg-rose-600 * {
   color: #FFFFFF !important;
 }
 
-/* Verde SABRAR refinado com alto contraste no tema claro */
+/* ========================================================
+   INPUTS, SELECTS E TEXTAREAS (MODO DIURNO)
+   ======================================================== */
+.light main input:not([type="checkbox"]):not([type="radio"]):not(header *),
+.light main select:not(header *),
+.light main textarea:not(header *),
+.light aside input:not([type="checkbox"]):not([type="radio"]) {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border-color: #CBD5E1 !important;
+}
+
+.light main input::placeholder,
+.light main textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* ========================================================
+   TABELAS (MODO DIURNO)
+   ======================================================== */
+.light table {
+  color: #1E293B !important;
+}
+
+.light thead,
+.light thead tr {
+  background-color: #F1F5F9 !important;
+}
+
+.light thead th {
+  color: #475569 !important;
+  border-color: #E2E8F0 !important;
+}
+
+.light tbody td {
+  border-color: #E2E8F0 !important;
+}
+
+.light tbody tr:hover {
+  background-color: #F8FAFC !important;
+}
+
+/* ========================================================
+   CORES DE MARCA E DESTAQUE NO TEMA CLARO
+   ======================================================== */
 .light .text-sabrar-400 {
-  color: #16A34A !important;
+  color: #15803D !important; /* Verde 700 para alto contraste */
 }
 
 .light .text-sabrar-300 {
-  color: #15803D !important;
+  color: #166534 !important; /* Verde 800 */
 }
 
 .light .bg-sabrar-950,
-.light .bg-sabrar-950\/70,
+.light .bg-sabrar-950\/90,
 .light .bg-sabrar-950\/80,
-.light .bg-sabrar-950\/90 {
+.light .bg-sabrar-950\/70 {
   background-color: #ECFDF5 !important;
   border-color: #A7F3D0 !important;
 }
@@ -187,42 +216,7 @@ body.light {
 .light .shadow-xl,
 .light .shadow-2xl,
 .light .shadow-md {
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04) !important;
-}
-
-/* Garante que o Header e o Sidebar mantenham a estética escura executiva */
-header.bg-dark-900,
-header[class*="bg-dark-900"],
-.light header {
-  background-color: rgba(18, 18, 18, 0.98) !important;
-  border-color: #2C2C2C !important;
-  color: #F8FAFC !important;
-}
-
-.light header .text-white {
-  color: #F8FAFC !important;
-}
-
-.light header .text-slate-400 {
-  color: #94A3B8 !important;
-}
-
-.light aside {
-  background-color: #0A0A0A !important;
-  border-color: #2C2C2C !important;
-  color: #E2E8F0 !important;
-}
-
-.light aside .text-slate-200 {
-  color: #E2E8F0 !important;
-}
-
-.light aside .text-slate-400 {
-  color: #94A3B8 !important;
-}
-
-.light aside .text-slate-500 {
-  color: #64748B !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03) !important;
 }
 
 /* Utilitários de área segura para iPhone e Android com notch */
@@ -244,9 +238,17 @@ header[class*="bg-dark-900"],
   background: #121212;
 }
 
+.light ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
 ::-webkit-scrollbar-thumb {
   background: #262626;
   border-radius: 9999px;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
 }
 
 ::-webkit-scrollbar-thumb:hover {
