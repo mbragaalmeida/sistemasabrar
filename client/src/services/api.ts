@@ -12,10 +12,15 @@ export async function fetchJson<T>(url: string, options?: RequestInit): Promise<
   if (!res.ok) {
     let errorMsg = 'Erro na requisição';
     try {
-      const data = await res.json();
-      errorMsg = data.error || errorMsg;
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        errorMsg = data.error || data.message || errorMsg;
+      } catch {
+        errorMsg = text || `Erro ${res.status}: ${res.statusText}`;
+      }
     } catch {
-      errorMsg = await res.text();
+      errorMsg = `Erro ${res.status}: ${res.statusText}`;
     }
     throw new Error(errorMsg);
   }

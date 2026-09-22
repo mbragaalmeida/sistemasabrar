@@ -9,9 +9,17 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { PDFParse } = require('pdf-parse');
 
-const uploadsDir = path.join(process.cwd(), 'server', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+import os from 'os';
+
+const uploadsDir = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(process.cwd(), 'server', 'uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[Uploads] Using temp dir fallback:', e.message);
 }
 
 const storage = multer.diskStorage({

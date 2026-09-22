@@ -10,9 +10,17 @@ import { db } from '../db/connection.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const uploadDir = path.resolve(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+import os from 'node:os';
+
+const uploadDir = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.resolve(__dirname, '../../uploads');
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[UploadDir] Using temp fallback:', e.message);
 }
 
 const storage = multer.diskStorage({

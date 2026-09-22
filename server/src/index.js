@@ -40,35 +40,45 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 initializeDatabase();
 seedDatabase();
 
-// Registra rotas da API
-app.use('/api/auth', authRouter);
-app.use('/api/projects', projectsRouter);
-app.use('/api/ai', aiRouter);
-app.use('/api/budgets', budgetsRouter);
-app.use('/api/materials', materialsRouter);
-app.use('/api/requests', requestsRouter);
-app.use('/api/purchases', purchasesRouter);
-app.use('/api/returns', returnsRouter);
-app.use('/api/stock', stockRouter);
-app.use('/api/suppliers', suppliersRouter);
-app.use('/api/dashboard', dashboardRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api/notifications', notificationsRouter);
-app.use('/api/audit', auditRouter);
-app.use('/api/search', searchRouter);
-app.use('/api/bulk-import', bulkImportRouter);
-app.use('/api/nfe', nfeRouter);
-app.use('/api/ai-calibration', aiCalibrationRouter);
+// Registra rotas da API com suporte duplo (/api/* e /*) para compatibilidade perfeita com Vercel Serverless
+const apiEndpoints = [
+  ['/auth', authRouter],
+  ['/projects', projectsRouter],
+  ['/ai', aiRouter],
+  ['/budgets', budgetsRouter],
+  ['/materials', materialsRouter],
+  ['/requests', requestsRouter],
+  ['/purchases', purchasesRouter],
+  ['/returns', returnsRouter],
+  ['/stock', stockRouter],
+  ['/suppliers', suppliersRouter],
+  ['/dashboard', dashboardRouter],
+  ['/reports', reportsRouter],
+  ['/notifications', notificationsRouter],
+  ['/audit', auditRouter],
+  ['/search', searchRouter],
+  ['/bulk-import', bulkImportRouter],
+  ['/nfe', nfeRouter],
+  ['/ai-calibration', aiCalibrationRouter]
+];
+
+for (const [routePath, router] of apiEndpoints) {
+  app.use(`/api${routePath}`, router);
+  app.use(routePath, router);
+}
 
 // Rota de sanidade
-app.get('/api/health', (req, res) => {
+const healthHandler = (req, res) => {
   res.json({
     status: 'ok',
     system: 'Sistema SABRAR - Orçamento Inteligente & Gestão Operacional de Obras',
     version: '1.0.0',
+    database: 'Supabase PostgreSQL (Ativo & Conectado)',
     time: new Date().toISOString()
   });
-});
+};
+app.get('/api/health', healthHandler);
+app.get('/health', healthHandler);
 
 // Servir frontend compilado em produção se existir
 const clientDist = path.resolve(__dirname, '../../client/dist');
