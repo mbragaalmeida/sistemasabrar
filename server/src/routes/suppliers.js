@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 export const suppliersRouter = express.Router();
 
 // Lista fornecedores (Seção 36)
-suppliersRouter.get('/', (req, res) => {
+suppliersRouter.get('/', async (req, res) => {
   try {
     const { search } = req.query;
     let query = 'SELECT * FROM suppliers WHERE 1=1';
@@ -17,7 +17,7 @@ suppliersRouter.get('/', (req, res) => {
 
     query += ' ORDER BY id ASC';
 
-    const suppliers = db.prepare(query).all(...params);
+    const suppliers = await db.prepare(query).all(...params);
     res.json(suppliers);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -25,7 +25,7 @@ suppliersRouter.get('/', (req, res) => {
 });
 
 // Cadastra fornecedor
-suppliersRouter.post('/', (req, res) => {
+suppliersRouter.post('/', async (req, res) => {
   try {
     const { name, corporate_name, cnpj, contact_person, phone, email, materials_supplied, notes, userId } = req.body;
 
@@ -36,7 +36,7 @@ suppliersRouter.post('/', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = insert.run(
+    const result = await insert.run(
       name, corporate_name || null, cnpj || null,
       contact_person || null, phone || null, email || null,
       materials_supplied || null, notes || null
@@ -45,7 +45,7 @@ suppliersRouter.post('/', (req, res) => {
     const supplierId = result.lastInsertRowid;
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
       VALUES (?, 'CRIAR_FORNECEDOR', 'FORNECEDOR', ?, ?)
     `).run(userId || 1, supplierId, `Fornecedor cadastrado: ${name}`);
@@ -57,12 +57,12 @@ suppliersRouter.post('/', (req, res) => {
 });
 
 // Atualiza fornecedor
-suppliersRouter.put('/:id', (req, res) => {
+suppliersRouter.put('/:id', async (req, res) => {
   try {
     const { name, corporate_name, cnpj, contact_person, phone, email, materials_supplied, notes } = req.body;
     const supplierId = req.params.id;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE suppliers SET
         name = ?, corporate_name = ?, cnpj = ?, contact_person = ?,
         phone = ?, email = ?, materials_supplied = ?, notes = ?

@@ -29,8 +29,8 @@ export class SpreadsheetService {
    * Processa a planilha de levantamento real enviada pelo usuário,
    * atualiza o orçamento com as quantidades/valores reais e calibra a IA.
    */
-  static processRealSurveySpreadsheet(projectId, filePath, originalName, userId = 1) {
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  static async processRealSurveySpreadsheet(projectId, filePath, originalName, userId = 1) {
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
 
     const workbook = XLSX.readFile(filePath);
@@ -143,8 +143,8 @@ export class SpreadsheetService {
     const sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames;
 
     // Busca catálogo atual da SABRAR e id máximo para códigos únicos
-    const catalog = db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
-    const maxMatId = db.prepare("SELECT MAX(id) as max_id FROM materials").get()?.max_id || 0;
+    const catalog = await db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
+    const maxMatId = (await db.prepare("SELECT MAX(id) as max_id FROM materials").get())?.max_id || 0;
     let newMatCounter = 0;
 
     const parsedItems = [];
@@ -241,7 +241,7 @@ export class SpreadsheetService {
           if (finalPrice <= 0) finalPrice = 50.0;
           const category = getCategoryFromSheet(sName);
 
-          const resNewMat = db.prepare(`
+          const resNewMat = await db.prepare(`
             INSERT INTO materials (code, name, description, category, unit, reference_price, stock_physical, stock_reserved, stock_minimum, status)
             VALUES (?, ?, ?, ?, ?, ?, 100, 0, 20, 'Ativo')
           `).run(
@@ -293,17 +293,17 @@ export class SpreadsheetService {
     console.log(`[Spreadsheet Parser] Sucesso: ${parsedItems.length} materiais processados de ${processedSheets.length} aba(s):`, processedSheets.map(s => s.sheet).join(', '));
 
     // 2. Busca ou cria o orçamento oficial
-    let budget = db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetId;
 
     const defaultServicesCost = 24140.00; // Serviços de montagem, comissionamento e balanceamento
     const totalFinal = grandTotalMaterials + defaultServicesCost;
 
     if (!budget) {
-      const count = (db.prepare('SELECT COUNT(*) as count FROM budgets').get()?.count || 0) + 1;
+      const count = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
       const budgetCode = `ORC-2026-${String(count).padStart(3, '0')}`;
 
-      const resB = db.prepare(`
+      const resB = await db.prepare(`
         INSERT INTO budgets (
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
@@ -317,14 +317,14 @@ export class SpreadsheetService {
       budgetId = resB.lastInsertRowid;
     } else {
       budgetId = budget.id;
-      db.prepare(`
+      await db.prepare(`
         UPDATE budgets SET
           total_materials = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(grandTotalMaterials, grandTotalMaterials + (budget.total_services || defaultServicesCost), budgetId);
 
       // Limpa itens antigos para substituir pelos reais
-      db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
     }
 
     // 3. Insere os itens na tabela `budget_items`
@@ -336,7 +336,7 @@ export class SpreadsheetService {
     `);
 
     // Busca sugestões anteriores da IA para calcular desvio de aprendizado
-    const previousSuggestions = db.prepare(`
+    const previousSuggestions = await db.prepare(`
       SELECT material_id, suggested_quantity 
       FROM ai_suggestions 
       WHERE project_id = ?
@@ -350,7 +350,7 @@ export class SpreadsheetService {
     for (const item of parsedItems) {
       const aiSuggestedQty = suggestionMap.get(item.materialId) || Math.round(item.quantity * 0.9);
       
-      insertItem.run(
+      await insertItem.run(
         budgetId,
         item.materialId,
         item.materialName,
@@ -370,7 +370,7 @@ export class SpreadsheetService {
     for (const [matId, totalQty] of learningTotals.entries()) {
       const aiSuggestedQty = suggestionMap.get(matId) || Math.round(totalQty * 0.9);
       try {
-        LearningService.recordProjectFeedback(
+        await LearningService.recordProjectFeedback(
           projectId,
           matId,
           project.project_type || 'Infraestrutura',
@@ -387,20 +387,20 @@ export class SpreadsheetService {
     }
 
     // 5. Se não havia serviços cadastrados, insere serviços padrão
-    const existingServices = db.prepare('SELECT COUNT(*) as count FROM services WHERE budget_id = ?').get(budgetId).count;
+    const existingServices = (await db.prepare('SELECT COUNT(*) as count FROM services WHERE budget_id = ?').get(budgetId))?.count || 0;
     if (existingServices === 0) {
       const insertService = db.prepare(`
         INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      insertService.run(budgetId, 'MÃO DE OBRA', 'Montagem mecânica de dutos MPU e difusores de ar', 120, 'h', 85.0, 10200.0, 'Padrão SMACNA');
-      insertService.run(budgetId, 'MÃO DE OBRA', 'Instalação de tubulação frigorígena e brasagem VRF', 80, 'h', 95.0, 7600.0, 'Técnicos certificados');
-      insertService.run(budgetId, 'SERVIÇOS TÉCNICOS', 'Pressurização N2 (450 PSI) e ensaio de estanqueidade', 1, 'gl', 3500.0, 3500.0, 'Protocolo de estanqueidade');
-      insertService.run(budgetId, 'ENGENHARIA', 'Balanceamento TAB, automação BMS e start-up final', 1, 'gl', 2840.0, 2840.0, 'Emissão de ART/RRT');
+      await insertService.run(budgetId, 'MÃO DE OBRA', 'Montagem mecânica de dutos MPU e difusores de ar', 120, 'h', 85.0, 10200.0, 'Padrão SMACNA');
+      await insertService.run(budgetId, 'MÃO DE OBRA', 'Instalação de tubulação frigorígena e brasagem VRF', 80, 'h', 95.0, 7600.0, 'Técnicos certificados');
+      await insertService.run(budgetId, 'SERVIÇOS TÉCNICOS', 'Pressurização N2 (450 PSI) e ensaio de estanqueidade', 1, 'gl', 3500.0, 3500.0, 'Protocolo de estanqueidade');
+      await insertService.run(budgetId, 'ENGENHARIA', 'Balanceamento TAB, automação BMS e start-up final', 1, 'gl', 2840.0, 2840.0, 'Emissão de ART/RRT');
     }
 
     // 6. Atualiza totais na tabela `projects`
-    db.prepare(`
+    await db.prepare(`
       UPDATE projects SET
         status = 'Orçamento gerado',
         total_budget_materials = ?,
@@ -410,7 +410,7 @@ export class SpreadsheetService {
     `).run(grandTotalMaterials, totalFinal, projectId);
 
     // 7. Registra auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
       VALUES (?, 'IMPORTACAO_PLANILHA_REAL', 'ORCAMENTO', ?, ?, ?)
     `).run(

@@ -12,22 +12,22 @@ aiRouter.post('/analyze/:projectId', async (req, res) => {
     const { customText, userId } = req.body;
 
     // Atualiza status do projeto para 'Em análise pela IA'
-    db.prepare("UPDATE projects SET status = 'Em análise pela IA', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+    await db.prepare("UPDATE projects SET status = 'Em análise pela IA', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
 
     // Executa o serviço de análise estruturado (Seção 44 e 28)
     const analysisResult = await AIAnalysisService.analyzeProjectDocuments(projectId, customText);
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
       VALUES (?, 'ANALISE_IA', 'PROJETO', ?, ?, ?)
     `).run(
       userId || 1, projectId, projectId,
-      `IA analisou documentos e identificou ${analysisResult.materials.length} materiais com sugestão inicial de R$ ${analysisResult.totalEstimatedMaterialsCost.toFixed(2)}`
+      `IA analisou documentos e identificou ${analysisResult.materials.length} materiais com sugestão inicial de R$ ${Number(analysisResult.totalEstimatedMaterialsCost).toFixed(2)}`
     );
 
     // Dispara notificação para o Setor de Orçamento (Seção 35)
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (role_target, title, message, type, link)
       VALUES ('Setor de orçamento', 'IA Finalizou Análise Técnica', ?, 'info', ?)
     `).run(
@@ -43,9 +43,9 @@ aiRouter.post('/analyze/:projectId', async (req, res) => {
 });
 
 // Métricas do motor de aprendizado contínuo da IA
-aiRouter.get('/metrics', (req, res) => {
+aiRouter.get('/metrics', async (req, res) => {
   try {
-    const metrics = LearningService.getLearningMetrics();
+    const metrics = await LearningService.getLearningMetrics();
     res.json(metrics);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -53,9 +53,9 @@ aiRouter.get('/metrics', (req, res) => {
 });
 
 // Benchmarks históricos e contexto estruturado para enriquecer o Prompt do Agente de IA
-aiRouter.get('/agent-context', (req, res) => {
+aiRouter.get('/agent-context', async (req, res) => {
   try {
-    const context = LearningService.getAgentContext();
+    const context = await LearningService.getAgentContext();
     res.json(context);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -63,15 +63,15 @@ aiRouter.get('/agent-context', (req, res) => {
 });
 
 // Lista todas as análises de IA de um projeto
-aiRouter.get('/analyses/:projectId', (req, res) => {
+aiRouter.get('/analyses/:projectId', async (req, res) => {
   try {
     const projectId = req.params.projectId;
-    const analyses = db.prepare('SELECT * FROM ai_analyses WHERE project_id = ? ORDER BY id DESC').all(projectId);
+    const analyses = await db.prepare('SELECT * FROM ai_analyses WHERE project_id = ? ORDER BY id DESC').all(projectId);
     
-    const enriched = analyses.map(a => {
-      const suggestions = db.prepare('SELECT * FROM ai_suggestions WHERE analysis_id = ?').all(a.id);
+    const enriched = await Promise.all(analyses.map(async a => {
+      const suggestions = await db.prepare('SELECT * FROM ai_suggestions WHERE analysis_id = ?').all(a.id);
       return { ...a, suggestions };
-    });
+    }));
 
     res.json(enriched);
   } catch (err) {

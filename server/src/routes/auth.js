@@ -4,9 +4,9 @@ import { db } from '../db/connection.js';
 export const authRouter = express.Router();
 
 // Lista todos os usuários e seus perfis
-authRouter.get('/users', (req, res) => {
+authRouter.get('/users', async (req, res) => {
   try {
-    const users = db.prepare(`
+    const users = await db.prepare(`
       SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
       JOIN roles r ON u.role_id = r.id
@@ -19,9 +19,9 @@ authRouter.get('/users', (req, res) => {
 });
 
 // Lista os perfis do sistema
-authRouter.get('/roles', (req, res) => {
+authRouter.get('/roles', async (req, res) => {
   try {
-    const roles = db.prepare('SELECT * FROM roles ORDER BY id ASC').all();
+    const roles = await db.prepare('SELECT * FROM roles ORDER BY id ASC').all();
     res.json(roles);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -29,9 +29,9 @@ authRouter.get('/roles', (req, res) => {
 });
 
 // Retorna usuário por ID (para chaveamento rápido de perfil no header)
-authRouter.get('/user/:id', (req, res) => {
+authRouter.get('/user/:id', async (req, res) => {
   try {
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
       JOIN roles r ON u.role_id = r.id
@@ -46,7 +46,7 @@ authRouter.get('/user/:id', (req, res) => {
 });
 
 // Cria um novo usuário
-authRouter.post('/users', (req, res) => {
+authRouter.post('/users', async (req, res) => {
   try {
     const { name, email, password, role_id, department, phone } = req.body;
 
@@ -55,14 +55,14 @@ authRouter.post('/users', (req, res) => {
     }
 
     // Verifica se e-mail já existe
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim().toLowerCase());
+    const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim().toLowerCase());
     if (existing) {
       return res.status(400).json({ error: 'Já existe um usuário cadastrado com este e-mail.' });
     }
 
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=0284c7&color=fff&bold=true`;
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO users (name, email, password, role_id, department, phone, avatar)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -75,7 +75,7 @@ authRouter.post('/users', (req, res) => {
       avatar
     );
 
-    const newUser = db.prepare(`
+    const newUser = await db.prepare(`
       SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
       JOIN roles r ON u.role_id = r.id
@@ -89,7 +89,7 @@ authRouter.post('/users', (req, res) => {
 });
 
 // Autenticação de Login com E-mail e Senha
-authRouter.post('/login', (req, res) => {
+authRouter.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -98,7 +98,7 @@ authRouter.post('/login', (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.name, u.email, u.password, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
       JOIN roles r ON u.role_id = r.id
@@ -125,4 +125,3 @@ authRouter.post('/login', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-

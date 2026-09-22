@@ -47,9 +47,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Inicializa e alimenta banco se necessário
-initializeDatabase();
-seedDatabase();
+// O banco de dados PostgreSQL reside permanentemente no Supabase e já está estruturado e populado
 
 // Registra rotas da API com suporte duplo (/api/* e /*) para compatibilidade perfeita com Vercel Serverless
 const apiEndpoints = [

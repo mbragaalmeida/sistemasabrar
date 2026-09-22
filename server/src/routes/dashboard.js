@@ -4,46 +4,46 @@ import { db } from '../db/connection.js';
 export const dashboardRouter = express.Router();
 
 // 1. Dashboard Principal (Seção 30) - 100% com Dados Reais
-dashboardRouter.get('/overview', (req, res) => {
+dashboardRouter.get('/overview', async (req, res) => {
   try {
-    const activeProjects = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Novo', 'Em análise pela IA', 'Orçamento gerado', 'Em revisão', 'Enviado ao cliente', 'Aprovado', 'Em execução')").get().count;
-    const inBudgetProjects = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Em análise pela IA', 'Orçamento gerado', 'Em revisão')").get().count;
-    const awaitingApproval = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get().count;
-    const inExecution = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em execução'").get().count;
-    const pendingRequests = db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Solicitado', 'Reservado', 'Em separação')").get().count;
-    const pendingPurchases = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Solicitado', 'Em cotação', 'Aguardando aprovação', 'Comprado', 'Aguardando entrega')").get().count;
-    const belowMinStock = db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get().count;
+    const activeProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Novo', 'Em análise pela IA', 'Orçamento gerado', 'Em revisão', 'Enviado ao cliente', 'Aprovado', 'Em execução')").get())?.count || 0;
+    const inBudgetProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Em análise pela IA', 'Orçamento gerado', 'Em revisão')").get())?.count || 0;
+    const awaitingApproval = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get())?.count || 0;
+    const inExecution = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em execução'").get())?.count || 0;
+    const pendingRequests = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Solicitado', 'Reservado', 'Em separação')").get())?.count || 0;
+    const pendingPurchases = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Solicitado', 'Em cotação', 'Aguardando aprovação', 'Comprado', 'Aguardando entrega')").get())?.count || 0;
+    const belowMinStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get())?.count || 0;
 
-    const materials = db.prepare("SELECT stock_physical, reference_price FROM materials WHERE status = 'Ativo'").all();
-    const stockValuation = materials.reduce((acc, m) => acc + (m.stock_physical * m.reference_price), 0);
+    const materials = await db.prepare("SELECT stock_physical, reference_price FROM materials WHERE status = 'Ativo'").all();
+    const stockValuation = materials.reduce((acc, m) => acc + (Number(m.stock_physical || 0) * Number(m.reference_price || 0)), 0);
 
     // Comparativo Real Obra a Obra: Apenas obras já iniciadas ('Em execução', 'Finalizado')
-    const projects = db.prepare(`
+    const projects = await db.prepare(`
       SELECT p.id, p.code, p.name, p.client, p.project_type, p.status, p.total_budget_final, p.total_budget_materials
       FROM projects p
       WHERE p.status IN ('Em execução', 'Finalizado')
       ORDER BY p.id DESC
     `).all();
 
-    const projectsComparison = projects.map(p => {
+    const projectsComparison = await Promise.all(projects.map(async p => {
       const revenue = Number(p.total_budget_final || 0);
       const isCompleted = p.status === 'Finalizado';
 
       // 1. Levantamento de materiais: apenas os materiais já solicitados
-      const histReq = db.prepare(`
+      const histReq = (await db.prepare(`
         SELECT SUM(hu.total_requested_qty * COALESCE(m.reference_price, 0)) as cost
         FROM historical_usage hu
         JOIN materials m ON hu.material_id = m.id
         WHERE hu.project_id = ?
-      `).get(p.id)?.cost;
+      `).get(p.id))?.cost;
 
-      const mrReq = db.prepare(`
+      const mrReq = (await db.prepare(`
         SELECT SUM(mri.quantity_requested * COALESCE(m.reference_price, 0)) as cost
         FROM material_requests mr
         JOIN material_request_items mri ON mr.id = mri.request_id
         JOIN materials m ON mri.material_id = m.id
         WHERE mr.project_id = ?
-      `).get(p.id)?.cost;
+      `).get(p.id))?.cost;
 
       let requestedMaterialsCost = 0;
       if (histReq && histReq > 0) {
@@ -63,15 +63,15 @@ dashboardRouter.get('/overview', (req, res) => {
 
       if (isCompleted) {
         // Base consolidada de consumo real (historical_usage - já desconta devoluções)
-        const histCost = db.prepare(`
+        const histCost = (await db.prepare(`
           SELECT SUM(hu.actual_consumed_qty * COALESCE(m.reference_price, 0)) as cost
           FROM historical_usage hu
           JOIN materials m ON hu.material_id = m.id
           WHERE hu.project_id = ?
-        `).get(p.id)?.cost;
+        `).get(p.id))?.cost;
 
         // Movimentações físicas de saída líquida (SAIDA_OBRA - DEVOLUCAO)
-        const movCost = db.prepare(`
+        const movCost = (await db.prepare(`
           SELECT 
             SUM(CASE WHEN sm.type = 'SAIDA_OBRA' THEN sm.quantity * COALESCE(m.reference_price, 0)
                      WHEN sm.type = 'DEVOLUCAO' THEN -sm.quantity * COALESCE(m.reference_price, 0)
@@ -79,14 +79,14 @@ dashboardRouter.get('/overview', (req, res) => {
           FROM stock_movements sm
           JOIN materials m ON sm.material_id = m.id
           WHERE sm.project_id = ?
-        `).get(p.id)?.cost;
+        `).get(p.id))?.cost;
 
-        const retCost = db.prepare(`
+        const retCost = (await db.prepare(`
           SELECT SUM(r.quantity * COALESCE(m.reference_price, 0)) as cost
           FROM returns r
           JOIN materials m ON r.material_id = m.id
           WHERE r.project_id = ?
-        `).get(p.id)?.cost || 0;
+        `).get(p.id))?.cost || 0;
 
         if (histCost && histCost > 0) {
           actualMaterialsCost = Number(histCost.toFixed(2));
@@ -119,7 +119,7 @@ dashboardRouter.get('/overview', (req, res) => {
         variance,
         variancePercent
       };
-    });
+    }));
 
     // Totais Consolidados SABRAR:
     // - Receita Real e Materiais Solicitados das obras já iniciadas
@@ -134,7 +134,7 @@ dashboardRouter.get('/overview', (req, res) => {
     const totalGrossMarginPercent = completedRevenue > 0 ? Number(((totalGrossMargin / completedRevenue) * 100).toFixed(1)) : 0;
 
     // Breakdown real por categorias de HVAC / Climatização
-    const rawCategories = db.prepare(`
+    const rawCategories = await db.prepare(`
       SELECT 
         m.category,
         SUM(bi.quantity * bi.unit_price) as previsto,
@@ -156,8 +156,8 @@ dashboardRouter.get('/overview', (req, res) => {
       { category: 'Ventilação e Exaustão', previsto: 62000, realizado: 60800 }
     ]).map(c => ({
       category: c.category,
-      previsto: Math.round(c.previsto || 0),
-      realizado: Math.round(c.realizado || 0)
+      previsto: Math.round(Number(c.previsto || 0)),
+      realizado: Math.round(Number(c.realizado || 0))
     }));
 
     // Evolução Mensal baseada em compras e movimentações reais
@@ -174,38 +174,38 @@ dashboardRouter.get('/overview', (req, res) => {
       last6Months.push({ label, monthStr });
     }
 
-    const monthlyConsumption = last6Months.map(m => {
-      const row = db.prepare(`
+    const monthlyConsumption = await Promise.all(last6Months.map(async m => {
+      const row = await db.prepare(`
         SELECT SUM(sm.quantity * COALESCE(mat.reference_price, 0)) as val
         FROM stock_movements sm
         JOIN materials mat ON sm.material_id = mat.id
-        WHERE sm.type = 'SAIDA_OBRA' AND strftime('%Y-%m', sm.created_at) = ?
+        WHERE sm.type = 'SAIDA_OBRA' AND TO_CHAR(sm.created_at, 'YYYY-MM') = ?
       `).get(m.monthStr);
       return {
         month: m.label,
         value: Math.round(row?.val || (totalActualMaterialsCost > 0 ? totalActualMaterialsCost / 6 : 45000))
       };
-    });
+    }));
 
-    const monthlyPurchases = last6Months.map(m => {
-      const row = db.prepare(`
+    const monthlyPurchases = await Promise.all(last6Months.map(async m => {
+      const row = await db.prepare(`
         SELECT SUM(total_price) as val
         FROM purchases
-        WHERE status IN ('Comprado', 'Recebido') AND strftime('%Y-%m', created_at) = ?
+        WHERE status IN ('Comprado', 'Recebido') AND TO_CHAR(created_at, 'YYYY-MM') = ?
       `).get(m.monthStr);
       return {
         month: m.label,
         value: Math.round(row?.val || (totalBudgetMaterials > 0 ? totalBudgetMaterials / 6 : 42000))
       };
-    });
+    }));
 
     // Materiais mais movimentados
-    const topMaterials = db.prepare(`
+    const topMaterials = await db.prepare(`
       SELECT m.name, m.code, m.unit, SUM(sm.quantity) as total_moved
       FROM stock_movements sm
       JOIN materials m ON sm.material_id = m.id
       WHERE sm.type IN ('SAIDA_OBRA', 'ENTRADA')
-      GROUP BY sm.material_id
+      GROUP BY m.id, m.name, m.code, m.unit
       ORDER BY total_moved DESC
       LIMIT 5
     `).all();
@@ -243,16 +243,16 @@ dashboardRouter.get('/overview', (req, res) => {
 });
 
 // 2. Dashboard do Orçamento (Seção 31)
-dashboardRouter.get('/orcamento', (req, res) => {
+dashboardRouter.get('/orcamento', async (req, res) => {
   try {
-    const newProjects = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Novo'").get().count;
-    const aiAnalyzed = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento gerado'").get().count;
-    const awaitingRevision = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em revisão'").get().count;
-    const finalized = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento finalizado'").get().count;
-    const sentToClient = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get().count;
-    const approved = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Aprovado', 'Em execução', 'Finalizado')").get().count;
+    const newProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Novo'").get())?.count || 0;
+    const aiAnalyzed = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento gerado'").get())?.count || 0;
+    const awaitingRevision = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em revisão'").get())?.count || 0;
+    const finalized = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento finalizado'").get())?.count || 0;
+    const sentToClient = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get())?.count || 0;
+    const approved = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Aprovado', 'Em execução', 'Finalizado')").get())?.count || 0;
 
-    const recentProjects = db.prepare(`
+    const recentProjects = await db.prepare(`
       SELECT p.id, p.code, p.name, p.client, p.status, p.total_budget_final, p.created_at
       FROM projects p
       ORDER BY p.id DESC
@@ -276,16 +276,16 @@ dashboardRouter.get('/orcamento', (req, res) => {
 });
 
 // 3. Dashboard do Almoxarifado (Seção 32)
-dashboardRouter.get('/almoxarifado', (req, res) => {
+dashboardRouter.get('/almoxarifado', async (req, res) => {
   try {
-    const pending = db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Solicitado'").get().count;
-    const toSeparate = db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Reservado', 'Em separação')").get().count;
-    const separated = db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Separado'").get().count;
-    const delivered = db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Entregue'").get().count;
-    const recentReturns = db.prepare("SELECT COUNT(*) as count FROM returns WHERE created_at >= date('now', '-7 days')").get().count;
-    const lowStock = db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get().count;
+    const pending = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Solicitado'").get())?.count || 0;
+    const toSeparate = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Reservado', 'Em separação')").get())?.count || 0;
+    const separated = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Separado'").get())?.count || 0;
+    const delivered = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Entregue'").get())?.count || 0;
+    const recentReturns = (await db.prepare("SELECT COUNT(*) as count FROM returns WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'").get())?.count || 0;
+    const lowStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get())?.count || 0;
 
-    const activeRequests = db.prepare(`
+    const activeRequests = await db.prepare(`
       SELECT mr.*, p.name as project_name, u.name as requested_by_name
       FROM material_requests mr
       JOIN projects p ON mr.project_id = p.id
@@ -295,7 +295,7 @@ dashboardRouter.get('/almoxarifado', (req, res) => {
       LIMIT 8
     `).all();
 
-    const lowStockItems = db.prepare(`
+    const lowStockItems = await db.prepare(`
       SELECT id, code, name, unit, stock_physical, stock_reserved, stock_minimum
       FROM materials
       WHERE stock_physical <= stock_minimum AND status = 'Ativo'
@@ -321,16 +321,16 @@ dashboardRouter.get('/almoxarifado', (req, res) => {
 });
 
 // 4. Dashboard de Compras (Seção 33)
-dashboardRouter.get('/compras', (req, res) => {
+dashboardRouter.get('/compras', async (req, res) => {
   try {
-    const newDemands = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Solicitado'").get().count;
-    const zeroStock = db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical = 0 AND status = 'Ativo'").get().count;
-    const inQuotation = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Em cotação'").get().count;
-    const purchased = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Comprado'").get().count;
-    const awaitingDelivery = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Aguardando entrega'").get().count;
-    const delayedDeliveries = db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Comprado', 'Aguardando entrega') AND expected_delivery_date < date('now')").get().count;
+    const newDemands = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Solicitado'").get())?.count || 0;
+    const zeroStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical = 0 AND status = 'Ativo'").get())?.count || 0;
+    const inQuotation = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Em cotação'").get())?.count || 0;
+    const purchased = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Comprado'").get())?.count || 0;
+    const awaitingDelivery = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Aguardando entrega'").get())?.count || 0;
+    const delayedDeliveries = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Comprado', 'Aguardando entrega') AND expected_delivery_date < CURRENT_DATE").get())?.count || 0;
 
-    const urgentDemands = db.prepare(`
+    const urgentDemands = await db.prepare(`
       SELECT p.*, m.name as material_name, m.unit as material_unit, pr.name as project_name, s.name as supplier_name
       FROM purchases p
       JOIN materials m ON p.material_id = m.id

@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 export const searchRouter = express.Router();
 
 // Busca global em todo o sistema (Seção 38)
-searchRouter.get('/', (req, res) => {
+searchRouter.get('/', async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : '';
     if (!q || q.length < 2) {
@@ -14,7 +14,7 @@ searchRouter.get('/', (req, res) => {
     const term = `%${q}%`;
 
     // 1. Projetos
-    const projects = db.prepare(`
+    const projects = await db.prepare(`
       SELECT id, code, name, client, status, 'project' as entity_type
       FROM projects
       WHERE name LIKE ? OR client LIKE ? OR code LIKE ? OR address LIKE ?
@@ -22,7 +22,7 @@ searchRouter.get('/', (req, res) => {
     `).all(term, term, term, term);
 
     // 2. Materiais
-    const materials = db.prepare(`
+    const materials = await db.prepare(`
       SELECT id, code, name, category, unit, stock_physical, stock_reserved, 'material' as entity_type
       FROM materials
       WHERE name LIKE ? OR code LIKE ? OR brand LIKE ? OR category LIKE ?
@@ -30,7 +30,7 @@ searchRouter.get('/', (req, res) => {
     `).all(term, term, term, term);
 
     // 3. Fornecedores
-    const suppliers = db.prepare(`
+    const suppliers = await db.prepare(`
       SELECT id, name, corporate_name, cnpj, phone, 'supplier' as entity_type
       FROM suppliers
       WHERE name LIKE ? OR corporate_name LIKE ? OR cnpj LIKE ?
@@ -38,7 +38,7 @@ searchRouter.get('/', (req, res) => {
     `).all(term, term, term);
 
     // 4. Compras
-    const purchases = db.prepare(`
+    const purchases = await db.prepare(`
       SELECT p.id, p.code, p.status, p.quantity, m.name as material_name, 'purchase' as entity_type
       FROM purchases p
       JOIN materials m ON p.material_id = m.id
@@ -47,7 +47,7 @@ searchRouter.get('/', (req, res) => {
     `).all(term, term);
 
     // 5. Solicitações
-    const requests = db.prepare(`
+    const requests = await db.prepare(`
       SELECT mr.id, mr.code, mr.status, mr.priority, p.name as project_name, 'request' as entity_type
       FROM material_requests mr
       JOIN projects p ON mr.project_id = p.id

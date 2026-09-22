@@ -158,7 +158,7 @@ export class AICalibrationService {
       const meta = group.meta;
 
       // 1. Verifica ou cria projeto no banco
-      let project = db.prepare('SELECT * FROM projects WHERE code = ? OR name = ?').get(meta.code, meta.name);
+      let project = await db.prepare('SELECT * FROM projects WHERE code = ? OR name = ?').get(meta.code, meta.name);
       if (!project) {
         const insertPrj = db.prepare(`
           INSERT INTO projects (
@@ -166,7 +166,7 @@ export class AICalibrationService {
             responsible_engineer, total_budget_materials, total_budget_final
           ) VALUES (?, ?, ?, ?, ?, 'Finalizado', ?, 'IA Calibração SABRAR', 0, 0)
         `);
-        const info = insertPrj.run(
+        const info = await insertPrj.run(
           meta.code,
           meta.name,
           'Cliente SABRAR (Histórico)',
@@ -174,12 +174,12 @@ export class AICalibrationService {
           meta.type,
           `Projeto e medições importadas para calibração contínua da IA a partir de ${group.files.length} documento(s).`
         );
-        project = db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid);
+        project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid);
       }
 
       // 2. Registra os arquivos vinculados ao projeto
       for (const f of group.files) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
           VALUES (?, 'PROJETO_TECNICO', ?, ?, ?, ?, ?, ?)
         `).run(
@@ -213,7 +213,7 @@ export class AICalibrationService {
 
         // Procura ou insere material na Base Central SABRAR (materials)
         const normName = this.normalizeMaterialName(item.name);
-        let material = db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(item.name.toLowerCase());
+        let material = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(item.name.toLowerCase());
         if (!material) {
           const autoCode = item.code || `MAT-CALIB-${Date.now().toString().slice(-5)}-${Math.floor(Math.random()*100)}`;
           const insertMat = db.prepare(`
@@ -221,14 +221,14 @@ export class AICalibrationService {
               code, name, category, unit, reference_price, status
             ) VALUES (?, ?, ?, ?, ?, 'Ativo')
           `);
-          const matRes = insertMat.run(
+          const matRes = await insertMat.run(
             autoCode,
             item.name,
             item.category || 'Climatização',
             item.unit || 'un',
             item.price || 100.00
           );
-          material = db.prepare('SELECT * FROM materials WHERE id = ?').get(matRes.lastInsertRowid);
+          material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(matRes.lastInsertRowid);
         }
 
         // Calcula métricas de variação
@@ -237,12 +237,12 @@ export class AICalibrationService {
         const learnedFactor = budgeted > 0 ? Number((real / budgeted).toFixed(3)) : 1.0;
 
         // Registra ou atualiza em historical_usage
-        const existingHist = db.prepare(`
+        const existingHist = await db.prepare(`
           SELECT id FROM historical_usage WHERE project_id = ? AND material_id = ?
         `).get(project.id, material.id);
 
         if (existingHist) {
-          db.prepare(`
+          await db.prepare(`
             UPDATE historical_usage SET
               ai_suggested_qty = ?,
               human_approved_qty = ?,
@@ -256,7 +256,7 @@ export class AICalibrationService {
             budgeted, budgeted, real, varianceUnits, variancePercent, learnedFactor, existingHist.id
           );
         } else {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO historical_usage (
               project_id, material_id, project_type, project_size_sqm,
               ai_suggested_qty, human_approved_qty, total_requested_qty,
@@ -296,7 +296,7 @@ export class AICalibrationService {
       });
 
       // Auditoria
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
         VALUES (?, 'CALIBRAR_IA_DOCUMENTOS', 'HISTORICO_IA', ?, ?, ?)
       `).run(

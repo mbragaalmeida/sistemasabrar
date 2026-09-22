@@ -5,7 +5,7 @@ import { StockService } from '../services/stockService.js';
 export const materialsRouter = express.Router();
 
 // Lista todos os materiais da Base Central com cálculo de estoque físico, reservado e disponível
-materialsRouter.get('/', (req, res) => {
+materialsRouter.get('/', async (req, res) => {
   try {
     const { category, search, below_minimum } = req.query;
     let query = `
@@ -30,7 +30,7 @@ materialsRouter.get('/', (req, res) => {
 
     query += ' ORDER BY m.id ASC';
 
-    const materials = db.prepare(query).all(...params);
+    const materials = await db.prepare(query).all(...params);
 
     const enriched = materials.map(m => {
       const stock_available = Math.max(0, m.stock_physical - m.stock_reserved);
@@ -52,10 +52,10 @@ materialsRouter.get('/', (req, res) => {
 });
 
 // Detalhe de um material específico
-materialsRouter.get('/:id', (req, res) => {
+materialsRouter.get('/:id', async (req, res) => {
   try {
-    const mat = StockService.getMaterialStock(req.params.id);
-    const movements = db.prepare(`
+    const mat = await StockService.getMaterialStock(req.params.id);
+    const movements = await db.prepare(`
       SELECT sm.*, u.name as user_name, p.name as project_name, p.code as project_code
       FROM stock_movements sm
       LEFT JOIN users u ON sm.user_id = u.id
@@ -72,7 +72,7 @@ materialsRouter.get('/:id', (req, res) => {
 });
 
 // Cadastra novo material na Base Central (Seção 11)
-materialsRouter.post('/', (req, res) => {
+materialsRouter.post('/', async (req, res) => {
   try {
     const { name, description, category, unit, brand, reference_price, supplier_id, stock_physical, stock_minimum, status, userId } = req.body;
 
@@ -81,7 +81,7 @@ materialsRouter.post('/', (req, res) => {
     }
 
     // Código automático: MAT-000XXX (Seção 11 e 12)
-    const count = db.prepare('SELECT COUNT(*) as count FROM materials').get().count + 1;
+    const count = ((await db.prepare('SELECT COUNT(*) as count FROM materials').get())?.count || 0) + 1;
     const code = `MAT-${String(100 + count).padStart(6, '0')}`;
 
     const insert = db.prepare(`
@@ -92,7 +92,7 @@ materialsRouter.post('/', (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
     `);
 
-    const result = insert.run(
+    const result = await insert.run(
       code, name, description || null, category, unit, brand || null,
       Number(reference_price) || 0, supplier_id || null,
       Number(stock_physical) || 0, Number(stock_minimum) || 10,
@@ -103,14 +103,14 @@ materialsRouter.post('/', (req, res) => {
 
     // Se começou com estoque físico > 0, registra movimentação inicial
     if (Number(stock_physical) > 0) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, user_id, notes)
         VALUES (?, 'ENTRADA', ?, 0, ?, ?, 'Saldo inicial no cadastro do material')
       `).run(materialId, Number(stock_physical), Number(stock_physical), userId || 1);
     }
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
       VALUES (?, 'CRIAR_MATERIAL', 'ESTOQUE', ?, ?)
     `).run(userId || 1, materialId, `Material cadastrado: ${name} (${code}) na categoria ${category}`);
@@ -122,12 +122,12 @@ materialsRouter.post('/', (req, res) => {
 });
 
 // Atualiza material
-materialsRouter.put('/:id', (req, res) => {
+materialsRouter.put('/:id', async (req, res) => {
   try {
     const { name, description, category, unit, brand, reference_price, supplier_id, stock_minimum, status, userId } = req.body;
     const materialId = req.params.id;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE materials SET
         name = ?, description = ?, category = ?, unit = ?, brand = ?,
         reference_price = ?, supplier_id = ?, stock_minimum = ?,
@@ -146,10 +146,10 @@ materialsRouter.put('/:id', (req, res) => {
 });
 
 // Entrada simplificada de estoque (Seção 12: Selecionar material -> Informar quantidade -> Confirmar)
-materialsRouter.post('/quick-entry', (req, res) => {
+materialsRouter.post('/quick-entry', async (req, res) => {
   try {
     const { materialId, quantity, notes, userId } = req.body;
-    const result = StockService.recordSimplifiedEntry(materialId, quantity, userId || 1, notes);
+    const result = await StockService.recordSimplifiedEntry(materialId, quantity, userId || 1, notes);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

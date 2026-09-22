@@ -5,7 +5,7 @@ import { StockService } from '../services/stockService.js';
 export const requestsRouter = express.Router();
 
 // Lista todas as solicitações de materiais
-requestsRouter.get('/', (req, res) => {
+requestsRouter.get('/', async (req, res) => {
   try {
     const { project_id, status, priority } = req.query;
     let query = `
@@ -32,10 +32,10 @@ requestsRouter.get('/', (req, res) => {
 
     query += ' ORDER BY mr.id DESC';
 
-    const requests = db.prepare(query).all(...params);
+    const requests = await db.prepare(query).all(...params);
 
-    const enriched = requests.map(r => {
-      const items = db.prepare(`
+    const enriched = await Promise.all(requests.map(async r => {
+      const items = await db.prepare(`
         SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit, m.stock_physical, m.stock_reserved
         FROM material_request_items mri
         JOIN materials m ON mri.material_id = m.id
@@ -43,7 +43,7 @@ requestsRouter.get('/', (req, res) => {
       `).all(r.id);
 
       return { ...r, items };
-    });
+    }));
 
     res.json(enriched);
   } catch (err) {
@@ -52,7 +52,7 @@ requestsRouter.get('/', (req, res) => {
 });
 
 // Cria solicitação de material (Engenharia - individual ou em lote)
-requestsRouter.post('/', (req, res) => {
+requestsRouter.post('/', async (req, res) => {
   try {
     const { projectId, materialId, quantity, items, priority, notes, userId } = req.body;
 
@@ -63,7 +63,7 @@ requestsRouter.post('/', (req, res) => {
     let result;
     if (items && Array.isArray(items) && items.length > 0) {
       // Envio em lote (múltiplos materiais da obra)
-      result = StockService.createBatchMaterialRequest(
+      result = await StockService.createBatchMaterialRequest(
         projectId,
         items,
         priority || 'Média',
@@ -76,7 +76,7 @@ requestsRouter.post('/', (req, res) => {
         return res.status(400).json({ error: 'Material e quantidade são obrigatórios para solicitação individual' });
       }
 
-      result = StockService.createMaterialRequest(
+      result = await StockService.createMaterialRequest(
         projectId,
         materialId,
         quantity,
@@ -93,12 +93,12 @@ requestsRouter.post('/', (req, res) => {
 });
 
 // Atualiza status da solicitação pelo Almoxarifado (Seção 15: Em separação -> Separado -> Entregue)
-requestsRouter.patch('/:id/status', (req, res) => {
+requestsRouter.patch('/:id/status', async (req, res) => {
   try {
     const requestId = req.params.id;
     const { status, notes, userId } = req.body;
 
-    const result = StockService.updateRequestStatus(requestId, status, userId || 4, notes);
+    const result = await StockService.updateRequestStatus(requestId, status, userId || 4, notes);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

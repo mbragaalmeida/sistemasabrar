@@ -5,7 +5,7 @@ import { StockService } from '../services/stockService.js';
 export const returnsRouter = express.Router();
 
 // Lista devoluções de materiais
-returnsRouter.get('/', (req, res) => {
+returnsRouter.get('/', async (req, res) => {
   try {
     const { project_id, material_id } = req.query;
     let query = `
@@ -30,7 +30,7 @@ returnsRouter.get('/', (req, res) => {
 
     query += ' ORDER BY ret.id DESC';
 
-    const returns = db.prepare(query).all(...params);
+    const returns = await db.prepare(query).all(...params);
     res.json(returns);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -38,7 +38,7 @@ returnsRouter.get('/', (req, res) => {
 });
 
 // Registra devolução de material ao almoxarifado (Seção 19 & 20)
-returnsRouter.post('/', (req, res) => {
+returnsRouter.post('/', async (req, res) => {
   try {
     const { projectId, materialId, quantity, reason, userId } = req.body;
 
@@ -46,7 +46,7 @@ returnsRouter.post('/', (req, res) => {
       return res.status(400).json({ error: 'Projeto, material e quantidade são obrigatórios' });
     }
 
-    const result = StockService.recordMaterialReturn(
+    const result = await StockService.recordMaterialReturn(
       projectId,
       materialId,
       quantity,

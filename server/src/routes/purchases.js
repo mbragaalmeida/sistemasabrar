@@ -5,7 +5,7 @@ import { StockService } from '../services/stockService.js';
 export const purchasesRouter = express.Router();
 
 // Lista fila de demandas e pedidos de compra
-purchasesRouter.get('/', (req, res) => {
+purchasesRouter.get('/', async (req, res) => {
   try {
     const { status, priority, project_id } = req.query;
     let query = `
@@ -36,7 +36,7 @@ purchasesRouter.get('/', (req, res) => {
 
     query += ' ORDER BY p.id DESC';
 
-    const purchases = db.prepare(query).all(...params);
+    const purchases = await db.prepare(query).all(...params);
     res.json(purchases);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -44,7 +44,7 @@ purchasesRouter.get('/', (req, res) => {
 });
 
 // Cadastra uma nova solicitação manual de compra
-purchasesRouter.post('/', (req, res) => {
+purchasesRouter.post('/', async (req, res) => {
   try {
     const {
       material_id,
@@ -63,17 +63,17 @@ purchasesRouter.post('/', (req, res) => {
       return res.status(400).json({ error: 'Material e quantidade válida (> 0) são obrigatórios.' });
     }
 
-    const mat = db.prepare('SELECT * FROM materials WHERE id = ?').get(material_id);
+    const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(material_id);
     if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
 
-    const nextPurchaseCount = db.prepare('SELECT COUNT(*) as count FROM purchases').get().count + 1;
+    const nextPurchaseCount = ((await db.prepare('SELECT COUNT(*) as count FROM purchases').get())?.count || 0) + 1;
     const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
 
     const price = (unit_price !== undefined && unit_price !== null && unit_price !== '') ? Number(unit_price) : mat.reference_price;
     const totalPrice = Number((Number(quantity) * price).toFixed(2));
     const finalSupplierId = supplier_id ? Number(supplier_id) : (mat.supplier_id || null);
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO purchases (
         code, project_id, material_id, quantity, supplier_id,
         unit_price, total_price, status, priority, purchase_date,
@@ -95,7 +95,7 @@ purchasesRouter.post('/', (req, res) => {
       notes?.trim() || 'Solicitação manual de compra.'
     );
 
-    const created = db.prepare(`
+    const created = await db.prepare(`
       SELECT p.*, m.name as material_name, m.code as material_code, m.unit as material_unit,
              s.name as supplier_name, pr.name as project_name, pr.code as project_code,
              u.name as buyer_name
@@ -114,17 +114,17 @@ purchasesRouter.post('/', (req, res) => {
 });
 
 // Atualiza informações de cotação ou compra (Seção 17)
-purchasesRouter.put('/:id', (req, res) => {
+purchasesRouter.put('/:id', async (req, res) => {
   try {
     const purchaseId = req.params.id;
     const { supplier_id, unit_price, total_price, status, priority, purchase_date, expected_delivery_date, notes, buyer_id } = req.body;
 
-    const pur = db.prepare('SELECT * FROM purchases WHERE id = ?').get(purchaseId);
+    const pur = await db.prepare('SELECT * FROM purchases WHERE id = ?').get(purchaseId);
     if (!pur) return res.status(404).json({ error: 'Pedido de compra não encontrado' });
 
     const calcTotal = total_price || (unit_price && pur.quantity ? unit_price * pur.quantity : pur.total_price);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE purchases SET
         supplier_id = ?, unit_price = ?, total_price = ?, status = ?,
         priority = ?, purchase_date = ?, expected_delivery_date = ?,
@@ -150,12 +150,12 @@ purchasesRouter.put('/:id', (req, res) => {
 });
 
 // Confirma recebimento de material no estoque (Seção 18)
-purchasesRouter.post('/:id/receive', (req, res) => {
+purchasesRouter.post('/:id/receive', async (req, res) => {
   try {
     const purchaseId = req.params.id;
     const { userId } = req.body;
 
-    const result = StockService.confirmPurchaseReceipt(purchaseId, userId || 5);
+    const result = await StockService.confirmPurchaseReceipt(purchaseId, userId || 5);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

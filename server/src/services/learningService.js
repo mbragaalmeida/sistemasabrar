@@ -6,9 +6,9 @@ export class LearningService {
    * Obtém fatores históricos de ajuste calculados a partir de obras concluídas da SABRAR.
    * Regra 26: IA aprende com tipo de obra, características, consumo real e correções humanas.
    */
-  static getHistoricalAdjustment(projectType, materialId) {
+  static async getHistoricalAdjustment(projectType, materialId) {
     try {
-      const row = db.prepare(`
+      const row = await db.prepare(`
         SELECT 
           COUNT(*) as sample_count,
           AVG(CASE WHEN ai_suggested_qty > 0 THEN human_approved_qty / ai_suggested_qty ELSE 1.0 END) as avg_human_factor,
@@ -46,19 +46,19 @@ export class LearningService {
    * Registra ou atualiza um ciclo de aprendizado quando um projeto avança ou é concluído.
    * Regra 29: Não altera retrospectivamente dados de auditoria, apenas adiciona ou refina a base de aprendizado.
    */
-  static recordProjectFeedback(projectId, materialId, projectType, aiQty, approvedQty, requestedQty, withdrawnQty, returnedQty) {
+  static async recordProjectFeedback(projectId, materialId, projectType, aiQty, approvedQty, requestedQty, withdrawnQty, returnedQty) {
     const actualConsumed = Math.max(0, withdrawnQty - returnedQty);
     const varianceUnits = actualConsumed - approvedQty;
     const variancePercent = approvedQty > 0 ? (varianceUnits / approvedQty) * 100 : 0;
     const adjustmentFactor = aiQty > 0 ? Number((actualConsumed / aiQty).toFixed(2)) : 1.0;
 
-    const existing = db.prepare(`
+    const existing = await db.prepare(`
       SELECT id FROM historical_usage 
       WHERE project_id = ? AND material_id = ?
     `).get(projectId, materialId);
 
     if (existing) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE historical_usage SET
           human_approved_qty = ?,
           total_requested_qty = ?,
@@ -76,7 +76,7 @@ export class LearningService {
         adjustmentFactor, existing.id
       );
     } else {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO historical_usage (
           project_id, material_id, project_type,
           ai_suggested_qty, human_approved_qty, total_requested_qty,
@@ -95,9 +95,9 @@ export class LearningService {
   /**
    * Estatísticas globais do motor de IA para exibição no Dashboard e no Hub de Aprendizado.
    */
-  static getLearningMetrics() {
-    const totalSamples = db.prepare('SELECT COUNT(*) as total FROM historical_usage').get().total;
-    const avgRow = db.prepare(`
+  static async getLearningMetrics() {
+    const totalSamples = (await db.prepare('SELECT COUNT(*) as total FROM historical_usage').get())?.total || 0;
+    const avgRow = await db.prepare(`
       SELECT AVG(100 - ABS(variance_percent)) as accuracy 
       FROM historical_usage 
       WHERE actual_consumed_qty > 0
@@ -107,7 +107,7 @@ export class LearningService {
       ? Number(Math.max(60, Math.min(99, avgRow.accuracy)).toFixed(1))
       : 0;
 
-    const historyItems = db.prepare(`
+    const historyItems = await db.prepare(`
       SELECT 
         h.*,
         m.name as material_name,
@@ -133,12 +133,12 @@ export class LearningService {
    * Consolida métricas históricas reais e benchmarks empíricos
    * para enriquecer o prompt do Agente de IA com dados reais da SABRAR.
    */
-  static getAgentContext() {
-    const totalProjects = db.prepare("SELECT COUNT(*) as count FROM projects").get().count;
-    const completedProjects = db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Finalizado', 'Em execução')").get().count;
-    const totalHistoricalRecords = db.prepare("SELECT COUNT(*) as count FROM historical_usage").get().count;
+  static async getAgentContext() {
+    const totalProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects").get())?.count || 0;
+    const completedProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Finalizado', 'Em execução')").get())?.count || 0;
+    const totalHistoricalRecords = (await db.prepare("SELECT COUNT(*) as count FROM historical_usage").get())?.count || 0;
 
-    const typologies = db.prepare(`
+    const typologies = await db.prepare(`
       SELECT 
         p.project_type,
         COUNT(DISTINCT p.id) as project_count,
@@ -153,7 +153,7 @@ export class LearningService {
       ORDER BY project_count DESC
     `).all();
 
-    const topMaterialsCalibrated = db.prepare(`
+    const topMaterialsCalibrated = await db.prepare(`
       SELECT 
         m.id,
         m.code,
@@ -172,7 +172,7 @@ export class LearningService {
       LIMIT 15
     `).all();
 
-    const globalMetrics = this.getLearningMetrics();
+    const globalMetrics = await this.getLearningMetrics();
 
     // Gera prompt estruturado para o Agente de IA combinando o SYSTEM PROMPT oficial e os benchmarks reais
     const historicalLines = [];

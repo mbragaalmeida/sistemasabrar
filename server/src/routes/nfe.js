@@ -55,7 +55,7 @@ nfeRouter.post('/preview', upload.single('xmlFile'), async (req, res) => {
     }
 
     // Busca todos os materiais existentes para tentar matching
-    const existingMaterials = db.prepare('SELECT * FROM materials').all();
+    const existingMaterials = await db.prepare('SELECT * FROM materials').all();
 
     const previewItems = parsedNfe.items.map(item => {
       const cleanItemName = item.name.trim();
@@ -124,7 +124,7 @@ nfeRouter.post('/preview', upload.single('xmlFile'), async (req, res) => {
  * Confirma a importação da NF-e, atualizando automaticamente os preços de referência da base
  * para os orçamentos e incrementando o estoque físico.
  */
-nfeRouter.post('/confirm', (req, res) => {
+nfeRouter.post('/confirm', async (req, res) => {
   try {
     const { supplier, invoiceNumber, items, userId } = req.body;
 
@@ -139,15 +139,15 @@ nfeRouter.post('/confirm', (req, res) => {
       let existingSupplier = null;
 
       if (cleanCnpj) {
-        existingSupplier = db.prepare('SELECT id FROM suppliers WHERE cnpj = ?').get(cleanCnpj);
+        existingSupplier = await db.prepare('SELECT id FROM suppliers WHERE cnpj = ?').get(cleanCnpj);
       }
       if (!existingSupplier && supplier.name) {
-        existingSupplier = db.prepare('SELECT id FROM suppliers WHERE name = ?').get(supplier.name.trim());
+        existingSupplier = await db.prepare('SELECT id FROM suppliers WHERE name = ?').get(supplier.name.trim());
       }
 
       if (existingSupplier) {
         supplierId = existingSupplier.id;
-        db.prepare(`
+        await db.prepare(`
           UPDATE suppliers SET
             corporate_name = COALESCE(?, corporate_name),
             phone = COALESCE(?, phone),
@@ -159,7 +159,7 @@ nfeRouter.post('/confirm', (req, res) => {
           INSERT INTO suppliers (name, corporate_name, cnpj, contact_person, phone, email, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
-        const supRes = insertSup.run(
+        const supRes = await insertSup.run(
           supplier.name.trim(),
           supplier.corporate_name || supplier.name.trim(),
           cleanCnpj || '',
@@ -183,7 +183,7 @@ nfeRouter.post('/confirm', (req, res) => {
       let currentPrice = 0;
 
       if (materialId) {
-        const currentMat = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
+        const currentMat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
         if (currentMat) {
           previousStock = currentMat.stock_physical;
           currentPrice = currentMat.reference_price;
@@ -192,7 +192,7 @@ nfeRouter.post('/confirm', (req, res) => {
           // Atualiza o PREÇO DE REFERÊNCIA da base pelo valor da última compra na NF-e!
           const newPrice = Number(item.convertedUnitPrice) > 0 ? Number(item.convertedUnitPrice) : currentPrice;
 
-          db.prepare(`
+          await db.prepare(`
             UPDATE materials SET
               reference_price = ?,
               stock_physical = ?,
@@ -202,7 +202,7 @@ nfeRouter.post('/confirm', (req, res) => {
           `).run(newPrice, newStock, supplierId, materialId);
 
           // Registra movimentação de estoque
-          const moveRes = db.prepare(`
+          const moveRes = await db.prepare(`
             INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, user_id, notes)
             VALUES (?, 'ENTRADA', ?, ?, ?, ?, ?)
           `).run(
@@ -219,7 +219,7 @@ nfeRouter.post('/confirm', (req, res) => {
         }
       } else {
         // Cria novo material na base
-        const maxId = db.prepare('SELECT MAX(id) as maxId FROM materials').get().maxId || 0;
+        const maxId = (await db.prepare('SELECT MAX(id) as maxId FROM materials').get())?.maxId || 0;
         const newCode = `MAT-${String(maxId + 1).padStart(6, '0')}`;
         const newPrice = Number(item.convertedUnitPrice) || Number(item.xmlUnitPrice) || 0;
         const newStock = Number(item.convertedQuantity) || Number(item.xmlQuantity) || 0;
@@ -229,7 +229,7 @@ nfeRouter.post('/confirm', (req, res) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 5, 'Ativo')
         `);
 
-        const matRes = insertMat.run(
+        const matRes = await insertMat.run(
           newCode,
           item.xmlName.trim(),
           `Importado via NF-e nº ${invoiceNumber}. NCM: ${item.ncm || 'S/N'}`,
@@ -243,7 +243,7 @@ nfeRouter.post('/confirm', (req, res) => {
         materialId = matRes.lastInsertRowid;
 
         // Registra movimentação de entrada
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, user_id, notes)
           VALUES (?, 'ENTRADA', ?, 0, ?, ?, ?)
         `).run(
@@ -259,7 +259,7 @@ nfeRouter.post('/confirm', (req, res) => {
     }
 
     // Notificação Interna de Sucesso
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (user_id, role_target, title, message, type, link)
       VALUES (?, 'Almoxarifado', 'NF-e Importada com Sucesso', ?, 'success', '/materiais')
     `).run(
@@ -268,7 +268,7 @@ nfeRouter.post('/confirm', (req, res) => {
     );
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, user_name, action, entity_type, details)
       VALUES (?, 'Sistema / NF-e', 'IMPORTACAO_NFE_PRECOS', 'ESTOQUE', ?)
     `).run(

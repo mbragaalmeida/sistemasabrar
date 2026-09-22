@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 export const auditRouter = express.Router();
 
 // Lista logs de auditoria imutáveis com filtros (Seção 37)
-auditRouter.get('/', (req, res) => {
+auditRouter.get('/', async (req, res) => {
   try {
     const { entity_type, project_id, search } = req.query;
     let query = `
@@ -31,7 +31,7 @@ auditRouter.get('/', (req, res) => {
 
     query += ' ORDER BY al.id DESC LIMIT 100';
 
-    const logs = db.prepare(query).all(...params);
+    const logs = await db.prepare(query).all(...params);
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: err.message });

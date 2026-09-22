@@ -56,14 +56,14 @@ bulkImportRouter.get('/template', (req, res) => {
 /**
  * Upload e processamento de planilha (.xlsx, .xls, .csv) de carga em massa
  */
-bulkImportRouter.post('/upload', upload.single('file'), (req, res) => {
+bulkImportRouter.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
     const userId = req.body.userId ? parseInt(req.body.userId) : 1;
-    const result = BulkImportService.parseAndImportBulkData(req.file.path, req.file.originalname, userId);
+    const result = await BulkImportService.parseAndImportBulkData(req.file.path, req.file.originalname, userId);
 
     res.json({
       success: true,
@@ -79,7 +79,7 @@ bulkImportRouter.post('/upload', upload.single('file'), (req, res) => {
 /**
  * Carga de dados em massa diretamente via JSON (para scripts e integrações)
  */
-bulkImportRouter.post('/json', (req, res) => {
+bulkImportRouter.post('/json', async (req, res) => {
   try {
     const { projects, materialsBudget, materialsReal, userId, originalName } = req.body;
 
@@ -87,7 +87,7 @@ bulkImportRouter.post('/json', (req, res) => {
       return res.status(400).json({ error: 'Array de projetos inválido ou vazio.' });
     }
 
-    const result = BulkImportService.importStructuredData({
+    const result = await BulkImportService.importStructuredData({
       projects,
       materialsBudget: materialsBudget || [],
       materialsReal: materialsReal || [],
@@ -109,12 +109,12 @@ bulkImportRouter.post('/json', (req, res) => {
 /**
  * Sumário da base histórica importada
  */
-bulkImportRouter.get('/summary', (req, res) => {
+bulkImportRouter.get('/summary', async (req, res) => {
   try {
-    const totalProjects = db.prepare("SELECT COUNT(*) as count FROM projects").get().count;
-    const totalHistory = db.prepare("SELECT COUNT(*) as count FROM historical_usage").get().count;
-    const totalRevenue = db.prepare("SELECT SUM(total_budget_final) as total FROM projects").get()?.total || 0;
-    const totalMaterialsBudget = db.prepare("SELECT SUM(total_budget_materials) as total FROM projects").get()?.total || 0;
+    const totalProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects").get())?.count || 0;
+    const totalHistory = (await db.prepare("SELECT COUNT(*) as count FROM historical_usage").get())?.count || 0;
+    const totalRevenue = (await db.prepare("SELECT SUM(total_budget_final) as total FROM projects").get())?.total || 0;
+    const totalMaterialsBudget = (await db.prepare("SELECT SUM(total_budget_materials) as total FROM projects").get())?.total || 0;
 
     res.json({
       totalProjects,

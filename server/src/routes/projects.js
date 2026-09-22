@@ -32,7 +32,7 @@ const upload = multer({ storage });
 export const projectsRouter = express.Router();
 
 // Lista todos os projetos com filtros e resumos
-projectsRouter.get('/', (req, res) => {
+projectsRouter.get('/', async (req, res) => {
   try {
     const { status, search, project_type } = req.query;
     let query = 'SELECT * FROM projects WHERE 1=1';
@@ -53,13 +53,13 @@ projectsRouter.get('/', (req, res) => {
 
     query += ' ORDER BY id DESC';
 
-    const projects = db.prepare(query).all(...params);
+    const projects = await db.prepare(query).all(...params);
 
     // Adiciona contagens rápidas de solicitações e arquivos
-    const enriched = projects.map(p => {
-      const fileCount = db.prepare('SELECT COUNT(*) as count FROM project_files WHERE project_id = ?').get(p.id).count;
-      const requestCount = db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE project_id = ?').get(p.id).count;
-      const budget = db.prepare('SELECT id, code, status, total_final FROM budgets WHERE project_id = ?').get(p.id);
+    const enriched = await Promise.all(projects.map(async p => {
+      const fileCount = (await db.prepare('SELECT COUNT(*) as count FROM project_files WHERE project_id = ?').get(p.id))?.count || 0;
+      const requestCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE project_id = ?').get(p.id))?.count || 0;
+      const budget = await db.prepare('SELECT id, code, status, total_final FROM budgets WHERE project_id = ?').get(p.id);
 
       return {
         ...p,
@@ -67,7 +67,7 @@ projectsRouter.get('/', (req, res) => {
         requestCount,
         budget: budget || null
       };
-    });
+    }));
 
     res.json(enriched);
   } catch (err) {
@@ -76,22 +76,22 @@ projectsRouter.get('/', (req, res) => {
 });
 
 // Detalhe completo de um projeto específico
-projectsRouter.get('/:id', (req, res) => {
+projectsRouter.get('/:id', async (req, res) => {
   try {
     const projectId = req.params.id;
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
 
     // Documentos anexados
-    const files = db.prepare('SELECT * FROM project_files WHERE project_id = ? ORDER BY id DESC').all(projectId);
+    const files = await db.prepare('SELECT * FROM project_files WHERE project_id = ? ORDER BY id DESC').all(projectId);
 
     // Orçamento vinculado
-    const budget = db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetItems = [];
     let services = [];
 
     if (budget) {
-      budgetItems = db.prepare(`
+      budgetItems = await db.prepare(`
         SELECT bi.*, m.code as material_code, m.brand, m.stock_physical, m.stock_reserved
         FROM budget_items bi
         LEFT JOIN materials m ON bi.material_id = m.id
@@ -99,11 +99,11 @@ projectsRouter.get('/:id', (req, res) => {
         ORDER BY bi.id ASC
       `).all(budget.id);
 
-      services = db.prepare('SELECT * FROM services WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+      services = await db.prepare('SELECT * FROM services WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
     }
 
     // Solicitações de materiais
-    const requests = db.prepare(`
+    const requests = await db.prepare(`
       SELECT mr.*, u.name as requested_by_name
       FROM material_requests mr
       JOIN users u ON mr.requested_by = u.id
@@ -111,18 +111,18 @@ projectsRouter.get('/:id', (req, res) => {
       ORDER BY mr.id DESC
     `).all(projectId);
 
-    const enrichedRequests = requests.map(r => {
-      const items = db.prepare(`
+    const enrichedRequests = await Promise.all(requests.map(async r => {
+      const items = await db.prepare(`
         SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit
         FROM material_request_items mri
         JOIN materials m ON mri.material_id = m.id
         WHERE mri.request_id = ?
       `).all(r.id);
       return { ...r, items };
-    });
+    }));
 
     // Devoluções de materiais
-    const returns = db.prepare(`
+    const returns = await db.prepare(`
       SELECT ret.*, m.name as material_name, m.code as material_code, m.unit as material_unit, u.name as received_by_name
       FROM returns ret
       JOIN materials m ON ret.material_id = m.id
@@ -132,22 +132,23 @@ projectsRouter.get('/:id', (req, res) => {
     `).all(projectId);
 
     // Análises de IA
-    const aiAnalyses = db.prepare(`
+    const aiAnalyses = await db.prepare(`
       SELECT * FROM ai_analyses WHERE project_id = ? ORDER BY id DESC
     `).all(projectId);
 
     // Tabela comparativa PREVISTO x REALIZADO por material (Seções 21, 22)
     const comparisonMap = new Map();
 
-    // 1. Itens do orçamento
-    for (const item of budgetItems) {
-      comparisonMap.set(item.material_id || item.material_name, {
-        materialId: item.material_id,
-        materialName: item.material_name,
-        materialCode: item.material_code,
-        unit: item.unit,
-        aiPredicted: item.ai_suggested_quantity || item.quantity,
-        budgetApproved: item.quantity,
+    // 1. Quantidades orçadas
+    for (const bi of budgetItems) {
+      comparisonMap.set(bi.material_id, {
+        materialId: bi.material_id,
+        code: bi.material_code,
+        name: bi.material_name,
+        unit: bi.unit,
+        unitPrice: bi.unit_price,
+        budgetOriginalAi: bi.ai_suggested_quantity,
+        budgetApproved: bi.quantity,
         requested: 0,
         withdrawn: 0,
         returned: 0,
@@ -163,11 +164,12 @@ projectsRouter.get('/:id', (req, res) => {
         const key = it.material_id;
         if (!comparisonMap.has(key)) {
           comparisonMap.set(key, {
-            materialId: it.material_id,
-            materialName: it.material_name,
-            materialCode: it.material_code,
+            materialId: key,
+            code: it.material_code,
+            name: it.material_name,
             unit: it.material_unit,
-            aiPredicted: 0,
+            unitPrice: 0,
+            budgetOriginalAi: 0,
             budgetApproved: 0,
             requested: 0,
             withdrawn: 0,
@@ -183,7 +185,7 @@ projectsRouter.get('/:id', (req, res) => {
     }
 
     // 3. Quantidades retiradas (movimentações SAIDA_OBRA)
-    const withdrawals = db.prepare(`
+    const withdrawals = await db.prepare(`
       SELECT material_id, SUM(quantity) as total
       FROM stock_movements
       WHERE project_id = ? AND type = 'SAIDA_OBRA'
@@ -245,7 +247,7 @@ projectsRouter.post('/', async (req, res) => {
     }
 
     // Gera código automático: PRJ-2026-00X
-    const count = db.prepare('SELECT COUNT(*) as count FROM projects').get().count + 1;
+    const count = ((await db.prepare('SELECT COUNT(*) as count FROM projects').get())?.count || 0) + 1;
     const code = `PRJ-2026-${String(count).padStart(3, '0')}`;
 
     const insert = db.prepare(`
@@ -255,7 +257,7 @@ projectsRouter.post('/', async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Novo')
     `);
 
-    const result = insert.run(
+    const result = await insert.run(
       code, name, client, client_email || null, client_phone || null,
       address || 'Endereço a definir', city || 'São Paulo', state || 'SP',
       project_type || 'Comercial', start_date || null, expected_end_date || null,
@@ -267,7 +269,7 @@ projectsRouter.post('/', async (req, res) => {
     // Salva documentos técnicos anexados
     if (Array.isArray(uploadedDocuments) && uploadedDocuments.length > 0) {
       for (const doc of uploadedDocuments) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
           VALUES (?, ?, ?, ?, ?, ?, ?, 1)
         `).run(
@@ -284,14 +286,14 @@ projectsRouter.post('/', async (req, res) => {
 
     // Se o usuário digitou texto do memorial ou descrição inicial, salva também como arquivo
     if (initial_spec_text && initial_spec_text.trim()) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
         VALUES (?, 'MEMORIAL_DESCRITIVO', 'Memorial_Descritivo.txt', '/uploads/memorial.txt', ?, 'text/plain', ?, 1)
       `).run(projectId, initial_spec_text.length, initial_spec_text);
     }
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
       VALUES (1, 'CRIAR_PROJETO', 'PROJETO', ?, ?, ?)
     `).run(projectId, projectId, `Projeto cadastrado: ${name} (${code}) para o cliente ${client} com ${(uploadedDocuments?.length || 0)} documento(s)`);
@@ -350,7 +352,7 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
         }
       }
 
-      const resInsert = db.prepare(`
+      const resInsert = await db.prepare(`
         INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
         VALUES (?, 'PROJETO_TECNICO', ?, ?, ?, ?, ?, 1)
       `).run(
@@ -390,7 +392,7 @@ projectsRouter.post('/:id/import-spreadsheet', upload.single('file'), async (req
 
     console.log(`[Import Spreadsheet] Processando planilha ${file.originalname} para o projeto ${projectId}...`);
 
-    const result = SpreadsheetService.processRealSurveySpreadsheet(
+    const result = await SpreadsheetService.processRealSurveySpreadsheet(
       projectId,
       file.path,
       file.originalname,
@@ -398,7 +400,7 @@ projectsRouter.post('/:id/import-spreadsheet', upload.single('file'), async (req
     );
 
     // Registra o arquivo em project_files
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
       VALUES (?, 'PLANILHA_LEVANTAMENTO', ?, ?, ?, ?, ?, ?)
     `).run(
@@ -432,22 +434,22 @@ projectsRouter.post('/:id/analyze', async (req, res) => {
 });
 
 // Atualiza status do projeto (Seção 5)
-projectsRouter.patch('/:id/status', (req, res) => {
+projectsRouter.patch('/:id/status', async (req, res) => {
   try {
     const { status, userId } = req.body;
     const projectId = req.params.id;
 
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE projects 
       SET status = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `).run(status, projectId);
 
     // Auditoria
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
       VALUES (?, 'ALTERAR_STATUS_PROJETO', 'PROJETO', ?, ?, ?, ?, ?)
     `).run(
@@ -462,7 +464,7 @@ projectsRouter.patch('/:id/status', (req, res) => {
 });
 
 // Adiciona arquivo ou memorial ao projeto
-projectsRouter.post('/:id/files', (req, res) => {
+projectsRouter.post('/:id/files', async (req, res) => {
   try {
     const { type, original_name, content_summary, userId } = req.body;
     const projectId = req.params.id;
@@ -472,7 +474,7 @@ projectsRouter.post('/:id/files', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = insert.run(
+    const result = await insert.run(
       projectId,
       type || 'MEMORIAL_DESCRITIVO',
       original_name || 'Documento_Tecnico.pdf',

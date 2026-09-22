@@ -61,12 +61,12 @@ aiCalibrationRouter.post('/upload', upload.array('files', 20), async (req, res) 
 /**
  * Status e métricas da calibração contínua da IA
  */
-aiCalibrationRouter.get('/status', (req, res) => {
+aiCalibrationRouter.get('/status', async (req, res) => {
   try {
-    const metrics = LearningService.getLearningMetrics();
-    const totalCalibratedProjects = db.prepare(`
+    const metrics = await LearningService.getLearningMetrics();
+    const totalCalibratedProjects = (await db.prepare(`
       SELECT COUNT(DISTINCT project_id) as count FROM historical_usage
-    `).get()?.count || 0;
+    `).get())?.count || 0;
 
     res.json({
       ...metrics,
@@ -80,9 +80,9 @@ aiCalibrationRouter.get('/status', (req, res) => {
 /**
  * Histórico detalhado de materiais e obras calibradas
  */
-aiCalibrationRouter.get('/history', (req, res) => {
+aiCalibrationRouter.get('/history', async (req, res) => {
   try {
-    const rows = db.prepare(`
+    const rows = await db.prepare(`
       SELECT 
         h.*,
         m.name as material_name,

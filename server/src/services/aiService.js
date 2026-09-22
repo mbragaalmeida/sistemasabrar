@@ -19,11 +19,11 @@ export class AIAnalysisService {
   /**
    * Lê todos os documentos anexados ao projeto
    */
-  static readProjectDocuments(projectId, customText = '') {
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  static async readProjectDocuments(projectId, customText = '') {
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
 
-    const files = db.prepare('SELECT * FROM project_files WHERE project_id = ?').all(projectId);
+    const files = await db.prepare('SELECT * FROM project_files WHERE project_id = ?').all(projectId);
 
     let documentContent = customText || '';
     const documentsAnalyzed = [];
@@ -141,21 +141,21 @@ export class AIAnalysisService {
   /**
    * Encontra ou cria material correspondente na Base Central SABRAR (materials)
    */
-  static findOrCreateMaterial(itemDef) {
+  static async findOrCreateMaterial(itemDef) {
     // 1. Tenta buscar por código se informado
     if (itemDef.code) {
-      const byCode = db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
+      const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
       if (byCode) return byCode;
     }
 
     // 2. Tenta buscar por nome exato
-    let byName = db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
+    let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
     if (byName) return byName;
 
     // 3. Tenta busca por similaridade / palavras-chave
     const keywords = itemDef.keywords || [];
     for (const kw of keywords) {
-      const match = db.prepare("SELECT * FROM materials WHERE LOWER(name) LIKE ? AND status = 'Ativo' LIMIT 1").get(`%${kw.toLowerCase()}%`);
+      const match = await db.prepare("SELECT * FROM materials WHERE LOWER(name) LIKE ? AND status = 'Ativo' LIMIT 1").get(`%${kw.toLowerCase()}%`);
       if (match) return match;
     }
 
@@ -165,7 +165,7 @@ export class AIAnalysisService {
       INSERT INTO materials (code, name, category, unit, reference_price, status)
       VALUES (?, ?, ?, ?, ?, 'Ativo')
     `);
-    const res = insertMat.run(
+    const res = await insertMat.run(
       autoCode,
       itemDef.name,
       itemDef.category || 'Climatização',
@@ -173,7 +173,7 @@ export class AIAnalysisService {
       itemDef.defaultPrice || 0.0
     );
 
-    return db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
+    return await db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
   }
 
   /**
@@ -181,7 +181,7 @@ export class AIAnalysisService {
    */
   static async analyzeProjectDocuments(projectId, customText = '') {
     // ETAPA 1 & 2: Inventariar documentos e identificar versões, disciplinas e escopo
-    const { project, files, documentsAnalyzed, documentContent } = this.readProjectDocuments(projectId, customText);
+    const { project, files, documentsAnalyzed, documentContent } = await this.readProjectDocuments(projectId, customText);
 
     const normalizedDoc = (
       documentContent + ' ' + 
@@ -415,11 +415,11 @@ export class AIAnalysisService {
 
     // Processa cada material necessário, buscando na Base Central SABRAR
     for (const itemDef of requiredItems) {
-      const mat = this.findOrCreateMaterial(itemDef);
+      const mat = await this.findOrCreateMaterial(itemDef);
       const technicalQuantity = itemDef.quantity;
 
       // Aplica ajuste empírico histórico se houver calibração anterior
-      const historyAdj = LearningService.getHistoricalAdjustment(project.project_type, mat.id);
+      const historyAdj = await LearningService.getHistoricalAdjustment(project.project_type, mat.id);
       const finalQuantity = Math.round(technicalQuantity * historyAdj.factor);
 
       const rawPrice = mat.reference_price;
@@ -564,7 +564,7 @@ export class AIAnalysisService {
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    const analysisResult = insertAnalysis.run(
+    const analysisResult = await insertAnalysis.run(
       projectId,
       JSON.stringify(documentsAnalyzed),
       hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0,
@@ -583,7 +583,7 @@ export class AIAnalysisService {
 
     for (const item of budgetMaterials) {
       const auditMeta = auditItems.find(a => a.material_id === item.material_id);
-      insertSuggestion.run(
+      await insertSuggestion.run(
         analysisId,
         projectId,
         item.material_id,
@@ -598,14 +598,14 @@ export class AIAnalysisService {
     }
 
     // Salva ou atualiza orçamento
-    let budget = db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetId;
 
     if (!budget) {
-      const budgetCount = (db.prepare('SELECT COUNT(*) as count FROM budgets').get()?.count || 0) + 1;
+      const budgetCount = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
       const budgetCode = `ORC-2026-${String(budgetCount).padStart(3, '0')}`;
 
-      const resBudget = db.prepare(`
+      const resBudget = await db.prepare(`
         INSERT INTO budgets (
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
@@ -623,15 +623,15 @@ export class AIAnalysisService {
       budgetId = resBudget.lastInsertRowid;
     } else {
       budgetId = budget.id;
-      db.prepare(`
+      await db.prepare(`
         UPDATE budgets SET
           total_materials = ?, total_services = ?, total_labor = ?, total_final = ?,
           status = 'Em revisão', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(materialsTotal, totalServicesCost, totalServicesCost, totalFinalCost, budgetId);
 
-      db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
-      db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
     }
 
     const insertBudgetItem = db.prepare(`
@@ -643,7 +643,7 @@ export class AIAnalysisService {
 
     for (const m of budgetMaterials) {
       const auditMeta = auditItems.find(a => a.material_id === m.material_id);
-      insertBudgetItem.run(
+      await insertBudgetItem.run(
         budgetId,
         m.material_id,
         m.material_name,
@@ -663,7 +663,7 @@ export class AIAnalysisService {
     `);
 
     for (const s of defaultServices) {
-      insertService.run(
+      await insertService.run(
         budgetId,
         s.category,
         s.description,
@@ -675,7 +675,7 @@ export class AIAnalysisService {
       );
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE projects SET
         status = 'Orçamento gerado',
         total_budget_materials = ?,

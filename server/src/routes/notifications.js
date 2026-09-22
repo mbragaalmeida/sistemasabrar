@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 export const notificationsRouter = express.Router();
 
 // Lista notificações (filtradas por role ou user)
-notificationsRouter.get('/', (req, res) => {
+notificationsRouter.get('/', async (req, res) => {
   try {
     const { role, user_id } = req.query;
     let query = 'SELECT * FROM notifications WHERE 1=1';
@@ -23,7 +23,7 @@ notificationsRouter.get('/', (req, res) => {
 
     query += ' ORDER BY id DESC LIMIT 50';
 
-    const notifications = db.prepare(query).all(...params);
+    const notifications = await db.prepare(query).all(...params);
     const unreadCount = notifications.filter(n => !n.is_read).length;
 
     res.json({ notifications, unreadCount });
@@ -33,9 +33,9 @@ notificationsRouter.get('/', (req, res) => {
 });
 
 // Marca notificação individual como lida
-notificationsRouter.patch('/:id/read', (req, res) => {
+notificationsRouter.patch('/:id/read', async (req, res) => {
   try {
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(req.params.id);
+    await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(req.params.id);
     res.json({ success: true, id: req.params.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -43,9 +43,9 @@ notificationsRouter.patch('/:id/read', (req, res) => {
 });
 
 // Marca todas como lidas
-notificationsRouter.post('/read-all', (req, res) => {
+notificationsRouter.post('/read-all', async (req, res) => {
   try {
-    db.prepare('UPDATE notifications SET is_read = 1').run();
+    await db.prepare('UPDATE notifications SET is_read = 1').run();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

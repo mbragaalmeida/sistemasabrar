@@ -1,4 +1,4 @@
-﻿import { createRequire } from 'node:module';
+import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
 
@@ -305,7 +305,7 @@ export class BulkImportService {
    * Processa uma planilha de carga em massa com multiplas obras,
    * levantamento de materiais e consumo real final.
    */
-  static parseAndImportBulkData(filePath, originalName, userId = 1) {
+  static async parseAndImportBulkData(filePath, originalName, userId = 1) {
     const workbook = XLSX.readFile(filePath);
     if (!workbook.SheetNames.length) throw new Error('A planilha esta vazia ou ilegivel');
 
@@ -336,7 +336,7 @@ export class BulkImportService {
       throw new Error('Nenhuma linha de obra encontrada na aba de Obras.');
     }
 
-    return this.importStructuredData({
+    return await this.importStructuredData({
       projects: rawObras,
       materialsBudget: rawLevantamento,
       materialsReal: rawConsumo,
@@ -348,12 +348,12 @@ export class BulkImportService {
   /**
    * Importacao a partir de estrutura unificada (usada tanto por Excel quanto por JSON).
    */
-  static importStructuredData({ projects, materialsBudget = [], materialsReal = [], originalName = 'Carga em Massa', userId = 1 }) {
-    const catalog = db.prepare('SELECT * FROM materials').all();
-    const maxMatId = db.prepare('SELECT MAX(id) as max_id FROM materials').get()?.max_id || 0;
+  static async importStructuredData({ projects, materialsBudget = [], materialsReal = [], originalName = 'Carga em Massa', userId = 1 }) {
+    const catalog = await db.prepare('SELECT * FROM materials').all();
+    const maxMatId = (await db.prepare('SELECT MAX(id) as max_id FROM materials').get())?.max_id || 0;
     let newMatCounter = 0;
 
-    const findOrCreateMaterial = (code, name, category, unit, price) => {
+    const findOrCreateMaterial = async (code, name, category, unit, price) => {
       const cleanName = String(name || '').trim();
       const cleanCode = code ? String(code).trim() : '';
 
@@ -374,7 +374,7 @@ export class BulkImportService {
       const u = unit || 'un';
       const p = Number(price) > 0 ? Number(price) : 50.0;
 
-      const res = db.prepare(`
+      const res = await db.prepare(`
         INSERT INTO materials (code, name, description, category, unit, reference_price, stock_physical, stock_reserved, stock_minimum, status)
         VALUES (?, ?, ?, ?, ?, ?, 100, 0, 10, 'Ativo')
       `).run(
@@ -430,12 +430,12 @@ export class BulkImportService {
       const pEngineer = String(rawP.Engenheiro_Responsavel || rawP.engenheiro || 'Eng. Rafael Santos').trim();
       const pStatus = String(rawP.Status || rawP.status || 'Finalizado').trim();
 
-      let project = db.prepare('SELECT * FROM projects WHERE code = ?').get(pCode);
+      let project = await db.prepare('SELECT * FROM projects WHERE code = ?').get(pCode);
       let projectId;
 
       if (project) {
         projectId = project.id;
-        db.prepare(`
+        await db.prepare(`
           UPDATE projects SET
             name = ?, client = ?, project_type = ?, city = ?, state = ?,
             start_date = ?, expected_end_date = ?, responsible_engineer = ?,
@@ -443,7 +443,7 @@ export class BulkImportService {
           WHERE id = ?
         `).run(pName, pClient, pType, pCity, pState, pStart, pEnd, pEngineer, pStatus, pRevenue, projectId);
       } else {
-        const resP = db.prepare(`
+        const resP = await db.prepare(`
           INSERT INTO projects (
             code, name, client, address, city, state, project_type,
             start_date, expected_end_date, responsible_engineer, status,
@@ -473,13 +473,13 @@ export class BulkImportService {
       const budgetMap = new Map();
       let pTotalBudgetMaterials = 0;
 
-      let budget = db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+      let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
       let budgetId;
 
       if (!budget) {
-        const bCount = (db.prepare('SELECT COUNT(*) as count FROM budgets').get()?.count || 0) + 1;
+        const bCount = ((await db.prepare('SELECT COUNT(*) as count FROM budgets').get())?.count || 0) + 1;
         const bCode = `ORC-HIST-${String(bCount).padStart(4, '0')}`;
-        const resB = db.prepare(`
+        const resB = await db.prepare(`
           INSERT INTO budgets (
             project_id, code, status, total_materials, total_services,
             total_final, commercial_terms
@@ -488,7 +488,7 @@ export class BulkImportService {
         budgetId = resB.lastInsertRowid;
       } else {
         budgetId = budget.id;
-        db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+        await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
       }
 
       const insertBudgetItem = db.prepare(`
@@ -508,11 +508,11 @@ export class BulkImportService {
         const matPrice = normalizeNumber(item['Preco_Unitario_R$'] || item.preco_unitario || item.unit_price);
         if (matQty <= 0) continue;
 
-        const mat = findOrCreateMaterial(matCode, matDesc, matCat, matUnit, matPrice);
+        const mat = await findOrCreateMaterial(matCode, matDesc, matCat, matUnit, matPrice);
         const subtotal = Number((matQty * (matPrice > 0 ? matPrice : mat.reference_price)).toFixed(2));
         pTotalBudgetMaterials += subtotal;
 
-        insertBudgetItem.run(
+        await insertBudgetItem.run(
           budgetId,
           mat.id,
           mat.name,
@@ -545,7 +545,7 @@ export class BulkImportService {
         const realUnitCost = normalizeNumber(item['Custo_Unitario_Real_R$'] || item.custo_unitario || item.real_cost);
         if (realQty <= 0) continue;
 
-        const mat = findOrCreateMaterial(matCode, matDesc, null, null, realUnitCost);
+        const mat = await findOrCreateMaterial(matCode, matDesc, null, null, realUnitCost);
         const finalUnitCost = realUnitCost > 0 ? realUnitCost : mat.reference_price;
         const itemActualCost = Number((realQty * finalUnitCost).toFixed(2));
         pTotalActualMaterialsCost += itemActualCost;
@@ -556,9 +556,9 @@ export class BulkImportService {
         const variancePercent = budgetedQty > 0 ? Number(((varianceUnits / budgetedQty) * 100).toFixed(2)) : 0;
         const learnedFactor = budgetedQty > 0 ? Number((realQty / budgetedQty).toFixed(2)) : 1.0;
 
-        const existingHist = db.prepare('SELECT id FROM historical_usage WHERE project_id = ? AND material_id = ?').get(projectId, mat.id);
+        const existingHist = await db.prepare('SELECT id FROM historical_usage WHERE project_id = ? AND material_id = ?').get(projectId, mat.id);
         if (existingHist) {
-          db.prepare(`
+          await db.prepare(`
             UPDATE historical_usage SET
               project_type = ?, project_size_sqm = ?,
               ai_suggested_qty = ?, human_approved_qty = ?,
@@ -576,7 +576,7 @@ export class BulkImportService {
             learnedFactor, existingHist.id
           );
         } else {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO historical_usage (
               project_id, material_id, project_type, project_size_sqm,
               ai_suggested_qty, human_approved_qty, total_requested_qty,
@@ -594,7 +594,7 @@ export class BulkImportService {
 
         results.historicalRowsCreated++;
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO stock_movements (
             material_id, type, quantity, previous_stock, new_stock,
             project_id, user_id, notes
@@ -605,7 +605,7 @@ export class BulkImportService {
         );
       }
 
-      db.prepare(`
+      await db.prepare(`
         UPDATE budgets SET
           total_materials = ?,
           total_services = ?,
@@ -619,7 +619,7 @@ export class BulkImportService {
         budgetId
       );
 
-      db.prepare(`
+      await db.prepare(`
         UPDATE projects SET
           total_budget_materials = ?,
           total_budget_final = ?,
@@ -651,7 +651,7 @@ export class BulkImportService {
 
     results.materialsCataloged = newMatCounter;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
       VALUES (?, 'CARGA_MASSA_OBRAS', 'PROJETO', 0, ?)
     `).run(

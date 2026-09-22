@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 export const stockRouter = express.Router();
 
 // Histórico de movimentações de estoque (Seção 23)
-stockRouter.get('/movements', (req, res) => {
+stockRouter.get('/movements', async (req, res) => {
   try {
     const { material_id, project_id, type } = req.query;
     let query = `
@@ -33,7 +33,7 @@ stockRouter.get('/movements', (req, res) => {
 
     query += ' ORDER BY sm.id DESC LIMIT 100';
 
-    const movements = db.prepare(query).all(...params);
+    const movements = await db.prepare(query).all(...params);
     res.json(movements);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -41,9 +41,9 @@ stockRouter.get('/movements', (req, res) => {
 });
 
 // Resumo geral do estoque (Valuation, itens baixos, disponíveis)
-stockRouter.get('/summary', (req, res) => {
+stockRouter.get('/summary', async (req, res) => {
   try {
-    const materials = db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
+    const materials = await db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
 
     let totalPhysicalValuation = 0;
     let totalItems = materials.length;
