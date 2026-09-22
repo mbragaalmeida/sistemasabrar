@@ -7275,6 +7275,7 @@ function normalizeTechString(str) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[\"']/g, '')
+    .replace(/\b(\d+)[.\-](\d+\/\d+)\b/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -7327,7 +7328,10 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
   const contextNorm = normalizeTechString(context);
 
   const queryGauges = extractExactGauges(searchNorm);
-  const queryMaterials = MATERIAL_KEYWORDS.filter(kw => searchNorm.includes(kw));
+  const STRICT_MATERIALS = ['armaflex', 'cobre', 'mpu', 'chapa', 'pvc', 'tubo', 'silicone', 'sikaflex', 'fita', 'disjuntor', 'damper', 'difusor', 'grelha', 'exaustor'];
+  const queryStrictMat = STRICT_MATERIALS.filter(m => searchNorm.includes(m));
+  const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua']);
+  const searchWords = searchNorm.split(' ').filter(w => w.length > 2 && !STOP_WORDS.has(w));
 
   // Filtra candidatos técnicos
   const candidates = [];
@@ -7341,19 +7345,14 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
     const fullEntryNorm = `${categoryNorm} ${entryNorm}`;
 
     // Regra 2: Rejeição por discrepância técnica de material
-    if (queryMaterials.length > 0) {
-      if (queryMaterials.includes('cobre') && !fullEntryNorm.includes('cobre') && !categoryNorm.includes('frigor')) {
-        continue;
-      }
-      if (queryMaterials.includes('armaflex') && !fullEntryNorm.includes('armaflex')) {
-        continue;
-      }
-      if (queryMaterials.includes('chapa') && !fullEntryNorm.includes('chapa')) {
-        continue;
-      }
-      if (queryMaterials.includes('espuma') && !fullEntryNorm.includes('espuma') && !fullEntryNorm.includes('isotubo')) {
-        continue;
-      }
+    if (queryStrictMat.length > 0) {
+      if (queryStrictMat.includes('armaflex') && !fullEntryNorm.includes('armaflex')) continue;
+      if (queryStrictMat.includes('cobre') && !fullEntryNorm.includes('cobre') && !categoryNorm.includes('frigor')) continue;
+      if (queryStrictMat.includes('mpu') && !fullEntryNorm.includes('mpu')) continue;
+      if (queryStrictMat.includes('pvc') && !fullEntryNorm.includes('pvc')) continue;
+      if (queryStrictMat.includes('tubo') && !fullEntryNorm.includes('tubo') && !fullEntryNorm.includes('tubulacao') && !categoryNorm.includes('frigor') && !categoryNorm.includes('hidraulica')) continue;
+      if (queryStrictMat.includes('chapa') && !fullEntryNorm.includes('chapa')) continue;
+      if (queryStrictMat.includes('silicone') && !fullEntryNorm.includes('silicone') && !fullEntryNorm.includes('sikaflex')) continue;
     }
 
     // Regra 2: Rejeição estrita por discrepância técnica de bitola (ex: 3/8 != 1 3/8)
@@ -7362,7 +7361,7 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
 
     if (queryGauges.length > 0) {
       for (const qg of queryGauges) {
-        // Se a query pede '3/8', rejeita itens que são '1 3/8'
+        // Se a query pede fração simples (ex: '3/4'), rejeita itens compostos (ex: '1 3/4')
         if (!qg.includes(' ') && qg.includes('/')) {
           const hasCompositeInEntry = entryGauges.some(eg => eg.endsWith(qg) && eg !== qg);
           const hasExact = entryGauges.includes(qg);
@@ -7372,47 +7371,46 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
           }
         }
         if (entryGauges.length > 0 && !entryGauges.includes(qg)) {
-          // Se nenhum dos gauges bateu, e a entry tem gauge definido, rejeita
-          const anyGaugeMatch = entryGauges.some(eg => eg === qg);
-          if (!anyGaugeMatch) {
-            gaugeMismatch = true;
-            break;
-          }
+          // Se o item do banco tem bitola definida e não contém a bitola procurada, rejeita
+          gaugeMismatch = true;
+          break;
         }
       }
     }
     if (gaugeMismatch) continue;
 
-    // Calcula score de semelhança técnica
-    let score = 0;
-
-    // Palavras-chave coincidentes
-    const searchWords = searchNorm.split(' ').filter(w => w.length > 2);
+    // Regra 1: Deve haver correspondência técnica de palavras na descrição
+    let wordScore = 0;
     for (const w of searchWords) {
-      if (entryNorm.includes(w)) score += 15;
-      else if (categoryNorm.includes(w)) score += 8;
+      if (entryNorm.includes(w)) wordScore += 25;
+      else if (categoryNorm.includes(w)) wordScore += 10;
     }
+
+    // Se nenhuma palavra chave relevante coincidir, REJEITA imediatamente
+    if (wordScore < 25) {
+      continue;
+    }
+
+    let score = wordScore;
 
     // Correspondência de unidade
     if (unitNorm && normalizeTechString(entry.unit) === unitNorm) {
       score += 25;
     }
 
-    // Regra 3: Priorização de contexto compatível com a obra
+    // Regra 3: Priorização de contexto compatível com a obra como critério de desempate
     if (contextNorm && normalizeTechString(entry.context).includes(contextNorm)) {
-      score += 70;
+      score += 40;
     } else if (contextNorm && (
       (contextNorm.includes('cobre') && entry.context.includes('COBRE')) ||
       (contextNorm.includes('agua') && entry.context.includes('AGUA')) ||
       (contextNorm.includes('cozinha') && entry.context.includes('Cozinha')) ||
       (contextNorm.includes('pressuriz') && entry.context.includes('Pressur'))
     )) {
-      score += 40;
+      score += 20;
     }
 
-    if (score >= 25) {
-      candidates.push({ entry, score });
-    }
+    candidates.push({ entry, score });
   }
 
   // Ordena por maior pontuação (contexto + fidelidade técnica)
@@ -7420,11 +7418,20 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
 
   if (candidates.length > 0) {
     const best = candidates[0].entry;
+    let finalPrice = best.price;
+    let finalUnit = best.unit;
+
+    // Conversão de Caixa de MPU (24m² por caixa) se a unidade requisitada for m²
+    if ((unitNorm === 'm2' || unitNorm === 'm²') && best.item.toLowerCase().includes('mpu') && (best.item.includes('2,4M2') || best.item.includes('2,4m2') || best.item.includes('2.4m2'))) {
+      finalPrice = Number((best.price / 24).toFixed(2));
+      finalUnit = 'm²';
+    }
+
     return {
       matched: true,
       priceStatus: 'OFICIAL_BASE_SABRAR',
-      price: best.price,
-      unit: best.unit,
+      price: finalPrice,
+      unit: finalUnit,
       matchedItem: best.item,
       category: best.category,
       context: best.context,

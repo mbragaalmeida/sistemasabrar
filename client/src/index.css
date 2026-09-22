@@ -62,14 +62,14 @@ body.light {
 }
 
 /* ========================================================
-   HEADER INTACTO — SEMPRE ESCURO E EXECUTIVO EM AMBOS OS TEMAS
+   HEADER INTACTO — SEMPRE PRETO PURO / CHUMBO NEUTRO EM AMBOS OS TEMAS
    ======================================================== */
 header,
 .light header,
 html.light header {
-  background-color: rgba(11, 15, 23, 0.98) !important;
-  border-color: #1E293B !important;
-  color: #F8FAFC !important;
+  background-color: #0A0A0A !important;
+  border-color: #222222 !important;
+  color: #FFFFFF !important;
 }
 
 header .text-white,
@@ -79,19 +79,21 @@ header .text-white,
 
 header .text-slate-400,
 .light header .text-slate-400 {
-  color: #94A3B8 !important;
+  color: #888888 !important;
 }
 
 header .text-slate-300,
 .light header .text-slate-300 {
-  color: #CBD5E1 !important;
+  color: #CCCCCC !important;
 }
 
 header input,
-.light header input {
-  background-color: #131B2E !important;
-  color: #F8FAFC !important;
-  border-color: #1E293B !important;
+.light header input,
+header button[class*="bg-"],
+.light header button[class*="bg-"] {
+  background-color: #141414 !important;
+  color: #FFFFFF !important;
+  border-color: #262626 !important;
 }
 
 /* ========================================================
@@ -207,9 +209,99 @@ header input,
 .light .bg-sabrar-950,
 .light .bg-sabrar-950\/90,
 .light .bg-sabrar-950\/80,
-.light .bg-sabrar-950\/70 {
+.light .bg-sabrar-950\/70,
+.light .bg-sabrar-950\/60 {
   background-color: #ECFDF5 !important;
   border-color: #A7F3D0 !important;
+  color: #15803D !important;
+}
+
+/* ========================================================
+   CONTRASTE DE CORES E BADGES NO TEMA CLARO (LIGHT THEME)
+   ======================================================== */
+.light .text-cyan-400,
+.light .text-cyan-300 {
+  color: #0369a1 !important; /* Cyan / Sky 700 para alta legibilidade */
+}
+
+.light .text-amber-400,
+.light .text-amber-300 {
+  color: #b45309 !important; /* Âmbar / Laranja escuro 700 */
+}
+
+.light .text-emerald-400,
+.light .text-emerald-300 {
+  color: #15803d !important; /* Esmeralda 700 */
+}
+
+.light .text-purple-400,
+.light .text-purple-300 {
+  color: #7e22ce !important; /* Roxo 700 */
+}
+
+.light .text-rose-400,
+.light .text-rose-300 {
+  color: #be123c !important; /* Rose / Vermelho 700 */
+}
+
+.light .text-blue-400,
+.light .text-blue-300 {
+  color: #1d4ed8 !important; /* Azul 700 */
+}
+
+.light .text-teal-400,
+.light .text-teal-300 {
+  color: #0f766e !important; /* Verde Petróleo 700 */
+}
+
+/* Fundo pastel limpo e elegante para caixas de ícones e badges no tema claro */
+.light .bg-cyan-950\/60,
+.light .bg-cyan-950 {
+  background-color: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+}
+
+.light .bg-amber-950\/60,
+.light .bg-amber-950 {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
+}
+
+.light .bg-emerald-950\/60,
+.light .bg-emerald-950 {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #15803d !important;
+}
+
+.light .bg-purple-950\/60,
+.light .bg-purple-950 {
+  background-color: #faf5ff !important;
+  border-color: #e9d5ff !important;
+  color: #7e22ce !important;
+}
+
+.light .bg-rose-950\/60,
+.light .bg-rose-950 {
+  background-color: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+  color: #be123c !important;
+}
+
+.light .bg-blue-950\/60,
+.light .bg-blue-950 {
+  background-color: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
+}
+
+.light .bg-teal-950\/60,
+.light .bg-teal-950 {
+  background-color: #f0fdfa !important;
+  border-color: #99f6e4 !important;
+  color: #0f766e !important;
 }
 
 /* Sombras suaves e elegantes para os cards brancos */

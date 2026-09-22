@@ -32,6 +32,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
   const [responsibleEngineer, setResponsibleEngineer] = useState('Eng. Rafael Santos');
+  const [estimatedArea, setEstimatedArea] = useState('');
   const [notes, setNotes] = useState('');
 
   // Upload de Documentos para Análise de IA
@@ -99,7 +100,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         address: address.trim(),
         project_type: projectType,
         responsible_engineer: responsibleEngineer,
-        notes: notes.trim(),
+        notes: estimatedArea ? `[Área da Obra: ${estimatedArea} m²] ${notes.trim()}` : notes.trim(),
         initial_spec_text: optionalText.trim(),
         uploadedDocuments: uploadedFiles.map(d => ({
           name: d.name,
@@ -227,18 +228,33 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </div>
           </div>
 
-          {/* Endereço */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Endereço / Local da Obra
-            </label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Ex: Av. Paulista, 1000 - Bela Vista - São Paulo / SP"
-              className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500"
-            />
+          {/* Endereço e Área da Obra */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Endereço / Local da Obra
+              </label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Ex: Shopping Tijuca - Av. Maracanã, 987 - Rio de Janeiro / RJ"
+                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Área da Obra (m²) <span className="text-slate-500 font-normal lowercase">(opcional)</span>
+              </label>
+              <input
+                type="number"
+                value={estimatedArea}
+                onChange={(e) => setEstimatedArea(e.target.value)}
+                placeholder="Ex: 120"
+                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500 font-semibold"
+              />
+            </div>
           </div>
 
           {/* ÁREA DE UPLOAD DE DOCUMENTOS PARA ANÁLISE PELA IA (Substituindo digitação manual conforme solicitação 1) */}

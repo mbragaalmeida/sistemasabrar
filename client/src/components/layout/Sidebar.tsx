@@ -108,12 +108,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar container */}
       <aside
-        className={`fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-white dark:bg-dark-950 text-slate-700 dark:text-slate-200 border-r border-slate-200 dark:border-dark-750 flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0 ${
+        className={`fixed md:sticky top-0 md:top-[57px] left-0 z-50 md:z-30 h-screen md:h-[calc(100vh-57px)] w-64 bg-white dark:bg-[#0A0A0A] text-slate-700 dark:text-slate-200 border-r border-slate-200 dark:border-[#222222] flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Mobile Header Inside Drawer com Logomarca Oficial */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-dark-750 md:hidden bg-white dark:bg-dark-900">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#222222] md:hidden bg-white dark:bg-[#0A0A0A]">
           <div className="flex items-center">
             <img
               src="/sabrar-logo.png"
@@ -123,14 +123,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <button
             onClick={onCloseMobile}
-            className="p-1 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800"
+            className="p-1 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#1A1A1A]"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* User Card with Logout */}
-        <div className="p-3.5 border-b border-slate-200 dark:border-dark-750 bg-slate-50/80 dark:bg-dark-900/60">
+        <div className="p-3.5 border-b border-slate-200 dark:border-[#222222] bg-slate-50 dark:bg-[#121212]">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <img
@@ -171,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
                         isActive
                           ? 'bg-emerald-600 dark:bg-sabrar-600 text-white shadow-md shadow-emerald-600/20 dark:shadow-sabrar-600/30 font-bold'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-850/80'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#1A1A1A]'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -198,7 +198,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="p-3 border-t border-slate-200 dark:border-dark-750 bg-slate-50 dark:bg-dark-900/60 text-[11px] text-slate-500 flex items-center justify-between">
+        <div className="p-3 border-t border-slate-200 dark:border-[#222222] bg-slate-50 dark:bg-[#121212] text-[11px] text-slate-500 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>Sistema SABRAR v1.0</span>

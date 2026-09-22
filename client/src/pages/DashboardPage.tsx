@@ -208,14 +208,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="bg-dark-900 p-4 rounded-3xl border border-dark-750 shadow-md hover:border-sabrar-500/40 transition-all">
                 <div className="flex items-center justify-between text-slate-400 mb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Receita Real (Obras Iniciadas)</span>
-                  <div className="p-2 rounded-2xl bg-sabrar-950/80 border border-sabrar-500/40 text-sabrar-400 shadow-inner">
+                  <div className="p-2 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-sabrar-950/80 dark:border-sabrar-500/40 dark:text-sabrar-400 shadow-inner">
                     <DollarSign className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-white">
                   R$ {Number(overview.cards.totalRevenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-sabrar-400 font-semibold mt-1 flex items-center gap-1">
+                <div className="text-xs text-emerald-700 dark:text-sabrar-400 font-semibold mt-1 flex items-center gap-1">
                   <span>{overview.cards.totalStartedProjects || overview.charts.projectsComparison?.length || 0} obras iniciadas / em execução</span>
                 </div>
               </div>
@@ -224,14 +224,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="bg-dark-900 p-4 rounded-3xl border border-dark-750 shadow-md hover:border-cyan-500/40 transition-all">
                 <div className="flex items-center justify-between text-slate-400 mb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Materiais Solicitados</span>
-                  <div className="p-2 rounded-2xl bg-cyan-950/60 border border-cyan-800 text-cyan-400 shadow-inner">
+                  <div className="p-2 rounded-2xl bg-cyan-50 border border-cyan-200 text-cyan-700 dark:bg-cyan-950/60 dark:border-cyan-800 dark:text-cyan-400 shadow-inner">
                     <Calculator className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-white">
                   R$ {Number(overview.cards.totalRequestedMaterials || overview.cards.totalBudgetMaterials || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-cyan-400 font-semibold mt-1">
+                <div className="text-xs text-cyan-700 dark:text-cyan-400 font-semibold mt-1">
                   Materiais já requisitados para as obras
                 </div>
               </div>
@@ -240,14 +240,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="bg-dark-900 p-4 rounded-3xl border border-dark-750 shadow-md hover:border-amber-500/40 transition-all">
                 <div className="flex items-center justify-between text-slate-400 mb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Custo Real (Concluídas)</span>
-                  <div className="p-2 rounded-2xl bg-amber-950/60 border border-amber-800 text-amber-400 shadow-inner">
+                  <div className="p-2 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-400 shadow-inner">
                     <Package className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-white">
                   R$ {Number(overview.cards.totalActualMaterialsCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-amber-400 font-semibold mt-1">
+                <div className="text-xs text-amber-700 dark:text-amber-400 font-semibold mt-1">
                   Apuração final pós-devoluções ({overview.cards.totalCompletedProjects || 0} concluídas)
                 </div>
               </div>
@@ -256,15 +256,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="bg-dark-900 p-4 rounded-3xl border border-dark-750 shadow-md hover:border-emerald-500/40 transition-all">
                 <div className="flex items-center justify-between text-slate-400 mb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Margem Bruta (Concluídas)</span>
-                  <div className="p-2 rounded-2xl bg-emerald-950/60 border border-emerald-800 text-emerald-400 shadow-inner">
+                  <div className="p-2 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-400 shadow-inner">
                     <TrendingUp className="w-4 h-4" />
                   </div>
                 </div>
-                <div className="text-2xl sm:text-3xl font-black text-emerald-400">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400">
                   R$ {Number(overview.cards.totalGrossMargin || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-emerald-400/90 font-bold mt-1 flex items-center gap-1.5">
-                  <span className="bg-emerald-950 border border-emerald-800 px-1.5 py-0.2 rounded text-[10px]">
+                <div className="text-xs text-emerald-700 dark:text-emerald-400/90 font-bold mt-1 flex items-center gap-1.5">
+                  <span className="bg-emerald-100 border border-emerald-300 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300 px-1.5 py-0.2 rounded text-[10px]">
                     {overview.cards.totalGrossMarginPercent}% de margem
                   </span>
                   <span>Lucro consolidado apurado</span>
