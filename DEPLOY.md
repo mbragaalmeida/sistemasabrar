@@ -36,25 +36,15 @@ git push origin main
 
 Você já criou o projeto no Supabase (`uubxdjhvzrzlgxgcqfoh`). Siga os dois passos abaixo:
 
-### Passo A: Criar as Tabelas e Carga Inicial (1 Clique)
-1. Acesse o painel do seu projeto no Supabase: [supabase.com/dashboard](https://supabase.com/dashboard).
-2. No menu lateral esquerdo, clique no ícone **SQL Editor**.
-3. Clique em **"New query"**.
-4. Abra o arquivo [`supabase_schema.sql`](./supabase_schema.sql) presente na raiz deste projeto, copie todo o conteúdo e cole dentro do editor.
-5. Clique no botão verde **"Run"** (ou pressione `Ctrl + Enter`).
-6. Pronto! Todas as 20 tabelas, índices de alta performance e a conta do **Matheus Braga** estarão criadas e prontas.
+### Status do Supabase: 100% Configurado e Ativo!
+Nós já nos conectamos ao seu banco de dados Supabase e executamos a inicialização completa de todas as 20 tabelas e dos usuários (com o seu usuário mestre Matheus Braga cadastrado como Administrador Geral). **Você não precisa rodar nenhum comando no SQL Editor — o banco já está pronto!**
 
-### Passo B: Obter a Connection String do Pooler (Para a Vercel)
-No Supabase:
-1. Clique em **Project Settings** (ícone de engrenagem no menu inferior esquerdo).
-2. Vá em **Database**.
-3. Role até a seção **Connection string** e clique na aba **Transaction Pooler** (Porta `6543`).
-   *(O Pooler é necessário porque a Vercel opera em IPv4 e gerencia múltiplas conexões sem sobrecarregar o banco).*
-4. Copie a string. Ela terá o seguinte formato:
-   ```
-   postgresql://postgres.uubxdjhvzrzlgxgcqfoh:[SUA-SENHA]@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
-   ```
-   *(Substitua `[SUA-SENHA]` pela senha que você definiu ao criar o projeto no Supabase).*
+### String Oficial de Conexão (Pooler IPv4 Pronto para a Vercel)
+A sua string oficial, com a região exata do seu projeto (`us-west-2`) e os caracteres especiais da senha (`@`) devidamente codificados (`%40`), é:
+
+```text
+postgresql://postgres.uubxdjhvzrzlgxgcqfoh:Sistem%40s%40br%40r2026@aws-0-us-west-2.pooler.supabase.com:6543/postgres
+```
 
 ---
 
