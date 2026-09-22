@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
-const { PDFParse } = require('pdf-parse');
+import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
 
 import { db } from '../db/connection.js';
 
@@ -15,9 +15,7 @@ export class AICalibrationService {
   static async extractTextFromPdf(filePath) {
     try {
       const buffer = fs.readFileSync(filePath);
-      const parser = new PDFParse(new Uint8Array(buffer));
-      const result = await parser.getText();
-      return (result && result.text) ? result.text : '';
+      return await extractTextFromPdfBuffer(buffer);
     } catch (err) {
       console.warn(`[AICalibrationService] Erro ao ler PDF ${filePath}:`, err.message);
       return '';

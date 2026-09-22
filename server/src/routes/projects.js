@@ -5,9 +5,7 @@ import { SpreadsheetService } from '../services/spreadsheetService.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const { PDFParse } = require('pdf-parse');
+import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
 
 import os from 'os';
 
@@ -335,10 +333,9 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
       } else if (f.mimetype === 'application/pdf' || f.originalname.toLowerCase().endsWith('.pdf')) {
         try {
           const buffer = fs.readFileSync(f.path);
-          const parser = new PDFParse(new Uint8Array(buffer));
-          const pdfRes = await parser.getText();
-          if (pdfRes && pdfRes.text && pdfRes.text.trim()) {
-            contentSummary = pdfRes.text.slice(0, 100000);
+          const pdfText = await extractTextFromPdfBuffer(buffer);
+          if (pdfText && pdfText.trim()) {
+            contentSummary = pdfText.slice(0, 100000);
             console.log(`[PDF Parser] Extraídos ${contentSummary.length} caracteres de ${f.originalname}`);
           }
         } catch (pdfErr) {

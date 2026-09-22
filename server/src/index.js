@@ -1,3 +1,14 @@
+// Polyfills globais para bibliotecas que assumem ambiente DOM (ex: pdf-parse em Serverless)
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix {};
+}
+if (typeof globalThis.ImageData === 'undefined') {
+  globalThis.ImageData = class ImageData {};
+}
+if (typeof globalThis.Path2D === 'undefined') {
+  globalThis.Path2D = class Path2D {};
+}
+
 import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
@@ -104,7 +115,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Unhandled Rejection]', reason);
 });
 
-if (process.env.VERCEL !== '1') {
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME && !process.env.NOW_REGION) {
   app.listen(PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 [SISTEMA SABRAR] Servidor rodando na porta ${PORT}`);
