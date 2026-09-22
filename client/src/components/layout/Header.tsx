@@ -35,13 +35,11 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Logomarca Oficial Unificada SABRAR */}
           <div className="flex items-center cursor-pointer select-none py-0.5">
-            <div className="px-2.5 py-1 rounded-2xl bg-dark-950 border border-dark-750 shadow-sm flex items-center transition-transform hover:scale-[1.02]">
-              <img
-                src="/sabrar-logo.png"
-                alt="SABRAR Engenharia — Ar Condicionado e Exaustão"
-                className="h-7 sm:h-8 w-auto object-contain max-w-[180px] sm:max-w-[240px] drop-shadow"
-              />
-            </div>
+            <img
+              src="/sabrar-logo.png"
+              alt="SABRAR Engenharia — Ar Condicionado e Exaustão"
+              className="h-8 sm:h-9 w-auto object-contain max-w-[190px] sm:max-w-[250px] drop-shadow transition-transform hover:scale-[1.02]"
+            />
           </div>
         </div>
 

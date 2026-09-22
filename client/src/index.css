@@ -14,15 +14,15 @@
 }
 
 :root.light, body.light {
-  --bg-dark-950: #F8FAFC; /* Slate-50: Fundo suave e moderno */
-  --bg-dark-900: #FFFFFF; /* Branco puro: Cards, Header, Sidebar */
-  --bg-dark-850: #F1F5F9; /* Slate-100: Subcards, containers, inputs */
-  --bg-dark-800: #E2E8F0; /* Slate-200: Botões secundários, hover */
-  --border-dark-750: #E2E8F0; /* Slate-200: Linhas divisórias limpas */
-  --border-dark-700: #CBD5E1; /* Slate-300: Bordas de inputs e caixas */
+  --bg-dark-950: #F1F5F9;
+  --bg-dark-900: #FFFFFF;
+  --bg-dark-850: #F8FAFC;
+  --bg-dark-800: #E2E8F0;
+  --border-dark-750: #E2E8F0;
+  --border-dark-700: #CBD5E1;
   --text-dark-600: #64748B;
   --text-dark-500: #94A3B8;
-  background-color: #F8FAFC;
+  background-color: #F1F5F9;
   color: #0F172A;
 }
 
@@ -44,51 +44,125 @@
   }
 }
 
-/* Regras de tipografia e contraste para o tema claro */
-.light {
+/* ========================================================
+   TEMA CLARO (LIGHT THEME) — 100% ROBUSTO E COMPLETO
+   ======================================================== */
+.light,
+html.light,
+body.light {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
   color-scheme: light;
 }
 
-.light .text-white {
-  color: #0F172A;
+/* Fundo da tela inteira (canvas e containers principais) */
+.light #root,
+.light .min-h-screen,
+.light main,
+.light .bg-dark-950:not(aside) {
+  background-color: #F1F5F9 !important;
 }
 
-.light .text-slate-400 {
-  color: #64748B;
+/* Cards principais, seções elevadas e modais em BRANCO PURO */
+.light .bg-dark-900:not(header):not(aside),
+.light [class*="bg-dark-900"]:not(header):not(aside) {
+  background-color: #FFFFFF !important;
 }
 
-.light .text-slate-300 {
-  color: #334155;
+/* Subcards, containers internos, inputs e tabelas em cinza clarinho */
+.light .bg-dark-850,
+.light [class*="bg-dark-850"] {
+  background-color: #F8FAFC !important;
 }
 
-.light .text-slate-200 {
-  color: #1E293B;
+/* Botões neutros, badges secundários e chips */
+.light .bg-dark-800,
+.light [class*="bg-dark-800"] {
+  background-color: #E2E8F0 !important;
 }
 
-.light .text-slate-100 {
-  color: #0F172A;
+/* Bordas em cinza suave e elegante */
+.light .border-dark-750:not(header):not(aside),
+.light [class*="border-dark-750"]:not(header):not(aside) {
+  border-color: #E2E8F0 !important;
 }
 
-/* Preserva texto branco em botões e elementos com cor de destaque */
+.light .border-dark-700:not(header):not(aside),
+.light [class*="border-dark-700"]:not(header):not(aside) {
+  border-color: #CBD5E1 !important;
+}
+
+/* Tipografia de alto contraste no tema claro (fora de header e sidebar) */
+.light main .text-white,
+.light [role="main"] .text-white,
+.light .bg-dark-900 .text-white,
+.light .bg-dark-850 .text-white,
+.light table .text-white,
+.light h1.text-white,
+.light h2.text-white,
+.light h3.text-white,
+.light h4.text-white,
+.light p.text-white,
+.light span.text-white:not([class*="bg-sabrar"]):not([class*="bg-rose"]):not([class*="bg-teal"]) {
+  color: #0F172A !important;
+}
+
+.light main .text-slate-100,
+.light .bg-dark-900 .text-slate-100 {
+  color: #0F172A !important;
+}
+
+.light main .text-slate-200,
+.light .bg-dark-900 .text-slate-200 {
+  color: #1E293B !important;
+}
+
+.light main .text-slate-300,
+.light .bg-dark-900 .text-slate-300 {
+  color: #334155 !important;
+}
+
+.light main .text-slate-400,
+.light .bg-dark-900 .text-slate-400 {
+  color: #64748B !important;
+}
+
+.light main .text-slate-500,
+.light .bg-dark-900 .text-slate-500 {
+  color: #94A3B8 !important;
+}
+
+/* Inputs, selects e textareas no tema claro */
+.light input:not([type="checkbox"]):not([type="radio"]),
+.light select,
+.light textarea {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border-color: #CBD5E1 !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Preserva texto branco em botões com cores de destaque */
 .light button[class*="bg-sabrar-"],
-.light button[class*="bg-teal-"],
-.light button[class*="bg-rose-"],
-.light button[class*="bg-emerald-"],
-.light button[class*="bg-blue-"],
-.light button[class*="bg-indigo-"],
-.light .bg-sabrar-600,
-.light .bg-sabrar-500,
-.light .bg-teal-600,
-.light .bg-rose-600,
-.light [class*="bg-sabrar-600"],
-.light [class*="bg-sabrar-500"] {
-  color: #FFFFFF !important;
-}
-
 .light button[class*="bg-sabrar-"] *,
+.light button[class*="bg-teal-"],
 .light button[class*="bg-teal-"] *,
+.light button[class*="bg-rose-"],
 .light button[class*="bg-rose-"] *,
-.light button[class*="bg-blue-"] * {
+.light button[class*="bg-emerald-"],
+.light button[class*="bg-emerald-"] *,
+.light button[class*="bg-blue-"],
+.light button[class*="bg-blue-"] *,
+.light .bg-sabrar-600,
+.light .bg-sabrar-600 *,
+.light .bg-sabrar-500,
+.light .bg-sabrar-500 *,
+.light .bg-rose-600,
+.light .bg-rose-600 * {
   color: #FFFFFF !important;
 }
 
@@ -109,9 +183,46 @@
   border-color: #A7F3D0 !important;
 }
 
-/* Sombras suaves e elegantes para o tema claro */
-.light .shadow-xl, .light .shadow-2xl, .light .shadow-md {
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+/* Sombras suaves e elegantes para os cards brancos */
+.light .shadow-xl,
+.light .shadow-2xl,
+.light .shadow-md {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Garante que o Header e o Sidebar mantenham a estética escura executiva */
+header.bg-dark-900,
+header[class*="bg-dark-900"],
+.light header {
+  background-color: rgba(18, 18, 18, 0.98) !important;
+  border-color: #2C2C2C !important;
+  color: #F8FAFC !important;
+}
+
+.light header .text-white {
+  color: #F8FAFC !important;
+}
+
+.light header .text-slate-400 {
+  color: #94A3B8 !important;
+}
+
+.light aside {
+  background-color: #0A0A0A !important;
+  border-color: #2C2C2C !important;
+  color: #E2E8F0 !important;
+}
+
+.light aside .text-slate-200 {
+  color: #E2E8F0 !important;
+}
+
+.light aside .text-slate-400 {
+  color: #94A3B8 !important;
+}
+
+.light aside .text-slate-500 {
+  color: #64748B !important;
 }
 
 /* Utilitários de área segura para iPhone e Android com notch */

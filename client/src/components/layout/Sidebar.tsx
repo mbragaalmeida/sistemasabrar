@@ -115,13 +115,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Mobile Header Inside Drawer com Logomarca Oficial */}
         <div className="flex items-center justify-between p-4 border-b border-dark-750 md:hidden bg-dark-900">
           <div className="flex items-center">
-            <div className="px-2 py-1 rounded-xl bg-dark-950 border border-dark-750 flex items-center">
-              <img
-                src="/sabrar-logo.png"
-                alt="SABRAR Engenharia"
-                className="h-6 w-auto object-contain max-w-[170px]"
-              />
-            </div>
+            <img
+              src="/sabrar-logo.png"
+              alt="SABRAR Engenharia"
+              className="h-7 w-auto object-contain max-w-[190px]"
+            />
           </div>
           <button
             onClick={onCloseMobile}
