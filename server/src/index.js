@@ -35,6 +35,7 @@ import { searchRouter } from './routes/search.js';
 import { bulkImportRouter } from './routes/bulkImport.js';
 import { nfeRouter } from './routes/nfe.js';
 import { aiCalibrationRouter } from './routes/aiCalibration.js';
+import { ductsRouter } from './routes/ducts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,7 +69,8 @@ const apiEndpoints = [
   ['/search', searchRouter],
   ['/bulk-import', bulkImportRouter],
   ['/nfe', nfeRouter],
-  ['/ai-calibration', aiCalibrationRouter]
+  ['/ai-calibration', aiCalibrationRouter],
+  ['/ducts', ductsRouter]
 ];
 
 for (const [routePath, router] of apiEndpoints) {

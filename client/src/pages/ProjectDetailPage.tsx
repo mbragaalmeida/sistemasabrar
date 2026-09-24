@@ -119,7 +119,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   // Recálculo dinâmico dos totais de orçamento
   const totalMaterials = editableMaterials.reduce((acc, m) => acc + (Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0)), 0);
   const totalServices = editableServices.reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unit_price || 0)), 0);
-  const totalBudgetCalculated = totalMaterials + totalServices;
+  const totalEquipment = Number(budget?.total_equipment || 0);
+  const totalBudgetCalculated = totalMaterials + totalServices + totalEquipment;
 
   const handleSaveBudget = async () => {
     setSavingBudget(true);
@@ -144,6 +145,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           unitPrice: Number(s.unit_price),
           notes: s.notes || ''
         })),
+        totalEquipment,
         validityDays,
         commercialTerms,
         userId: currentUser?.id,
@@ -758,6 +760,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               <div className="text-2xl font-black">
                 R$ {totalBudgetCalculated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
+              {totalEquipment > 0 && (
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Materiais: R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Mão de Obra: R$ {totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Faturamento Direto (Máquinas): R$ {totalEquipment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button

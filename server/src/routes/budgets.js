@@ -38,7 +38,8 @@ budgetsRouter.post('/save', async (req, res) => {
       validityDays = 15,
       commercialTerms = '',
       userId = 1,
-      userName = 'Orçamentista'
+      userName = 'Orçamentista',
+      totalEquipment: reqTotalEquipment
     } = req.body;
 
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
@@ -48,7 +49,7 @@ budgetsRouter.post('/save', async (req, res) => {
     const totalMaterials = materials.reduce((acc, m) => acc + (Number(m.quantity) * Number(m.unitPrice)), 0);
     
     let totalLabor = 0;
-    let totalEquipment = 0;
+    let totalEquipmentServices = 0;
     let totalLogistics = 0;
     let totalTaxes = 0;
     let totalAdditional = 0;
@@ -56,17 +57,21 @@ budgetsRouter.post('/save', async (req, res) => {
     for (const s of services) {
       const sub = Number(s.quantity) * Number(s.unitPrice);
       if (s.category === 'MÃO DE OBRA') totalLabor += sub;
-      else if (s.category === 'EQUIPAMENTO') totalEquipment += sub;
+      else if (s.category === 'EQUIPAMENTO') totalEquipmentServices += sub;
       else if (s.category === 'LOGÍSTICA') totalLogistics += sub;
       else if (s.category === 'IMPOSTOS') totalTaxes += sub;
       else totalAdditional += sub;
     }
 
-    const totalServices = totalLabor + totalEquipment + totalLogistics + totalTaxes + totalAdditional;
-    const totalFinal = totalMaterials + totalServices;
+    const totalServices = totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional;
 
     // Busca ou cria o registro do orçamento
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    const directEquipmentCost = reqTotalEquipment !== undefined
+      ? Number(reqTotalEquipment)
+      : (budget ? Number(budget.total_equipment || 0) : 0);
+    const finalTotalEquipment = directEquipmentCost > 0 ? directEquipmentCost : totalEquipmentServices;
+    const totalFinal = totalMaterials + totalServices + (directEquipmentCost > 0 ? directEquipmentCost : 0);
     let budgetId;
 
     if (!budget) {
@@ -82,7 +87,7 @@ budgetsRouter.post('/save', async (req, res) => {
 
       const result = await insertBudget.run(
         projectId, budgetCode, totalMaterials, totalServices,
-        totalLabor, totalEquipment, totalLogistics, totalTaxes,
+        totalLabor, finalTotalEquipment, totalLogistics, totalTaxes,
         totalAdditional, totalFinal, validityDays, commercialTerms
       );
       budgetId = result.lastInsertRowid;
@@ -97,7 +102,7 @@ budgetsRouter.post('/save', async (req, res) => {
         WHERE id = ?
       `).run(
         totalMaterials, totalServices, totalLabor,
-        totalEquipment, totalLogistics, totalTaxes,
+        finalTotalEquipment, totalLogistics, totalTaxes,
         totalAdditional, totalFinal, validityDays, commercialTerms,
         budgetId
       );
@@ -112,7 +117,7 @@ budgetsRouter.post('/save', async (req, res) => {
         total_budget_final = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(totalMaterials, totalLabor + totalEquipment, totalLogistics + totalTaxes + totalAdditional, totalFinal, projectId);
+    `).run(totalMaterials, totalServices, totalLogistics + totalTaxes + totalAdditional, totalFinal, projectId);
 
     // Salva itens de materiais e registra correções humanas para aprendizado (Regra 27)
     // Limpa itens antigos deste orçamento

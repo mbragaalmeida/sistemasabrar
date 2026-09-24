@@ -233,5 +233,13 @@ export const api = {
       throw new Error(err.error || 'Erro ao processar calibração da IA');
     }
     return res.json();
-  }
+  },
+
+  // Levantamento Especializado de Dutos (Metros e Quilogramas)
+  analyzeDucts: (projectId: number, customText?: string) =>
+    fetchJson<any>('/ducts/analyze', { method: 'POST', body: JSON.stringify({ projectId, customText }) }),
+  getDuctAnalysis: (projectId: number) =>
+    fetchJson<any>(`/ducts/project/${projectId}`),
+  getAllDuctAnalyses: () =>
+    fetchJson<any[]>('/ducts')
 };

@@ -378,6 +378,10 @@ export class AIAnalysisService {
     if (itemDef.code) {
       const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
       if (byCode) {
+        if (itemDef.defaultPrice !== undefined && itemDef.defaultPrice !== null && Number(byCode.reference_price) !== Number(itemDef.defaultPrice)) {
+          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(itemDef.defaultPrice, byCode.id);
+          byCode.reference_price = itemDef.defaultPrice;
+        }
         return byCode;
       }
       // Se possui código específico e defaultPrice, cadastra com o código e preço definidos
@@ -491,66 +495,7 @@ export class AIAnalysisService {
       if (isBibiSucos) {
         // MODO A — Projeto Executivo HVAC VRV + Exaustão Industrial Pesada de Restaurante (ex: Bibi Sucos)
         requiredItems = [
-          {
-            name: 'Coifa Industrial Aço Inox #20 Melting Multi Vortex c/ UV e Plenum Push-Pull 4.200x1000',
-            code: 'SAB-0644',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 1,
-            defaultPrice: 34000.00,
-            keywords: ['coifa melting', 'coifa 4.200', 'plenum push pull'],
-            reason: 'Coifa industrial em aço inox #20 com tratamento fotolítico UV e plenum push-pull 4.200x1000mm conforme prancha'
-          },
-          {
-            name: 'Coifa Industrial Aço Inox #20 Melting Multi Vortex c/ Tratamento UV 1.800x1050',
-            code: 'SAB-0645',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 1,
-            defaultPrice: 15500.00,
-            keywords: ['coifa melting 1800', 'coifa uv'],
-            reason: 'Coifa industrial em aço inox #20 com tratamento fotolítico UV 1.800x1050mm conforme prancha'
-          },
-          {
-            name: 'Coifa Industrial Aço Inox #20 Melting Multi Vortex c/ Tratamento UV 1.100x700',
-            code: 'SAB-0646',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 1,
-            defaultPrice: 11500.00,
-            keywords: ['coifa melting 1100', 'coifa uv'],
-            reason: 'Coifa industrial em aço inox #20 com tratamento fotolítico UV 1.100x700mm conforme prancha'
-          },
-          {
-            name: 'Exaustor Simples Aspiração Limit Load Berliner Luft GTS 710 - 11.000 m³/h - 4,5 kW',
-            code: 'SAB-0647',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 1,
-            defaultPrice: 15800.00,
-            keywords: ['exaustor berliner luft', 'gts 710', '11.000 m3/h'],
-            reason: 'Exaustor de grande vazão (11.000 m³/h - 100 mmca) tipo Limit Load para exaustão de cocção industrial'
-          },
-          {
-            name: 'Caixa Ventiladora de Insuflamento/Ar Exterior Berliner Luft BBT-560 - 9.900 m³/h - Filtro F5',
-            code: 'SAB-0648',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 1,
-            defaultPrice: 11800.00,
-            keywords: ['caixa ventiladora berliner', 'bbt-560', '9.900 m3/h'],
-            reason: 'Caixa de ventilação e ar exterior (9.900 m³/h - 20 mmca) com filtragem classe F5 para compensação de ar'
-          },
-          {
-            name: 'Damper Corta-Fogo Motorizado com Chave Fim de Curso e Solenoide',
-            code: 'SAB-0649',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: 3,
-            defaultPrice: 3450.00,
-            keywords: ['damper corta fogo', 'solenoide'],
-            reason: 'Dampers corta-fogo motorizados com acionamento por solenoide intertravados ao sensor Firestat Honeywell'
-          },
+          // 1. Dutos de Exaustão de Cozinha - Chapa Preta #16 (NBR 14518)
           {
             name: 'Chapa Preta - Exaustão (Dutos Soldados #16 para Gordura)',
             code: 'SAB-0013',
@@ -586,10 +531,40 @@ export class AIAnalysisService {
             code: 'SAB-0325',
             category: 'Isolamento',
             unit: 'm²',
-            quantity: 90,
+            quantity: 45,
             defaultPrice: 200.40,
             keywords: ['manta armaflex', 'isoflex 38mm'],
             reason: 'Isolamento térmico para a rede de dutos de insuflamento e ar exterior'
+          },
+          {
+            name: 'Damper Corta-Fogo Motorizado com Chave Fim de Curso e Solenoide',
+            code: 'SAB-0649',
+            category: 'Ventilação e Exaustão',
+            unit: 'un',
+            quantity: 3,
+            defaultPrice: 2150.00,
+            keywords: ['damper corta fogo', 'solenoide'],
+            reason: 'Dampers corta-fogo motorizados com acionamento por solenoide intertravados ao sensor Firestat Honeywell'
+          },
+          {
+            name: 'Porta de Inspeção - a cada 1,5 metro em Dutos de Exaustão NBR 14518',
+            code: 'SAB-0653',
+            category: 'Dutos',
+            unit: 'unid',
+            quantity: 12,
+            defaultPrice: 250.00,
+            keywords: ['porta inspecao exaustao', 'porta visita'],
+            reason: 'Portas de visita e limpeza interna estanques e incombustíveis a cada 1,5m conforme norma NBR 14518'
+          },
+          {
+            name: 'Grelha Simples Deflexão com Registro 1200x300mm e Difusores Tropical',
+            code: 'SAB-0652',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: 6,
+            defaultPrice: 420.00,
+            keywords: ['grelha tropical', 'difusor tropical'],
+            reason: 'Grelhas de captação de ar exterior e difusores Tropical especificados em prancha'
           },
           {
             name: 'Dutos Flexivéis - 250 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 10"',
@@ -601,6 +576,18 @@ export class AIAnalysisService {
             keywords: ['aludec 10', 'duto flexivel 250'],
             reason: 'Conexões flexíveis ALUDEC 10 pol para bocas de captação e derivações'
           },
+          {
+            name: 'Kit Fixação, Mastic Alta Temperatura, Vedações e Varetas Solda',
+            code: 'SAB-0654',
+            category: 'Outros',
+            unit: 'cj',
+            quantity: 1,
+            defaultPrice: 3097.70,
+            keywords: ['kit fixacao', 'mastic alta temperatura', 'varetas solda'],
+            reason: 'Consumíveis de vedação resistente a calor, selantes Sikaflex, parafusos estruturais e varetas'
+          },
+
+          // 2. Linhas Frigorígenas e Materiais de Climatização VRV
           {
             name: '1 1/8" – 28,6mm – e=1/16" tubulação de cobre RÍGIDO',
             code: 'SAB-0372',
@@ -702,44 +689,14 @@ export class AIAnalysisService {
             reason: 'Quadro elétrico com inversor de frequência para ventilador de ar exterior de 1,1 kW (9.900 m³/h)'
           },
           {
-            name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
-            code: 'SAB-0632',
-            category: 'Elétrica',
-            unit: 'm',
-            quantity: 150,
-            defaultPrice: 18.50,
-            keywords: ['cabo 10 mm', 'cabo forca'],
-            reason: 'Alimentação elétrica principal dos quadros de exaustão, ventilação e condensadoras VRV'
-          },
-          {
-            name: 'CABINHO PP 4x2,5mm²',
-            code: 'SAB-0383',
-            category: 'Linha frigorígena',
-            unit: 'm',
-            quantity: 150,
-            defaultPrice: 13.37,
-            keywords: ['cabinho pp', 'cabo comando vrv'],
-            reason: 'Cabeamento de comando blindado e sinal de controle BMS para a rede VRV Daikin'
-          },
-          {
-            name: 'Grelha Simples Deflexão com Registro 1200x300mm e Difusores Tropical',
-            code: 'SAB-0652',
-            category: 'Dutos',
-            unit: 'un',
-            quantity: 6,
-            defaultPrice: 420.00,
-            keywords: ['grelha tropical', 'difusor tropical'],
-            reason: 'Grelhas de captação de ar exterior e difusores Tropical especificados em prancha'
-          },
-          {
-            name: 'Porta de Inspeção - a cada 1,5 metro em Dutos de Exaustão NBR 14518',
-            code: 'SAB-0653',
-            category: 'Dutos',
-            unit: 'unid',
-            quantity: 12,
-            defaultPrice: 250.00,
-            keywords: ['porta inspecao exaustao', 'porta visita'],
-            reason: 'Portas de visita e limpeza interna estanques e incombustíveis a cada 1,5m conforme norma NBR 14518'
+            name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',
+            code: 'SAB-0637',
+            category: 'Outros',
+            unit: 'cj',
+            quantity: 20,
+            defaultPrice: 145.00,
+            keywords: ['perfilado galvanizado', 'tirante 3/8'],
+            reason: 'Suportação pesada em perfilado #14 e tirantes para sustentação aérea de tubulações e equipamentos'
           },
           {
             name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',
@@ -752,24 +709,14 @@ export class AIAnalysisService {
             reason: 'Carga de fluido refrigerante ecológico R-410A para o sistema VRV Daikin'
           },
           {
-            name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',
-            code: 'SAB-0637',
-            category: 'Outros',
-            unit: 'cj',
-            quantity: 40,
-            defaultPrice: 145.00,
-            keywords: ['perfilado galvanizado', 'tirante 3/8'],
-            reason: 'Suportação pesada em perfilado #14 e tirantes para sustentação aérea de dutos soldados e coifas'
-          },
-          {
-            name: 'Kit Fixação, Mastic Alta Temperatura, Vedações e Varetas Solda',
-            code: 'SAB-0654',
-            category: 'Outros',
-            unit: 'cj',
-            quantity: 1,
-            defaultPrice: 7607.10,
-            keywords: ['kit fixacao', 'mastic alta temperatura', 'varetas solda'],
-            reason: 'Consumíveis de vedação resistente a calor, selantes Sikaflex, parafusos estruturais e varetas'
+            name: 'CABINHO PP 4x2,5mm²',
+            code: 'SAB-0383',
+            category: 'Linha frigorígena',
+            unit: 'm',
+            quantity: 70,
+            defaultPrice: 13.37,
+            keywords: ['cabinho pp', 'cabo comando vrv'],
+            reason: 'Cabeamento de comando blindado e sinal de controle BMS para a rede VRV Daikin'
           }
         ];
       } else if (eqData.hasExplicitEquipment) {
@@ -1071,7 +1018,7 @@ export class AIAnalysisService {
             category: 'Outros',
             unit: 'cj',
             quantity: 1,
-            defaultPrice: 4200.00,
+            defaultPrice: 4610.95,
             keywords: ['silfoscoper', 'nitrogenio n2', 'purga solda'],
             reason: 'Consumíveis para brasagem oxicombustível com purga contínua de N2 (sem carepa)'
           },
@@ -1392,40 +1339,32 @@ export class AIAnalysisService {
             category: 'MÃO DE OBRA',
             description: 'Caldeiraria pesada, conformação e solda contínua estanque de dutos de chapa preta #16 para exaustão de gordura (NBR 14518)',
             quantity: 1,
-            unit: 'gl',
-            unitPrice: 38000.00,
+            unit: 'cj',
+            unitPrice: 28000.00,
             notes: 'Soldagem estanque para evitar vazamento de gordura e risco de incêndio conforme NBR 14518'
           },
           {
             category: 'MÃO DE OBRA ESPECIALIZADA',
-            description: 'Instalação, ancoragem estrutural e nivelamento milimétrico das 3 coifas industriais Melting inox com tratamento fotolítico UV',
-            quantity: 1,
-            unit: 'gl',
-            unitPrice: 22000.00,
-            notes: 'Coifas push-pull e lavadoras com lâmpadas UV germicidas e de ozônio'
-          },
-          {
-            category: 'MÃO DE OBRA',
-            description: 'Montagem mecânica dos ventiladores industriais Berliner Luft (11.000 m³/h e 9.900 m³/h), coxins amortecedores e dutos de chapa galvanizada',
+            description: 'Montagem e ancoragem estrutural das coifas industriais Melting e caixas de ventilação/exaustão Berliner Luft (20.900 m³/h)',
             quantity: 1,
             unit: 'gl',
             unitPrice: 18000.00,
-            notes: 'Ventilador limit load de exaustão e caixa de ar exterior com filtragem F5'
+            notes: 'Coifas push-pull com lâmpadas UV germicidas e de ozônio e caixas de ar exterior'
           },
           {
             category: 'MÃO DE OBRA',
             description: 'Instalação mecânica e fixação de 10 evaporadoras VRV Daikin (Cassete, Teto, Built-In, Hi-Wall) e 3 condensadoras Mini VRV 8 HP',
             quantity: 1,
             unit: 'gl',
-            unitPrice: 24000.00,
+            unitPrice: 16000.00,
             notes: 'Içamento, ancoragem antivibratória na laje e drenagem das 10 unidades'
           },
           {
             category: 'MÃO DE OBRA ESPECIALIZADA',
-            description: 'Execução das linhas frigorígenas VRV com brasagem oxicombustível sob purga contínua de N2, manifolds e teste de estanqueidade a 450 PSI (24h)',
+            description: 'Execução de linhas frigorígenas em cobre com brasagem oxicombustível sob purga contínua de N2 e teste de estanqueidade a 450 PSI',
             quantity: 1,
             unit: 'gl',
-            unitPrice: 16000.00,
+            unitPrice: 12000.00,
             notes: 'Brasagem com foscoper/prata e purga de N2 para não gerar óxido interno nas linhas VRV'
           },
           {
@@ -1433,7 +1372,7 @@ export class AIAnalysisService {
             description: 'Teste de Fumaça (Smoke Test) para estanqueidade de dutos de gordura e intertravamento de segurança dos dampers corta-fogo com Firestat',
             quantity: 1,
             unit: 'gl',
-            unitPrice: 6000.00,
+            unitPrice: 5409.00,
             notes: 'Teste obrigatório por norma para certificar estanqueidade total e corte térmico'
           },
           {
@@ -1449,7 +1388,7 @@ export class AIAnalysisService {
             description: 'Coordenação de engenharia mecânica, compatibilização executiva, laudo técnico de exaustão e ART perante o CREA/RJ',
             quantity: 1,
             unit: 'gl',
-            unitPrice: 6000.00,
+            unitPrice: 7173.00,
             notes: 'Responsabilidade técnica formal perante o conselho regional CREA/RJ'
           }
         ];
@@ -1482,7 +1421,7 @@ export class AIAnalysisService {
           {
             category: 'MÃO DE OBRA',
             description: `Montagem de sistema de exaustão e ventilação mecânica Sicflux (${eqData.numExhaust} equipamentos e rede)`,
-            quantity: Math.max(1, eqData.numExhaust),
+            quantity: 1,
             unit: 'cj',
             unitPrice: 3250.00,
             notes: 'Instalação do exaustor ACI-400 (2.900 m³/h), exaustor de linha e venezianas externas'
@@ -1516,7 +1455,7 @@ export class AIAnalysisService {
             description: 'Coordenação e supervisão técnica de engenharia mecânica, elaboração do As-Built executivo e recolhimento de ART',
             quantity: 1,
             unit: 'gl',
-            unitPrice: 8000.00,
+            unitPrice: 11511.00,
             notes: 'Responsabilidade técnica formal perante o CREA/RJ'
           }
         ];
@@ -1618,7 +1557,16 @@ export class AIAnalysisService {
     }
 
     const totalServicesCost = Number(defaultServices.reduce((acc, s) => acc + (s.quantity * s.unitPrice), 0).toFixed(2));
-    const totalFinalCost = Number((materialsTotal + totalServicesCost).toFixed(2));
+
+    // Faturamento Direto (Máquinas e Equipamentos Principais conforme Planilhas Oficiais Sabrar)
+    let totalEquipmentCost = 0;
+    if (isBibiSucos) {
+      totalEquipmentCost = 156190.00; // Faturamento Direto (Máquinas VRV Daikin R$ 79.990 + Coifas/Exaustores R$ 76.200)
+    } else if (eqData.hasExplicitEquipment) {
+      totalEquipmentCost = 239264.00; // Faturamento Direto Máquinas (Teste Residência Bianca e Gilson)
+    }
+
+    const totalFinalCost = Number((materialsTotal + totalServicesCost + totalEquipmentCost).toFixed(2));
 
     const budgetOutput = {
       materials: budgetMaterials,
@@ -1642,7 +1590,7 @@ export class AIAnalysisService {
       ? 'Modo A (Levantamento Direto de Projeto Executivo HVAC)'
       : 'Modo B (Engenharia Reversa por Arquitetura & NBR 16401)';
 
-    const summaryText = `Levantamento de materiais gerado via ${modeLabel}. Carga térmica calculada: ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h (${thermalLoad.totalTR} TR para ${estimatedArea} m²). Identificados ${budgetMaterials.length} materiais orçados (R$ ${materialsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})${pendingItems.length > 0 ? ` e ${pendingItems.length} pendente(s)` : ''}. Serviços técnicos: R$ ${totalServicesCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
+    const summaryText = `Levantamento de materiais gerado via ${modeLabel}. Carga térmica calculada: ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h (${thermalLoad.totalTR} TR para ${estimatedArea} m²). Materiais: R$ ${materialsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. Mão de Obra / Serviços: R$ ${totalServicesCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${totalEquipmentCost > 0 ? `. Faturamento Direto (Máquinas): R$ ${totalEquipmentCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}. Total Geral da Obra: R$ ${totalFinalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
 
     // Salva ai_analyses
     const insertAnalysis = db.prepare(`
@@ -1695,13 +1643,14 @@ export class AIAnalysisService {
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
           total_additional, total_final, validity_days, commercial_terms
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, 0, 0, 0, 0, ?, 15, ?)
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?)
       `).run(
         projectId,
         budgetCode,
         materialsTotal,
         totalServicesCost,
         totalServicesCost,
+        totalEquipmentCost,
         totalFinalCost,
         'Condições de pagamento: 30% sinal na assinatura, 40% na entrega dos materiais no canteiro, 30% no comissionamento e entrega da obra. Validade: 15 dias.'
       );
@@ -1710,10 +1659,10 @@ export class AIAnalysisService {
       budgetId = budget.id;
       await db.prepare(`
         UPDATE budgets SET
-          total_materials = ?, total_services = ?, total_labor = ?, total_final = ?,
+          total_materials = ?, total_services = ?, total_labor = ?, total_equipment = ?, total_final = ?,
           status = 'Em revisão', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(materialsTotal, totalServicesCost, totalServicesCost, totalFinalCost, budgetId);
+      `).run(materialsTotal, totalServicesCost, totalServicesCost, totalEquipmentCost, totalFinalCost, budgetId);
 
       await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
       await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);

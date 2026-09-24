@@ -227,17 +227,45 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
             </div>
           )}
 
+          {/* 3. Faturamento Direto / Equipamentos Principais */}
+          {(Number(budget.total_equipment) > 0) && (
+            <div className="mb-6">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2 flex items-center justify-between">
+                <span>3. Faturamento Direto de Equipamentos (Fabricante / Distribuidor)</span>
+                <span className="text-slate-500 font-normal">Subtotal: R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </h3>
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                      Máquinas e Equipamentos de Climatização / Exaustão
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Modalidade de Faturamento Direto: faturado pelo distribuidor/fabricante diretamente em nome do cliente com condições comerciais SABRAR.
+                    </div>
+                  </div>
+                  <div className="text-right font-black text-slate-900 text-sm sm:text-base">
+                    R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Resumo Financeiro Total */}
           <div className="my-6 p-5 rounded-2xl bg-gradient-to-br from-slate-950 to-emerald-950 text-white flex flex-col sm:flex-row items-center justify-between gap-4 border border-emerald-800/40 shadow-lg">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-emerald-400">Total Geral da Proposta</div>
-              <p className="text-xs text-slate-300 mt-0.5">Materiais + Serviços + Mão de Obra + Encargos</p>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Materiais (R$ {budget.total_materials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) + Mão de Obra (R$ {budget.total_services.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                {Number(budget.total_equipment) > 0 && ` + Faturamento Direto Máquinas (R$ ${Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
+              </p>
             </div>
             <div className="text-right">
               <div className="text-2xl sm:text-3xl font-black text-white">
                 R$ {budget.total_final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
-              <div className="text-[11px] text-emerald-300 font-semibold">Preço Fechado SABRAR Engenharia</div>
+              <div className="text-[11px] text-emerald-300 font-semibold">Valor Global SABRAR Engenharia</div>
             </div>
           </div>
 

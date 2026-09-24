@@ -45,8 +45,19 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     if (isOpen) {
       // Carrega projetos
       api.getProjects().then(data => {
-        const valid = data.filter((p: Project) => ['Aprovado', 'Em execução', 'Orçamento finalizado'].includes(p.status));
-        setProjects(valid.length > 0 ? valid : data);
+        let valid = data.filter((p: Project) => ['Aprovado', 'Em execução', 'Orçamento finalizado', 'Orçamento gerado', 'Novo'].includes(p.status) || !p.status);
+        if (valid.length === 0) valid = data;
+
+        // Se o usuário for Engenheiro, filtra estritamente para as obras sob sua responsabilidade técnica
+        if (currentUser?.role === 'engenharia' && currentUser?.name) {
+          const normUser = currentUser.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          valid = valid.filter((p: Project) => {
+            if (!p.responsible_engineer) return false;
+            const normProj = p.responsible_engineer.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+            return normProj.includes(normUser) || normUser.includes(normProj);
+          });
+        }
+        setProjects(valid);
       });
       api.getMaterials().then(setMaterials);
 
@@ -285,9 +296,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
           {/* Obra de Destino */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Projeto / Obra Destino *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                Projeto / Obra Destino *
+              </label>
+              {currentUser?.role === 'engenharia' && (
+                <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-800/60">
+                  Obras sob sua responsabilidade ({currentUser?.name})
+                </span>
+              )}
+            </div>
             <select
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : '')}
@@ -297,10 +315,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               <option value="">Selecione a obra...</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.code} — {p.name} ({p.client})
+                  {p.code} — {p.name} ({p.client}) {p.responsible_engineer ? `[${p.responsible_engineer}]` : ''}
                 </option>
               ))}
             </select>
+            {currentUser?.role === 'engenharia' && projects.length === 0 && (
+              <p className="text-[11px] text-amber-400/90 mt-1">
+                Nenhuma obra com status ativo está atribuída ao seu perfil de engenheiro ({currentUser?.name}).
+              </p>
+            )}
           </div>
 
           {/* Seletor de Modo: Lote do Orçamento vs Item Avulso */}

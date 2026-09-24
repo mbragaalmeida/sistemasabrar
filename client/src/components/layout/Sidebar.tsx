@@ -13,7 +13,8 @@ import {
   History,
   Users,
   X,
-  LogOut
+  LogOut,
+  Wind
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isPageAllowed } from '../../utils/permissions';
@@ -53,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
         { id: 'budgets', label: 'Orçamentos', icon: Calculator },
+        { id: 'ducts', label: 'Dutos', icon: Wind },
         { id: 'materials', label: 'Base de Materiais', icon: Package },
         { id: 'stock', label: 'Almoxarifado', icon: Layers },
         { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },

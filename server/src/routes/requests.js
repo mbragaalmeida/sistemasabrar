@@ -60,6 +60,29 @@ requestsRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Projeto de destino é obrigatório' });
     }
 
+    // Validação de responsabilidade técnica do engenheiro (Requisito 3)
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name 
+        FROM users u 
+        JOIN roles r ON u.role_id = r.id 
+        WHERE u.id = ?
+      `).get(userId);
+
+      if (user && user.role_name === 'engenharia') {
+        const project = await db.prepare('SELECT id, name, responsible_engineer FROM projects WHERE id = ?').get(projectId);
+        if (project) {
+          const normUser = user.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          const normProj = (project.responsible_engineer || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          if (!normProj.includes(normUser) && !normUser.includes(normProj)) {
+            return res.status(403).json({
+              error: `Acesso restrito: Como engenheiro, você só pode solicitar materiais para obras sob sua responsabilidade técnica. Esta obra está sob responsabilidade de: ${project.responsible_engineer || 'Não atribuído'}.`
+            });
+          }
+        }
+      }
+    }
+
     let result;
     if (items && Array.isArray(items) && items.length > 0) {
       // Envio em lote (múltiplos materiais da obra)

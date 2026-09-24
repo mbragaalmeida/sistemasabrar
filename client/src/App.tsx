@@ -14,6 +14,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { BudgetsPage } from './pages/BudgetsPage';
+import { DuctsPage } from './pages/DuctsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
 import { StockPage } from './pages/StockPage';
 import { RequestsPage } from './pages/RequestsPage';
@@ -135,6 +136,10 @@ const AppContent: React.FC = () => {
 
           {currentPage === 'budgets' && (
             <BudgetsPage onNavigate={handleNavigate} />
+          )}
+
+          {currentPage === 'ducts' && (
+            <DuctsPage onNavigate={handleNavigate} />
           )}
 
           {currentPage === 'materials' && (

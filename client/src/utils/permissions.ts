@@ -5,6 +5,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'projects': ['admin', 'orcamento', 'engenharia'],
   'project-detail': ['admin', 'orcamento', 'engenharia'],
   'budgets': ['admin', 'orcamento'],
+  'ducts': ['admin', 'orcamento', 'engenharia'],
   'materials': ['admin', 'almoxarifado'],
   'stock': ['admin', 'almoxarifado'],
   'requests': ['admin', 'engenharia'],
