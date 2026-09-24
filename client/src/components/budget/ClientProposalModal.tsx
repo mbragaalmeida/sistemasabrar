@@ -234,21 +234,59 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
                 <span>3. Faturamento Direto de Equipamentos (Fabricante / Distribuidor)</span>
                 <span className="text-slate-500 font-normal">Subtotal: R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </h3>
-              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900 text-xs sm:text-sm">
-                      Máquinas e Equipamentos de Climatização / Exaustão
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      Modalidade de Faturamento Direto: faturado pelo distribuidor/fabricante diretamente em nome do cliente com condições comerciais SABRAR.
-                    </div>
-                  </div>
-                  <div className="text-right font-black text-slate-900 text-sm sm:text-base">
-                    R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              
+              {budget.equipment && budget.equipment.length > 0 ? (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">Categoria</th>
+                        <th className="p-2.5">Máquina / Equipamento</th>
+                        <th className="p-2.5">Fabricante</th>
+                        <th className="p-2.5 text-center">Quant.</th>
+                        <th className="p-2.5 text-right">Valor Unit.</th>
+                        <th className="p-2.5 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {budget.equipment.map((eq, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2.5 font-bold text-cyan-800 text-[11px] uppercase">{eq.category}</td>
+                          <td className="p-2.5 text-slate-800 font-medium">
+                            {eq.description}
+                            {eq.notes && <div className="text-[10px] text-slate-400 mt-0.5">{eq.notes}</div>}
+                          </td>
+                          <td className="p-2.5 text-slate-600">{eq.brand || '—'}</td>
+                          <td className="p-2.5 text-center font-bold text-slate-700">{eq.quantity} {eq.unit}</td>
+                          <td className="p-2.5 text-right text-slate-600">R$ {Number(eq.unit_price).toFixed(2)}</td>
+                          <td className="p-2.5 text-right font-bold text-slate-900">
+                            R$ {Number(eq.subtotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500">
+                    * Modalidade Faturamento Direto: Máquinas faturadas pelo fabricante/distribuidor diretamente ao cliente final com condições comerciais SABRAR.
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                        Máquinas e Equipamentos de Climatização / Exaustão
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Modalidade de Faturamento Direto: faturado pelo distribuidor/fabricante diretamente em nome do cliente com condições comerciais SABRAR.
+                      </div>
+                    </div>
+                    <div className="text-right font-black text-slate-900 text-sm sm:text-base">
+                      R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -201,9 +201,23 @@ export interface Budget {
   commercial_terms?: string;
   approved_by?: number;
   approved_at?: string;
-  sent_to_client_at?: string;
   items?: BudgetItem[];
   services?: ServiceItem[];
+  equipment?: BudgetEquipmentItem[];
+}
+
+export interface BudgetEquipmentItem {
+  id?: number;
+  budget_id?: number;
+  category?: string;
+  description: string;
+  brand?: string;
+  model?: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  subtotal: number;
+  notes?: string;
 }
 
 export interface BudgetItem {

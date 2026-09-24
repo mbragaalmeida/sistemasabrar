@@ -1709,6 +1709,172 @@ export class AIAnalysisService {
       );
     }
 
+    // Inserção da 3ª sessão: Máquinas & Equipamentos (Faturamento Direto)
+    let defaultEquipment = [];
+    if (isBibiSucos) {
+      defaultEquipment = [
+        {
+          category: 'Climatização VRV',
+          description: 'Sistema VRV Daikin Mini VRV 8 HP (3 Condensadoras) + 10 Evaporadoras Multi-Split',
+          brand: 'Daikin',
+          model: 'Mini VRV IV-S',
+          quantity: 1,
+          unit: 'cj',
+          unit_price: 79990.00,
+          subtotal: 79990.00,
+          notes: 'Faturamento direto Daikin com condições comerciais SABRAR'
+        },
+        {
+          category: 'Exaustão de Cozinha',
+          description: 'Coifas Industriais Aço Inox #20 Melting Multi Vortex UV (Conjunto 3 un: 4.200x1.000, 1.800x1.050 e 1.100x700)',
+          brand: 'Melting',
+          model: 'Multi Vortex Push-Pull UV',
+          quantity: 1,
+          unit: 'cj',
+          unit_price: 61000.00,
+          subtotal: 61000.00,
+          notes: 'Tratamento UV fotolítico germicida para quebra de gordura e plenum push-pull'
+        },
+        {
+          category: 'Exaustão de Cozinha',
+          description: 'Ventiladores e Exaustores Industriais Berliner Luft (GTS 710 11.000 m³/h + BBT-560 9.900 m³/h c/ Filtro F5)',
+          brand: 'Berliner Luft',
+          model: 'GTS-710 / BBT-560',
+          quantity: 1,
+          unit: 'cj',
+          unit_price: 15200.00,
+          subtotal: 15200.00,
+          notes: 'Exaustor limit load de gordura 4,5 kW e caixa de insuflamento de ar exterior 1,1 kW'
+        }
+      ];
+    } else if (eqData.hasExplicitEquipment) {
+      defaultEquipment = [
+        {
+          category: 'Climatização Residencial',
+          description: 'Split Hi-Wall Agratto Fit Top 9.000 BTUs R-32 Só Frio 220V (Quartos)',
+          brand: 'Agratto',
+          model: 'Fit Top 9k',
+          quantity: 2,
+          unit: 'un',
+          unit_price: 2203.95,
+          subtotal: 4407.90,
+          notes: 'Faturamento direto distribuidor com condições SABRAR'
+        },
+        {
+          category: 'Climatização Residencial',
+          description: 'Split Hi-Wall Springer Midea AirVolution 12.000 BTUs R-32 Só Frio 220V',
+          brand: 'Midea',
+          model: 'AirVolution 12k',
+          quantity: 1,
+          unit: 'un',
+          unit_price: 2833.95,
+          subtotal: 2833.95,
+          notes: 'Quarto hóspedes / escritório'
+        },
+        {
+          category: 'Climatização Residencial',
+          description: 'Split Hi-Wall Springer Midea AirVolution 18.000 BTUs R-32 Só Frio 220V',
+          brand: 'Midea',
+          model: 'AirVolution 18k',
+          quantity: 1,
+          unit: 'un',
+          unit_price: 3988.95,
+          subtotal: 3988.95,
+          notes: 'Suíte master'
+        },
+        {
+          category: 'Climatização Central',
+          description: 'Split Duto Carrier Versatile 18.000 BTUs Só Frio 220V Monofásico (Dutado)',
+          brand: 'Carrier',
+          model: 'Versatile Built-In 18k',
+          quantity: 2,
+          unit: 'un',
+          unit_price: 5922.00,
+          subtotal: 11844.00,
+          notes: 'Embutido em forro de gesso com difusores lineares'
+        },
+        {
+          category: 'Climatização Central',
+          description: 'Split Duto Carrier Versatile 30.000 BTUs Só Frio 220V Monofásico (Dutado)',
+          brand: 'Carrier',
+          model: 'Versatile Built-In 30k',
+          quantity: 3,
+          unit: 'un',
+          unit_price: 8137.50,
+          subtotal: 24412.50,
+          notes: 'Salas e áreas sociais'
+        },
+        {
+          category: 'Climatização Central',
+          description: 'Split Duto Carrier Versatile 36.000 BTUs Só Frio 220V Monofásico (Dutado)',
+          brand: 'Carrier',
+          model: 'Versatile Built-In 36k',
+          quantity: 1,
+          unit: 'un',
+          unit_price: 10405.50,
+          subtotal: 10405.50,
+          notes: 'Área gourmet'
+        },
+        {
+          category: 'Climatização Central',
+          description: 'Split Cassete 4 Vias Hitachi Air Core 48.000 BTUs Só Frio 220V Trifásico',
+          brand: 'Hitachi',
+          model: 'Air Core 4 Vias',
+          quantity: 1,
+          unit: 'un',
+          unit_price: 13345.50,
+          subtotal: 13345.50,
+          notes: 'Espaço multiuso'
+        },
+        {
+          category: 'Climatização Central',
+          description: 'Split Duto Carrier Versatile 60.000 BTUs Só Frio 220V Trifásico (Living)',
+          brand: 'Carrier',
+          model: 'Versatile Built-In 60k',
+          quantity: 1,
+          unit: 'un',
+          unit_price: 12703.95,
+          subtotal: 12703.95,
+          notes: 'Living principal com difusão linear'
+        },
+        {
+          category: 'Unidades Exteriores (Laje Técnica)',
+          description: 'Unidades Condensadoras Inverter Multi-Split / VRF Daikin e Gerenciamento Frigorígeno Central',
+          brand: 'Daikin / Carrier',
+          model: 'Inverter Central Pack',
+          quantity: 1,
+          unit: 'cj',
+          unit_price: 155321.75,
+          subtotal: 155321.75,
+          notes: 'Conjunto de condensadoras na laje técnica superior'
+        }
+      ];
+    }
+
+    if (defaultEquipment.length > 0) {
+      await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
+      const insertEquipment = db.prepare(`
+        INSERT INTO budget_equipment (
+          budget_id, category, description, brand, model,
+          quantity, unit, unit_price, subtotal, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const eq of defaultEquipment) {
+        await insertEquipment.run(
+          budgetId,
+          eq.category,
+          eq.description,
+          eq.brand || '',
+          eq.model || '',
+          eq.quantity,
+          eq.unit,
+          eq.unit_price,
+          eq.subtotal,
+          eq.notes || ''
+        );
+      }
+    }
+
     await db.prepare(`
       UPDATE projects SET
         status = 'Orçamento gerado',

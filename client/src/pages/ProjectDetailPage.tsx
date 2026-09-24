@@ -58,6 +58,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   // Estados locais para edição de orçamento
   const [editableMaterials, setEditableMaterials] = useState<any[]>([]);
   const [editableServices, setEditableServices] = useState<any[]>([]);
+  const [editableEquipment, setEditableEquipment] = useState<any[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [commercialTerms, setCommercialTerms] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
@@ -90,6 +91,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       if (res.budget) {
         setEditableMaterials(res.budget.items || []);
         setEditableServices(res.budget.services || []);
+        setEditableEquipment(res.budget.equipment || []);
         setValidityDays(res.budget.validity_days || 15);
         setCommercialTerms(res.budget.commercial_terms || '');
       }
@@ -119,8 +121,23 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   // Recálculo dinâmico dos totais de orçamento
   const totalMaterials = editableMaterials.reduce((acc, m) => acc + (Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0)), 0);
   const totalServices = editableServices.reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unit_price || 0)), 0);
-  const totalEquipment = Number(budget?.total_equipment || 0);
+  const totalEquipment = editableEquipment.reduce((acc, eq) => acc + (Number(eq.quantity || 0) * Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0))), 0);
   const totalBudgetCalculated = totalMaterials + totalServices + totalEquipment;
+
+  const handleAddEquipmentRow = () => {
+    setEditableEquipment(prev => [
+      ...prev,
+      {
+        category: 'Climatização VRF/VRV',
+        description: 'Nova Máquina / Equipamento',
+        brand: '',
+        quantity: 1,
+        unit: 'un',
+        unit_price: 0,
+        notes: ''
+      }
+    ]);
+  };
 
   const handleSaveBudget = async () => {
     setSavingBudget(true);
@@ -144,6 +161,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           unit: s.unit,
           unitPrice: Number(s.unit_price),
           notes: s.notes || ''
+        })),
+        equipment: editableEquipment.map(eq => ({
+          category: eq.category,
+          description: eq.description || eq.name,
+          brand: eq.brand || '',
+          quantity: Number(eq.quantity),
+          unit: eq.unit || 'un',
+          unitPrice: Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0)),
+          notes: eq.notes || ''
         })),
         totalEquipment,
         validityDays,
@@ -554,6 +580,13 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <span>+ Serviço</span>
               </button>
               <button
+                onClick={handleAddEquipmentRow}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                <span>+ Máquina</span>
+              </button>
+              <button
                 onClick={handleSaveBudget}
                 disabled={savingBudget}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
@@ -751,6 +784,132 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* 3. Máquinas e Equipamentos Principais (Faturamento Direto) */}
+          <div className="bg-dark-900 rounded-3xl border border-dark-750 overflow-hidden shadow-md">
+            <div className="p-4 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-xs font-bold text-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                <span className="text-sm font-extrabold text-white">3. Máquinas & Equipamentos Principais (Faturamento Direto)</span>
+              </div>
+              <span className="text-cyan-400 font-extrabold">
+                Subtotal Máquinas: R$ {totalEquipment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            {editableEquipment.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                <span>Nenhuma máquina ou equipamento principal cadastrado neste orçamento.</span>
+                <button
+                  type="button"
+                  onClick={handleAddEquipmentRow}
+                  className="px-3.5 py-1.5 rounded-xl bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-bold hover:bg-cyan-900 transition-colors shadow-sm"
+                >
+                  + Adicionar Máquina / Equipamento
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
+                    <tr>
+                      <th className="p-3">Categoria</th>
+                      <th className="p-3">Descrição da Máquina / Equipamento</th>
+                      <th className="p-3">Fabricante</th>
+                      <th className="p-3 text-center">Quant.</th>
+                      <th className="p-3 text-center">Unid.</th>
+                      <th className="p-3 text-right">Valor Unit. (R$)</th>
+                      <th className="p-3 text-right">Subtotal</th>
+                      <th className="p-3 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-750">
+                    {editableEquipment.map((eq, idx) => {
+                      const uPrice = Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0));
+                      const sub = Number(eq.quantity || 0) * uPrice;
+                      return (
+                        <tr key={idx} className="hover:bg-dark-850/60">
+                          <td className="p-3">
+                            <input
+                              type="text"
+                              value={eq.category || ''}
+                              placeholder="Ex: VRV, Coifa"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, category: val } : item));
+                              }}
+                              className="w-28 text-[11px] font-bold text-cyan-300 bg-dark-850 border border-dark-700 p-1 rounded outline-none"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="text"
+                              value={eq.description || eq.name || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, description: val } : item));
+                              }}
+                              className="w-full font-medium text-white bg-transparent border-b border-transparent hover:border-dark-700 focus:border-cyan-500 focus:bg-dark-850 px-1 py-0.5 rounded outline-none"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="text"
+                              value={eq.brand || ''}
+                              placeholder="Ex: Daikin"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, brand: val } : item));
+                              }}
+                              className="w-24 text-xs text-slate-300 bg-transparent border-b border-transparent hover:border-dark-700 focus:border-cyan-500 focus:bg-dark-850 px-1 py-0.5 rounded outline-none"
+                            />
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="number"
+                              step="any"
+                              value={eq.quantity}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+                              }}
+                              className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
+                            />
+                          </td>
+                          <td className="p-3 text-center text-slate-400">{eq.unit || 'un'}</td>
+                          <td className="p-3 text-right">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={uPrice}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, unit_price: val, unitPrice: val } : item));
+                              }}
+                              className="w-24 text-right font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
+                            />
+                          </td>
+                          <td className="p-3 text-right font-black text-cyan-400">
+                            R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setEditableEquipment(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40"
+                              title="Remover máquina"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Resumo Final do Orçamento */}

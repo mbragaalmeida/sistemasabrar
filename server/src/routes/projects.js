@@ -90,6 +90,7 @@ projectsRouter.get('/:id', async (req, res) => {
     const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetItems = [];
     let services = [];
+    let equipment = [];
 
     if (budget) {
       budgetItems = await db.prepare(`
@@ -101,6 +102,12 @@ projectsRouter.get('/:id', async (req, res) => {
       `).all(budget.id);
 
       services = await db.prepare('SELECT * FROM services WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+
+      try {
+        equipment = await db.prepare('SELECT * FROM budget_equipment WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+      } catch (e) {
+        console.warn('Erro ao buscar equipamentos:', e.message);
+      }
     }
 
     // Solicitações de materiais
@@ -223,7 +230,7 @@ projectsRouter.get('/:id', async (req, res) => {
     res.json({
       project,
       files,
-      budget: budget ? { ...budget, items: budgetItems, services } : null,
+      budget: budget ? { ...budget, items: budgetItems, services, equipment } : null,
       requests: enrichedRequests,
       returns,
       aiAnalyses,

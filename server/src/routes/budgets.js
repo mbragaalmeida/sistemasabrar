@@ -21,20 +21,27 @@ budgetsRouter.get('/project/:projectId', async (req, res) => {
     `).all(budget.id);
 
     const services = await db.prepare('SELECT * FROM services WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+    let equipment = [];
+    try {
+      equipment = await db.prepare('SELECT * FROM budget_equipment WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+    } catch (e) {
+      console.warn('Tabela budget_equipment consulta aviso:', e.message);
+    }
 
-    res.json({ ...budget, items, services });
+    res.json({ ...budget, items, services, equipment });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Salva ou atualiza um orçamento completo (Materiais + Serviços + Custos adicionais)
+// Salva ou atualiza um orçamento completo (Materiais + Serviços + Máquinas/Equipamentos)
 budgetsRouter.post('/save', async (req, res) => {
   try {
     const {
       projectId,
       materials = [],
       services = [],
+      equipment = [],
       validityDays = 15,
       commercialTerms = '',
       userId = 1,
@@ -65,13 +72,21 @@ budgetsRouter.post('/save', async (req, res) => {
 
     const totalServices = totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional;
 
-    // Busca ou cria o registro do orçamento
+    // Busca orçamento existente
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
-    const directEquipmentCost = reqTotalEquipment !== undefined
-      ? Number(reqTotalEquipment)
-      : (budget ? Number(budget.total_equipment || 0) : 0);
-    const finalTotalEquipment = directEquipmentCost > 0 ? directEquipmentCost : totalEquipmentServices;
-    const totalFinal = totalMaterials + totalServices + (directEquipmentCost > 0 ? directEquipmentCost : 0);
+    
+    // Calcula o total de equipamentos / faturamento direto
+    let equipmentTotal = 0;
+    if (equipment && equipment.length > 0) {
+      equipmentTotal = equipment.reduce((acc, eq) => acc + (Number(eq.quantity || 0) * Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0))), 0);
+    } else if (reqTotalEquipment !== undefined) {
+      equipmentTotal = Number(reqTotalEquipment);
+    } else if (budget && budget.total_equipment) {
+      equipmentTotal = Number(budget.total_equipment);
+    }
+
+    const finalTotalEquipment = equipmentTotal;
+    const totalFinal = Number((totalMaterials + totalServices + finalTotalEquipment).toFixed(2));
     let budgetId;
 
     if (!budget) {
@@ -106,6 +121,35 @@ budgetsRouter.post('/save', async (req, res) => {
         totalAdditional, totalFinal, validityDays, commercialTerms,
         budgetId
       );
+    }
+
+    // Salva itens da 3ª sessão: Máquinas & Equipamentos (Faturamento Direto)
+    if (equipment && equipment.length > 0) {
+      await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
+      const insertEquipment = db.prepare(`
+        INSERT INTO budget_equipment (
+          budget_id, category, description, brand, model,
+          quantity, unit, unit_price, subtotal, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const eq of equipment) {
+        const uPrice = Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0));
+        const q = Number(eq.quantity || 1);
+        const sub = Number((q * uPrice).toFixed(2));
+        await insertEquipment.run(
+          budgetId,
+          eq.category || 'Climatização',
+          eq.description || eq.name,
+          eq.brand || '',
+          eq.model || '',
+          q,
+          eq.unit || 'un',
+          uPrice,
+          sub,
+          eq.notes || ''
+        );
+      }
     }
 
     // Atualiza totais na tabela de projetos
