@@ -298,9 +298,9 @@ projectsRouter.post('/', async (req, res) => {
       VALUES (1, 'CRIAR_PROJETO', 'PROJETO', ?, ?, ?)
     `).run(projectId, projectId, `Projeto cadastrado: ${name} (${code}) para o cliente ${client} com ${(uploadedDocuments?.length || 0)} documento(s)`);
 
-    // Análise por IA automática se solicitado
+    // Análise por IA automática se explicitamente solicitado (sem uploads físicos pendentes)
     let aiAnalysis = null;
-    if (autoAnalyze || (uploadedDocuments && uploadedDocuments.length > 0)) {
+    if (autoAnalyze) {
       try {
         aiAnalysis = await AIAnalysisService.analyzeProjectDocuments(projectId);
       } catch (aiErr) {
@@ -351,6 +351,12 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
           console.warn(`[Spreadsheet Parser Error] ${f.originalname}:`, sErr.message);
         }
       }
+
+      // Remove placeholder record prévio se tiver sido inserido na criação sem conteúdo extraído
+      await db.prepare(`
+        DELETE FROM project_files
+        WHERE project_id = ? AND original_name = ?
+      `).run(projectId, f.originalname);
 
       const resInsert = await db.prepare(`
         INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)

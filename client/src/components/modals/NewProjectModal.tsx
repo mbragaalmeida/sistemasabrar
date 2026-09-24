@@ -91,7 +91,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
     setLoading(true);
     try {
-      // 1. Cadastra o projeto com documentos vinculados
+      const realFiles = uploadedFiles.filter(f => f.file).map(f => f.file as File);
+
+      // 1. Cadastra o projeto. Se houver arquivos físicos para upload a seguir, não dispara autoAnalyze aqui
+      // para evitar analisar metadados vazios antes do processamento do PDF/DWG.
       const res = await api.createProject({
         name: name.trim(),
         client: client.trim(),
@@ -102,18 +105,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         responsible_engineer: responsibleEngineer,
         notes: estimatedArea ? `[Área da Obra: ${estimatedArea} m²] ${notes.trim()}` : notes.trim(),
         initial_spec_text: optionalText.trim(),
-        uploadedDocuments: uploadedFiles.map(d => ({
+        uploadedDocuments: realFiles.length > 0 ? [] : uploadedFiles.map(d => ({
           name: d.name,
           size: d.size,
           type: d.type,
           content: d.content
         })),
-        autoAnalyze: autoAnalyzeWithAI && uploadedFiles.length > 0,
+        autoAnalyze: autoAnalyzeWithAI && uploadedFiles.length > 0 && realFiles.length === 0,
         userId: currentUser?.id || 1
       });
 
-      // 2. Se houver arquivos reais em memória, envia via upload multipart
-      const realFiles = uploadedFiles.filter(f => f.file).map(f => f.file as File);
+      // 2. Se houver arquivos reais em memória, envia via upload multipart e dispara a análise completa dos PDFs
       if (realFiles.length > 0 && res.id) {
         try {
           await api.uploadProjectFiles(res.id, realFiles, autoAnalyzeWithAI);
