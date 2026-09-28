@@ -1,5 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Check, Filter, Search, Truck, Clock, DollarSign, PackageCheck, AlertTriangle, PlusCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  ShoppingCart,
+  Check,
+  Filter,
+  Search,
+  Truck,
+  Clock,
+  DollarSign,
+  PackageCheck,
+  AlertTriangle,
+  PlusCircle,
+  Building2,
+  ChevronDown,
+  ChevronUp,
+  List,
+  Layers,
+  ArrowRight,
+  Maximize2,
+  Minimize2
+} from 'lucide-react';
 import { Purchase } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -7,10 +26,28 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { NewPurchaseModal } from '../components/modals/NewPurchaseModal';
 import { CreatePurchaseModal } from '../components/modals/CreatePurchaseModal';
 
+interface ProjectGroup {
+  projectId: number | 'geral';
+  projectCode: string;
+  projectName: string;
+  items: Purchase[];
+  totalEstimated: number;
+  totalQuantity: number;
+  statusBreakdown: {
+    cotacao: number;
+    comprado: number;
+    entrega: number;
+    recebido: number;
+  };
+}
+
 export const PurchasesPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [allPurchases, setAllPurchases] = useState<Purchase[]>([]);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'cotacao' | 'comprado' | 'entrega' | 'recebido'>('todos');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
+  const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -39,13 +76,96 @@ export const PurchasesPage: React.FC = () => {
   const aguardandoCount = allPurchases.filter(p => p.status === 'Aguardando entrega').length;
   const recebidoCount = allPurchases.filter(p => p.status === 'Recebido').length;
 
-  const filteredPurchases = allPurchases.filter(p => {
-    if (statusFilter === 'cotacao') return ['Em cotação', 'Solicitado'].includes(p.status);
-    if (statusFilter === 'comprado') return p.status === 'Comprado';
-    if (statusFilter === 'entrega') return p.status === 'Aguardando entrega';
-    if (statusFilter === 'recebido') return p.status === 'Recebido';
-    return true;
-  });
+  // Filtragem combinada por status e pesquisa de texto
+  const filteredPurchases = useMemo(() => {
+    return allPurchases.filter(p => {
+      // Filtro de status
+      if (statusFilter === 'cotacao' && !['Em cotação', 'Solicitado'].includes(p.status)) return false;
+      if (statusFilter === 'comprado' && p.status !== 'Comprado') return false;
+      if (statusFilter === 'entrega' && p.status !== 'Aguardando entrega') return false;
+      if (statusFilter === 'recebido' && p.status !== 'Recebido') return false;
+
+      // Filtro de busca textual
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchCode = (p.code || '').toLowerCase().includes(q);
+        const matchMat = (p.material_name || '').toLowerCase().includes(q);
+        const matchProj = (p.project_name || '').toLowerCase().includes(q);
+        const matchProjCode = (p.project_code || '').toLowerCase().includes(q);
+        const matchSupp = (p.supplier_name || '').toLowerCase().includes(q);
+        if (!matchCode && !matchMat && !matchProj && !matchProjCode && !matchSupp) return false;
+      }
+
+      return true;
+    });
+  }, [allPurchases, statusFilter, searchQuery]);
+
+  // Agrupamento estruturado por obra (projeto)
+  const groupedByProject = useMemo(() => {
+    const map = new Map<number | string, ProjectGroup>();
+
+    filteredPurchases.forEach(p => {
+      const key = p.project_id || 'geral';
+      if (!map.has(key)) {
+        map.set(key, {
+          projectId: p.project_id || 'geral',
+          projectCode: p.project_code || 'SABRAR',
+          projectName: p.project_name || 'Estoque Geral / Reposição Interna',
+          items: [],
+          totalEstimated: 0,
+          totalQuantity: 0,
+          statusBreakdown: {
+            cotacao: 0,
+            comprado: 0,
+            entrega: 0,
+            recebido: 0
+          }
+        });
+      }
+
+      const group = map.get(key)!;
+      group.items.push(p);
+      group.totalQuantity += Number(p.quantity || 0);
+
+      const price = Number(p.unit_price || 0);
+      group.totalEstimated += Number(p.quantity || 0) * price;
+
+      if (['Em cotação', 'Solicitado'].includes(p.status)) group.statusBreakdown.cotacao++;
+      else if (p.status === 'Comprado') group.statusBreakdown.comprado++;
+      else if (p.status === 'Aguardando entrega') group.statusBreakdown.entrega++;
+      else if (p.status === 'Recebido') group.statusBreakdown.recebido++;
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.projectId === 'geral') return 1;
+      if (b.projectId === 'geral') return -1;
+      return b.items.length - a.items.length;
+    });
+  }, [filteredPurchases]);
+
+  // Por padrão, expande a primeira obra quando os dados carregarem
+  useEffect(() => {
+    if (groupedByProject.length > 0 && expandedProjects.size === 0) {
+      setExpandedProjects(new Set([groupedByProject[0].projectId]));
+    }
+  }, [groupedByProject.length]);
+
+  const toggleProjectExpand = (key: number | string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    setExpandedProjects(new Set(groupedByProject.map(g => g.projectId)));
+  };
+
+  const collapseAll = () => {
+    setExpandedProjects(new Set());
+  };
 
   const handleConfirmReceipt = async (purchaseId: number) => {
     if (!window.confirm('Confirmar o recebimento físico deste material? A quantidade será creditada diretamente no estoque físico.')) {
@@ -61,7 +181,7 @@ export const PurchasesPage: React.FC = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
-      {/* Header */}
+      {/* Header com Logomarca e Ação Rápida */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
         <div>
           <div className="flex items-center gap-2.5">
@@ -73,7 +193,7 @@ export const PurchasesPage: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Fila de demandas automáticas por déficit de estoque e recebimento de pedidos
+            Gestão inteligente de compras agrupada por obra com cotações e recebimento de pedidos
           </p>
         </div>
 
@@ -87,38 +207,85 @@ export const PurchasesPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Barra de Controles: Filtros de Status, Alternador de Visão e Busca */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        {/* Filter Pills por Status */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0 mr-1">
+            <Filter className="w-3.5 h-3.5 text-sabrar-400" />
+            <span>Fila:</span>
+          </div>
 
-      {/* Filter Pills no formato do Almoxarifado */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-        <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0 mr-1">
-          <Filter className="w-3.5 h-3.5 text-sabrar-400" />
-          <span>Filtrar fila:</span>
+          {[
+            { id: 'todos', label: 'Todos', count: totalCount },
+            { id: 'cotacao', label: 'Em Cotação', count: cotacaoCount },
+            { id: 'comprado', label: 'Comprado', count: compradoCount },
+            { id: 'entrega', label: 'Aguardando Entrega', count: aguardandoCount },
+            { id: 'recebido', label: 'Recebidos', count: recebidoCount },
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id as any)}
+              className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                statusFilter === f.id
+                  ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                  : 'bg-dark-850 text-slate-400 hover:text-white hover:bg-dark-800 border border-dark-700'
+              }`}
+            >
+              <span>{f.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                statusFilter === f.id ? 'bg-sabrar-800 text-white' : 'bg-dark-750 text-slate-300'
+              }`}>
+                {f.count}
+              </span>
+            </button>
+          ))}
         </div>
 
-        {[
-          { id: 'todos', label: 'Todos', count: totalCount },
-          { id: 'cotacao', label: 'Em Cotação', count: cotacaoCount },
-          { id: 'comprado', label: 'Comprado', count: compradoCount },
-          { id: 'entrega', label: 'Aguardando Entrega', count: aguardandoCount },
-          { id: 'recebido', label: 'Recebidos no Estoque', count: recebidoCount },
-        ].map(f => (
-          <button
-            key={f.id}
-            onClick={() => setStatusFilter(f.id as any)}
-            className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              statusFilter === f.id
-                ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
-                : 'bg-dark-850 text-slate-400 hover:text-white hover:bg-dark-800 border border-dark-700'
-            }`}
-          >
-            <span>{f.label}</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-              statusFilter === f.id ? 'bg-sabrar-800 text-white' : 'bg-dark-750 text-slate-300'
-            }`}>
-              {f.count}
-            </span>
-          </button>
-        ))}
+        {/* Lado Direito: Busca e Alternador de Modo (Por Obra vs Lista Completa) */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Busca Textual */}
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar material, código ou obra..."
+              className="w-full text-xs pl-8 pr-3 py-1.5 rounded-xl bg-dark-850 border border-dark-700 focus:outline-none focus:border-sabrar-500 text-white placeholder-slate-500"
+            />
+          </div>
+
+          {/* Toggle de Visualização */}
+          <div className="flex items-center bg-dark-850 p-1 rounded-2xl border border-dark-700 text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('by_project')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                viewMode === 'by_project'
+                  ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Organizar demandas agrupadas por obra com lista expansível"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Por Obra</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('linear')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                viewMode === 'linear'
+                  ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Visualizar lista linear completa de itens"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Lista Linear</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {loading && (
@@ -127,8 +294,273 @@ export const PurchasesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Purchases List */}
-      {!loading && (
+      {/* ========================================================= */}
+      {/* 1. VISUALIZAÇÃO AGRUPADA POR OBRA (ACCORDION EXPANSÍVEL) */}
+      {/* ========================================================= */}
+      {!loading && viewMode === 'by_project' && (
+        <div className="space-y-4">
+          {/* Botões Auxiliares: Expandir Todas / Recolher Todas */}
+          {groupedByProject.length > 1 && (
+            <div className="flex items-center justify-between text-xs px-1 text-slate-400">
+              <span className="font-semibold">
+                Mostrando <strong>{groupedByProject.length} obras</strong> com demandas de compras ativas ({filteredPurchases.length} materiais)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={expandAll}
+                  className="hover:text-white flex items-center gap-1 transition-colors"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Expandir Todas</span>
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={collapseAll}
+                  className="hover:text-white flex items-center gap-1 transition-colors"
+                >
+                  <Minimize2 className="w-3 h-3" />
+                  <span>Recolher Todas</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {groupedByProject.length === 0 ? (
+            <div className="py-16 text-center bg-dark-900 rounded-3xl border border-dark-750 text-xs text-slate-500">
+              Nenhuma demanda de compra encontrada para o filtro selecionado.
+            </div>
+          ) : (
+            groupedByProject.map((group) => {
+              const isExpanded = expandedProjects.has(group.projectId);
+
+              return (
+                <div
+                  key={group.projectId}
+                  className={`bg-dark-900 rounded-3xl border transition-all shadow-md overflow-hidden ${
+                    isExpanded ? 'border-sabrar-500/50 ring-1 ring-sabrar-500/20' : 'border-dark-750 hover:border-dark-700'
+                  }`}
+                >
+                  {/* Cabeçalho do Card da Obra (Clicável para Expandir/Recolher) */}
+                  <div
+                    onClick={() => toggleProjectExpand(group.projectId)}
+                    className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer select-none bg-dark-850/60 hover:bg-dark-850 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-sabrar-950/80 border border-sabrar-500/40 flex items-center justify-center text-sabrar-400 shrink-0">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-sabrar-400 px-2 py-0.5 rounded bg-dark-800 border border-dark-700">
+                            {group.projectCode}
+                          </span>
+                          <h3 className="font-extrabold text-sm sm:text-base text-white">
+                            {group.projectName}
+                          </h3>
+                        </div>
+
+                        {/* Badges de Status das Compras da Obra */}
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[11px]">
+                          <span className="font-bold text-slate-300 bg-dark-800 px-2 py-0.5 rounded-lg border border-dark-700">
+                            {group.items.length} {group.items.length === 1 ? 'material' : 'materiais'}
+                          </span>
+                          {group.statusBreakdown.cotacao > 0 && (
+                            <span className="text-amber-300 bg-amber-950/70 border border-amber-600/40 px-2 py-0.5 rounded-lg font-semibold">
+                              {group.statusBreakdown.cotacao} em cotação
+                            </span>
+                          )}
+                          {group.statusBreakdown.comprado > 0 && (
+                            <span className="text-sky-300 bg-sky-950/70 border border-sky-600/40 px-2 py-0.5 rounded-lg font-semibold">
+                              {group.statusBreakdown.comprado} comprado
+                            </span>
+                          )}
+                          {group.statusBreakdown.entrega > 0 && (
+                            <span className="text-indigo-300 bg-indigo-950/70 border border-indigo-600/40 px-2 py-0.5 rounded-lg font-semibold">
+                              {group.statusBreakdown.entrega} aguardando entrega
+                            </span>
+                          )}
+                          {group.statusBreakdown.recebido > 0 && (
+                            <span className="text-emerald-300 bg-emerald-950/70 border border-emerald-600/40 px-2 py-0.5 rounded-lg font-semibold">
+                              {group.statusBreakdown.recebido} recebido no estoque
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lado Direito: Total Estimado e Botão Expansor */}
+                    <div className="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-2 md:pt-0 border-dark-750">
+                      {group.totalEstimated > 0 && (
+                        <div className="text-left md:text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Valor Estimado / Cotado
+                          </span>
+                          <span className="text-base font-black text-white">
+                            R$ {group.totalEstimated.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-dark-800 border border-dark-700 text-xs font-bold text-slate-300 group-hover:text-white">
+                        <span>{isExpanded ? 'Recolher' : 'Ver Materiais'}</span>
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-sabrar-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista Expansiva com Todos os Itens desta Obra */}
+                  {isExpanded && (
+                    <div className="p-3 sm:p-5 border-t border-dark-750 bg-dark-900 space-y-3 animate-in fade-in duration-150">
+                      {/* Tabela Responsiva de Materiais da Obra */}
+                      <div className="overflow-x-auto rounded-2xl border border-dark-750 bg-dark-850">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-dark-800 text-slate-400 font-bold border-b border-dark-700">
+                            <tr>
+                              <th className="p-3">Código</th>
+                              <th className="p-3">Material Solicitado</th>
+                              <th className="p-3 text-right">Qtd. Solicitada</th>
+                              <th className="p-3 text-right">Preço Estimado</th>
+                              <th className="p-3">Fornecedor</th>
+                              <th className="p-3">Previsão</th>
+                              <th className="p-3 text-center">Status</th>
+                              <th className="p-3 text-right">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-dark-750">
+                            {group.items.map((p) => {
+                              const isReceived = p.status === 'Recebido';
+                              const subtotal = Number(p.quantity || 0) * Number(p.unit_price || 0);
+
+                              return (
+                                <tr key={p.id} className="hover:bg-dark-800/50 transition-colors">
+                                  {/* Código da Demanda */}
+                                  <td className="p-3 whitespace-nowrap font-mono font-bold text-sabrar-400">
+                                    {p.code}
+                                  </td>
+
+                                  {/* Nome do Material */}
+                                  <td className="p-3 min-w-[200px]">
+                                    <div className="font-extrabold text-white">{p.material_name}</div>
+                                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                      {p.material_code ? `Código: ${p.material_code}` : 'Item Solicitado'}
+                                    </div>
+                                  </td>
+
+                                  {/* Quantidade */}
+                                  <td className="p-3 text-right whitespace-nowrap font-bold text-white">
+                                    {p.quantity} {p.material_unit}
+                                  </td>
+
+                                  {/* Preço Unitário & Subtotal */}
+                                  <td className="p-3 text-right whitespace-nowrap">
+                                    {p.unit_price ? (
+                                      <div>
+                                        <div className="font-extrabold text-white">
+                                          R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400">
+                                          R$ {p.unit_price.toFixed(2)}/{p.material_unit}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-500 italic text-[11px]">A cotar</span>
+                                    )}
+                                  </td>
+
+                                  {/* Fornecedor */}
+                                  <td className="p-3 whitespace-nowrap text-slate-300">
+                                    {p.supplier_name || <span className="text-slate-500 italic">Em cotação</span>}
+                                  </td>
+
+                                  {/* Previsão de Entrega */}
+                                  <td className="p-3 whitespace-nowrap text-slate-400 text-[11px]">
+                                    {p.expected_delivery_date
+                                      ? new Date(p.expected_delivery_date).toLocaleDateString('pt-BR')
+                                      : <span className="italic text-slate-500">Aguardando</span>}
+                                  </td>
+
+                                  {/* Status & Prioridade */}
+                                  <td className="p-3 text-center whitespace-nowrap">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <StatusBadge status={p.priority || 'Normal'} size="sm" />
+                                      <StatusBadge status={p.status} size="sm" />
+                                    </div>
+                                  </td>
+
+                                  {/* Botões de Ação */}
+                                  <td className="p-3 text-right whitespace-nowrap">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {!isReceived ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedPurchase(p);
+                                              setIsEditModalOpen(true);
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg border border-dark-700 bg-dark-800 hover:bg-dark-750 text-slate-200 text-xs font-bold transition-colors"
+                                            title="Atualizar cotação, fornecedor ou data de entrega"
+                                          >
+                                            Cotar
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleConfirmReceipt(p.id)}
+                                            className="flex items-center gap-1 px-3 py-1 rounded-lg bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                                            title="Confirmar chegada do material e entrada no almoxarifado"
+                                          >
+                                            <PackageCheck className="w-3.5 h-3.5" />
+                                            <span>Receber</span>
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span className="flex items-center gap-1 text-emerald-400 font-bold text-[11px] bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/40">
+                                          <Check className="w-3.5 h-3.5" />
+                                          <span>Recebido</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Rodapé da Obra com Totais */}
+                      <div className="p-3 bg-dark-850 rounded-2xl border border-dark-750 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                        <div className="flex items-center gap-3">
+                          <span>Total de materiais da obra: <strong className="text-white">{group.items.length}</strong></span>
+                          <span>•</span>
+                          <span>Recebidos: <strong className="text-emerald-400">{group.statusBreakdown.recebido} de {group.items.length}</strong></span>
+                        </div>
+                        {group.totalEstimated > 0 && (
+                          <div className="text-white font-bold">
+                            Total cotado para a obra: <span className="text-sabrar-400 font-black">R$ {group.totalEstimated.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 2. VISUALIZAÇÃO LINEAR COMPLETA (MODO ALTERNATIVO)        */}
+      {/* ========================================================= */}
+      {!loading && viewMode === 'linear' && (
         <div className="space-y-3.5">
           {filteredPurchases.length === 0 ? (
             <div className="py-16 text-center bg-dark-900 rounded-3xl border border-dark-750 text-xs text-slate-500">
@@ -166,7 +598,6 @@ export const PurchasesPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Informações detalhadas */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-dark-850 rounded-2xl border border-dark-700 text-xs">
                     <div>
                       <span className="text-slate-400 block">Obra de Origem:</span>
@@ -190,7 +621,6 @@ export const PurchasesPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Ações de Compras & Almoxarifado */}
                   <div className="pt-2 border-t border-dark-750 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="text-slate-400 text-[11px]">
                       Criado em {new Date(p.created_at).toLocaleDateString('pt-BR')} por {p.buyer_name || 'Automação'}
@@ -200,6 +630,7 @@ export const PurchasesPage: React.FC = () => {
                       {!isReceived && (
                         <>
                           <button
+                            type="button"
                             onClick={() => {
                               setSelectedPurchase(p);
                               setIsEditModalOpen(true);
@@ -210,6 +641,7 @@ export const PurchasesPage: React.FC = () => {
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => handleConfirmReceipt(p.id)}
                             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white font-bold transition-all shadow-md shadow-sabrar-600/30 active:scale-95"
                           >
@@ -256,4 +688,3 @@ export const PurchasesPage: React.FC = () => {
     </div>
   );
 };
-
