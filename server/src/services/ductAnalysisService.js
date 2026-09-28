@@ -126,6 +126,19 @@ export class DuctAnalysisService {
         kg: flexKg,
         technical_reason: `Distribuição de ar para grelhas lineares e rede de exaustão Sicflux (${eqData.numExhaust || 2} exaustores)`
       });
+
+      // 4. Rede de Dutos de Exaustão Mecânica em Chapa Galvanizada #26 (conforme aba EX_AE)
+      if (eqData.hasExhaustSystem || eqData.hasSicflux) {
+        ductBreakdown.push({
+          type: 'Chapa Galvanizada #26 (Exaustão)',
+          name: 'Rede de Dutos e Derivações de Exaustão Mecânica e Ventilação',
+          specification: 'Chapa de Aço Galvanizada Z275 #26 (0,50mm) cravada conforme norma NBR 16401',
+          standard: 'ABNT NBR 16401 / SMACNA Low Pressure Duct Construction',
+          meters: 12.0,
+          kg: 144.9,
+          technical_reason: 'Rede de captação e exaustão forçada para garagem e sanitários (Sicflux ACI-400 e Inline)'
+        });
+      }
     } else if (isRetail) {
       // LOJA DE VAREJO / SHOPPING CENTER (ex: Havaianas Shopping Tijuca - 159 m²)
       // 1. Duto MPU: 67 m² -> ~47.9 m lineares. Peso ~93.8 kg.
