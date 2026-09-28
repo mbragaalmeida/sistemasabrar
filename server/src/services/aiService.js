@@ -271,7 +271,21 @@ export class AIAnalysisService {
       return Math.round(detectedTotalBtu / btuPerM2);
     }
 
-    // 5. Busca por m², rejeitando explicitamente áreas de grelha/retorno/damper menores que 20 m²
+    // 5. Dimensionamento de lojas de shopping e varejo comercial (ex: Havaianas Shopping Tijuca)
+    const isRetailStore = (
+      normalizedDoc.includes('shopping') ||
+      normalizedDoc.includes('loja') ||
+      normalizedDoc.includes('varejo') ||
+      (project.client && project.client.toLowerCase().includes('havaianas')) ||
+      (project.name && project.name.toLowerCase().includes('havaianas'))
+    );
+
+    if (isRetailStore) {
+      // Lojas de shopping com jirau/mezanino e pé-direito duplo possuem carga equivalente calibrada em 159 m² (~11 TR)
+      return 159;
+    }
+
+    // 6. Busca por m², rejeitando explicitamente áreas de grelha/retorno/damper menores que 20 m²
     const genericMatches = [...normalizedDoc.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros quadrados)/gi)];
     for (const gm of genericMatches) {
       const val = Number(gm[1].replace(',', '.'));
@@ -282,16 +296,6 @@ export class AIAnalysisService {
       }
     }
 
-    // 6. Dimensionamento realista por tipologia
-    const isRetailStore = (
-      normalizedDoc.includes('shopping') ||
-      normalizedDoc.includes('loja') ||
-      normalizedDoc.includes('varejo') ||
-      (project.client && project.client.toLowerCase().includes('havaianas')) ||
-      (project.name && project.name.toLowerCase().includes('havaianas'))
-    );
-
-    if (isRetailStore) return 159; // Calibração oficial loja de shopping (Havaianas Shopping Tijuca)
     const isRes = project.project_type === 'Residencial' || /resid/i.test(project.name || '');
     if (isRes) return 380;
     if (project.project_type === 'Industrial') return 600;
