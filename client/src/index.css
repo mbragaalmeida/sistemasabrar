@@ -72,74 +72,122 @@ body.light {
 }
 
 /* ========================================================
-   HEADER INTACTO — SEMPRE PRETO PURO / CHUMBO NEUTRO EM AMBOS OS TEMAS
+   HEADER (TEMA ESCURO & TEMA CLARO 100% BRANCO)
    ======================================================== */
-header,
-.light header,
-html.light header {
+/* Tema Escuro */
+html.dark header,
+body.dark header,
+:root:not(.light) header {
   background-color: #0A0A0A !important;
   border-color: #222222 !important;
   color: #FFFFFF !important;
 }
 
-header .text-white,
-.light header .text-white {
+html.dark header .text-white,
+body.dark header .text-white {
   color: #FFFFFF !important;
 }
 
-header .text-slate-400,
-.light header .text-slate-400 {
+html.dark header .text-slate-400,
+body.dark header .text-slate-400 {
   color: #888888 !important;
 }
 
-header .text-slate-300,
-.light header .text-slate-300 {
+html.dark header .text-slate-300,
+body.dark header .text-slate-300 {
   color: #CCCCCC !important;
 }
 
-header input,
-.light header input,
-header button[class*="bg-"],
-.light header button[class*="bg-"] {
+html.dark header input,
+body.dark header input,
+html.dark header button[class*="bg-"],
+body.dark header button[class*="bg-"] {
   background-color: #141414 !important;
   color: #FFFFFF !important;
   border-color: #262626 !important;
 }
 
+/* Tema Claro — 100% Branco com Alto Contraste */
+.light header,
+html.light header,
+body.light header {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+.light header .text-slate-800,
+html.light header .text-slate-800 {
+  color: #0F172A !important;
+}
+
+.light header .text-slate-700,
+html.light header .text-slate-700 {
+  color: #334155 !important;
+}
+
+.light header .text-slate-600,
+html.light header .text-slate-600 {
+  color: #475569 !important;
+}
+
+.light header .text-slate-500,
+html.light header .text-slate-500 {
+  color: #64748B !important;
+}
+
+.light header .text-slate-400,
+html.light header .text-slate-400 {
+  color: #64748B !important;
+}
+
+.light header .text-slate-300,
+html.light header .text-slate-300 {
+  color: #334155 !important;
+}
+
+.light header input,
+html.light header input,
+body.light header input {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+  border-color: #E2E8F0 !important;
+}
+
 /* ========================================================
-   TIPOGRAFIA & CONTRASTE NO MODO DIURNO (EXCETO HEADER)
+   TIPOGRAFIA & CONTRASTE NO MODO DIURNO
    ======================================================== */
-.light h1:not(header *),
-.light h2:not(header *),
-.light h3:not(header *),
-.light h4:not(header *),
-.light h5:not(header *),
-.light h6:not(header *) {
+.light h1,
+.light h2,
+.light h3,
+.light h4,
+.light h5,
+.light h6 {
   color: #0F172A !important;
 }
 
 /* Inversão seletiva de text-white para dark text (preserva botões coloridos) */
-.light .text-white:not(header *):not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]) {
+.light .text-white:not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]):not(html.dark header *) {
   color: #0F172A !important;
 }
 
-.light .text-slate-100:not(header *) {
+.light .text-slate-100 {
   color: #0F172A !important;
 }
 
-.light .text-slate-200:not(header *) {
+.light .text-slate-200 {
   color: #1E293B !important;
 }
 
-.light .text-slate-300:not(header *) {
+.light .text-slate-300 {
   color: #334155 !important;
 }
 
-.light .text-slate-400:not(header *) {
+.light .text-slate-400 {
   color: #64748B !important;
 }
 
-.light .text-slate-500:not(header *) {
+.light .text-slate-500 {
   color: #64748B !important;
 }
 

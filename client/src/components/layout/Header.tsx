@@ -28,7 +28,18 @@ export const Header: React.FC<HeaderProps> = ({
   const isAdmin = currentUser?.role === 'admin' && !isSimulating;
 
   return (
-    <header className="sticky top-0 z-40 bg-white dark:bg-[#0A0A0A] text-slate-800 dark:text-white border-b border-slate-200 dark:border-[#222222] px-3 sm:px-6 py-2.5 shadow-xs dark:shadow-xl transition-colors">
+    <header
+      className={`sticky top-0 z-40 ${
+        theme === 'light'
+          ? 'light bg-white text-slate-800 border-slate-200 shadow-xs'
+          : 'dark bg-[#0A0A0A] text-white border-[#222222] shadow-xl'
+      } border-b px-3 sm:px-6 py-2.5 transition-colors`}
+      style={{
+        backgroundColor: theme === 'light' ? '#FFFFFF' : '#0A0A0A',
+        borderColor: theme === 'light' ? '#E2E8F0' : '#222222',
+        color: theme === 'light' ? '#0F172A' : '#FFFFFF'
+      }}
+    >
       <div className="flex items-center justify-between gap-2 max-w-7xl mx-auto">
         {/* Left: Mobile Menu Toggle & Brand Logo Oficial */}
         <div className="flex items-center gap-2 sm:gap-3">
