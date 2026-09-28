@@ -3,9 +3,27 @@ import { extractTextFromPDF } from '../utils/pdfExtractor';
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('sabrar_token') : null;
+  const userStr = typeof window !== 'undefined' ? localStorage.getItem('sabrar_user') : null;
+  let currentUserId: string | null = null;
+  let currentUserRole: string | null = null;
+  if (userStr) {
+    try {
+      const u = JSON.parse(userStr);
+      currentUserId = u.id ? String(u.id) : null;
+      currentUserRole = u.role || null;
+    } catch {}
+  }
+
+  const authHeaders: Record<string, string> = {};
+  if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+  if (currentUserId) authHeaders['x-user-id'] = currentUserId;
+  if (currentUserRole) authHeaders['x-user-role'] = currentUserRole;
+
   const res = await fetch(`${API_BASE}${url}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...options?.headers
     },
     ...options

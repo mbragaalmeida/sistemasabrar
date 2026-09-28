@@ -3,9 +3,24 @@ import { db } from '../db/connection.js';
 
 export const authRouter = express.Router();
 
-// Lista todos os usuários e seus perfis
+// Lista usuários (Restrito: Administrador vê todos; outros perfis recebem apenas a si mesmos)
 authRouter.get('/users', async (req, res) => {
   try {
+    const userRole = req.headers['x-user-role'];
+    const userId = req.headers['x-user-id'];
+
+    if (userRole && userRole !== 'admin') {
+      // Se não for admin, retorna apenas o próprio perfil do usuário solicitante
+      if (!userId) return res.json([]);
+      const self = await db.prepare(`
+        SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
+        FROM users u
+        JOIN roles r ON u.role_id = r.id
+        WHERE u.id = ?
+      `).all(userId);
+      return res.json(self);
+    }
+
     const users = await db.prepare(`
       SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
@@ -28,9 +43,17 @@ authRouter.get('/roles', async (req, res) => {
   }
 });
 
-// Retorna usuário por ID (para chaveamento rápido de perfil no header)
+// Retorna usuário por ID
 authRouter.get('/user/:id', async (req, res) => {
   try {
+    const userRole = req.headers['x-user-role'];
+    const currentUserId = req.headers['x-user-id'];
+
+    // Se não for admin, só pode consultar seu próprio id
+    if (userRole && userRole !== 'admin' && String(currentUserId) !== String(req.params.id)) {
+      return res.status(403).json({ error: 'Acesso negado: você não possui permissão para visualizar outros usuários.' });
+    }
+
     const user = await db.prepare(`
       SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label
       FROM users u
@@ -45,9 +68,14 @@ authRouter.get('/user/:id', async (req, res) => {
   }
 });
 
-// Cria um novo usuário
+// Cria um novo usuário (Apenas Administrador)
 authRouter.post('/users', async (req, res) => {
   try {
+    const userRole = req.headers['x-user-role'];
+    if (userRole && userRole !== 'admin') {
+      return res.status(403).json({ error: 'Apenas administradores podem cadastrar novos usuários.' });
+    }
+
     const { name, email, password, role_id, department, phone } = req.body;
 
     if (!name || !email || !password || !role_id) {

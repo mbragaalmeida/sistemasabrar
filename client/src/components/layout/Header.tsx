@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Search, Bell, Menu, Shield, UserCheck, ChevronDown, LogOut, Sun, Moon } from 'lucide-react';
+import { Search, Bell, Menu, Shield, UserCheck, ChevronDown, LogOut, Sun, Moon, Users, Eye, RotateCcw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { UserRole } from '../../types';
 
 interface HeaderProps {
   onOpenSearch: () => void;
   onOpenNotifications: () => void;
   onToggleSidebar: () => void;
+  onNavigate?: (page: string) => void;
   unreadNotificationsCount?: number;
 }
 
@@ -14,11 +16,14 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   onOpenNotifications,
   onToggleSidebar,
+  onNavigate,
   unreadNotificationsCount = 0
 }) => {
-  const { currentUser, users, switchUser, logout } = useAuth();
+  const { currentUser, isSimulating, originalAdmin, simulateRole, stopSimulation, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+
+  const isAdmin = currentUser?.role === 'admin' && !isSimulating;
 
   return (
     <header className="sticky top-0 z-40 bg-[#0A0A0A] text-white border-b border-[#222222] px-3 sm:px-6 py-2.5 shadow-xl">
@@ -52,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="truncate">Buscar em todo o sistema...</span>
         </button>
 
-        {/* Right: Quick Role Switcher + Search icon (Mobile) + Notifications */}
+        {/* Right: User Profile Menu + Search icon (Mobile) + Notifications */}
         <div className="flex items-center gap-1.5 sm:gap-3">
           {/* Mobile Search Icon */}
           <button
@@ -63,22 +68,36 @@ export const Header: React.FC<HeaderProps> = ({
             <Search className="w-5 h-5" />
           </button>
 
-          {/* Quick Role Switcher (Perfis de Usuário) */}
+          {/* User Profile Badge / Menu */}
           <div className="relative">
             <button
               onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-              className="flex items-center gap-2 bg-[#141414] hover:bg-[#1E1E1E] text-white pl-2 pr-2.5 py-1.5 rounded-2xl border border-[#262626] text-xs transition-all shadow-sm"
-              title="Trocar perfil de acesso rápido"
+              className={`flex items-center gap-2 bg-[#141414] hover:bg-[#1E1E1E] text-white pl-2 pr-2.5 py-1.5 rounded-2xl border text-xs transition-all shadow-sm ${
+                isSimulating
+                  ? 'border-amber-500/50 bg-amber-950/20'
+                  : 'border-[#262626]'
+              }`}
+              title="Meu perfil e configurações de sessão"
             >
-              <div className="w-6 h-6 rounded-lg bg-sabrar-500/20 text-sabrar-400 border border-sabrar-500/30 flex items-center justify-center font-bold text-xs shrink-0">
-                <Shield className="w-3.5 h-3.5" />
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                isSimulating
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : isAdmin
+                    ? 'bg-sabrar-500/20 text-sabrar-400 border border-sabrar-500/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                {isSimulating ? (
+                  <Eye className="w-3.5 h-3.5" />
+                ) : (
+                  <Shield className="w-3.5 h-3.5" />
+                )}
               </div>
               <div className="text-left hidden xs:block">
                 <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold leading-tight">
-                  Perfil
+                  {isSimulating ? 'Simulação' : isAdmin ? 'Administrador' : 'Usuário'}
                 </div>
-                <div className="font-bold text-sabrar-300 truncate max-w-[100px] sm:max-w-[130px] leading-tight">
-                  {currentUser?.role_label || 'Admin'}
+                <div className="font-bold text-sabrar-300 truncate max-w-[110px] sm:max-w-[140px] leading-tight">
+                  {currentUser?.name?.split(' ')[0] || currentUser?.role_label || 'Perfil'}
                 </div>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -86,54 +105,119 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Dropdown Menu */}
             {roleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-[#121212] rounded-2xl shadow-2xl border border-[#262626] py-2 z-50 text-slate-100 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="px-3 py-2 border-b border-[#222222]">
-                  <div className="text-xs font-bold uppercase tracking-wider text-sabrar-400">
-                    Alternar Perfil (Simulação)
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Teste fluxos e permissões de cada setor da SABRAR
+              <div className="absolute right-0 mt-2 w-72 bg-[#121212] rounded-3xl shadow-2xl border border-[#262626] p-3 z-50 text-slate-100 animate-in fade-in slide-in-from-top-2 duration-150 space-y-3">
+                {/* 1. Header do Cartão: Dados do Usuário Logado */}
+                <div className="flex items-center gap-3 p-2 bg-[#181818] rounded-2xl border border-[#242424]">
+                  <img
+                    src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                    alt={currentUser?.name}
+                    className="w-10 h-10 rounded-xl object-cover border border-[#333333] shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-white text-xs truncate">{currentUser?.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{currentUser?.email}</div>
+                    <div className="text-[10px] font-semibold text-sabrar-400 mt-0.5 truncate">{currentUser?.role_label}</div>
                   </div>
                 </div>
 
-                <div className="p-1 space-y-1">
-                  {users.map((u) => {
-                    const isSelected = currentUser?.id === u.id;
-                    return (
+                {/* 2. Informações de Restrição de Acesso Setorial */}
+                {!isAdmin && !isSimulating && (
+                  <div className="px-2.5 py-2 bg-dark-900 rounded-xl border border-dark-750 text-[11px] text-slate-400 leading-relaxed">
+                    <div className="flex items-center gap-1.5 text-sabrar-400 font-bold mb-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sabrar-400 animate-pulse"></span>
+                      <span>Sessão Setorial Ativa</span>
+                    </div>
+                    <span>Seu perfil possui acesso exclusivo aos módulos de <strong>{currentUser?.role_label}</strong> da SABRAR.</span>
+                  </div>
+                )}
+
+                {/* 3. Se for Administrador Geral: Controles de Gestão e Simulação */}
+                {isAdmin && (
+                  <div className="space-y-2 pt-1 border-t border-[#222222]">
+                    {/* Botão Gestão de Usuários */}
+                    {onNavigate && (
                       <button
-                        key={u.id}
                         onClick={() => {
-                          switchUser(u.id);
                           setRoleDropdownOpen(false);
+                          onNavigate('users');
                         }}
-                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
-                          isSelected
-                            ? 'bg-sabrar-950/90 text-sabrar-300 font-semibold border border-sabrar-500/40'
-                            : 'hover:bg-[#1C1C1C] text-slate-300'
-                        }`}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#181818] hover:bg-[#202020] border border-[#2a2a2a] text-xs font-semibold text-slate-200 hover:text-white transition-colors"
                       >
-                        <img
-                          src={u.avatar}
-                          alt={u.name}
-                          className="w-7 h-7 rounded-full object-cover border border-[#262626] shrink-0"
-                        />
-                        <div className="flex-1 truncate">
-                          <div className="font-bold text-white truncate">{u.name}</div>
-                          <div className="text-[11px] text-slate-400 truncate">{u.role_label}</div>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-sabrar-400" />
+                          <span>Gerenciar Usuários & Perfis</span>
                         </div>
-                        {isSelected && <UserCheck className="w-4 h-4 text-sabrar-400 shrink-0" />}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sabrar-950 text-sabrar-300 border border-sabrar-500/30">
+                          Admin
+                        </span>
                       </button>
-                    );
-                  })}
-                </div>
+                    )}
 
-                <div className="p-1 border-t border-[#222222] mt-1">
+                    {/* Ferramenta de Simulação para Testes de Telas */}
+                    <div className="bg-[#181818] p-2.5 rounded-2xl border border-[#262626] space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                        <Eye className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Simular Visão de Setor</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-[11px]">
+                        {(['orcamento', 'engenharia', 'almoxarifado', 'compras'] as UserRole[]).map((r) => {
+                          const labels: Record<string, string> = {
+                            orcamento: 'Orçamento',
+                            engenharia: 'Engenharia',
+                            almoxarifado: 'Almoxarifado',
+                            compras: 'Compras'
+                          };
+                          return (
+                            <button
+                              key={r}
+                              onClick={() => {
+                                setRoleDropdownOpen(false);
+                                simulateRole(r);
+                              }}
+                              className="px-2 py-1.5 bg-[#121212] hover:bg-dark-800 border border-[#242424] rounded-lg text-left text-slate-300 hover:text-amber-300 transition-colors font-medium truncate"
+                            >
+                              {labels[r]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Se estiver em Modo de Simulação: Botão de Retorno ao Admin */}
+                {isSimulating && (
+                  <div className="space-y-2 pt-1 border-t border-[#222222]">
+                    <div className="p-2.5 bg-amber-950/40 border border-amber-600/40 rounded-2xl text-[11px] text-amber-200 space-y-1.5">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Simulação Ativa ({currentUser?.role_label})</span>
+                      </div>
+                      <p className="text-[10px] text-amber-300/80 leading-tight">
+                        Você está vendo o sistema como este setor. Clique abaixo para retornar à visão de Administrador Geral.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setRoleDropdownOpen(false);
+                          stopSimulation();
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl text-xs transition-colors shadow-sm"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Voltar para Administrador</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Ação de Logout */}
+                <div className="pt-2 border-t border-[#222222]">
                   <button
                     onClick={() => {
                       setRoleDropdownOpen(false);
                       logout();
                     }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors font-medium"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs text-rose-400 hover:bg-rose-950/50 hover:text-rose-300 transition-colors font-bold bg-[#181818] border border-rose-900/30"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>Sair do Sistema</span>

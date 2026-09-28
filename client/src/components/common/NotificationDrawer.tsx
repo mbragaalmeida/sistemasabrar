@@ -111,49 +111,51 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="px-4 py-2.5 border-b border-dark-750 flex items-center gap-1.5 overflow-x-auto text-xs bg-dark-900/60">
-          <button
-            onClick={() => setFilterRole('all')}
-            className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-              filterRole === 'all' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
-            }`}
-          >
-            Todas
-          </button>
-          <button
-            onClick={() => setFilterRole('orçamento')}
-            className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-              filterRole === 'orçamento' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
-            }`}
-          >
-            Orçamento
-          </button>
-          <button
-            onClick={() => setFilterRole('almoxarifado')}
-            className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-              filterRole === 'almoxarifado' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
-            }`}
-          >
-            Almoxarifado
-          </button>
-          <button
-            onClick={() => setFilterRole('compras')}
-            className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-              filterRole === 'compras' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
-            }`}
-          >
-            Compras
-          </button>
-          <button
-            onClick={() => setFilterRole('engenharia')}
-            className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-              filterRole === 'engenharia' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
-            }`}
-          >
-            Engenharia
-          </button>
-        </div>
+        {/* Filter Pills (Exibido para Admin para filtrar setores) */}
+        {activeRole === 'admin' && (
+          <div className="px-4 py-2.5 border-b border-dark-750 flex items-center gap-1.5 overflow-x-auto text-xs bg-dark-900/60">
+            <button
+              onClick={() => setFilterRole('all')}
+              className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
+                filterRole === 'all' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
+              }`}
+            >
+              Todas
+            </button>
+            <button
+              onClick={() => setFilterRole('orçamento')}
+              className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
+                filterRole === 'orçamento' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
+              }`}
+            >
+              Orçamento
+            </button>
+            <button
+              onClick={() => setFilterRole('almoxarifado')}
+              className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
+                filterRole === 'almoxarifado' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
+              }`}
+            >
+              Almoxarifado
+            </button>
+            <button
+              onClick={() => setFilterRole('compras')}
+              className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
+                filterRole === 'compras' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
+              }`}
+            >
+              Compras
+            </button>
+            <button
+              onClick={() => setFilterRole('engenharia')}
+              className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
+                filterRole === 'engenharia' ? 'bg-sabrar-600 text-white font-bold' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-700'
+              }`}
+            >
+              Engenharia
+            </button>
+          </div>
+        )}
 
         {/* List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2.5">

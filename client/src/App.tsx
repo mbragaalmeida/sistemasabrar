@@ -30,7 +30,7 @@ import { api } from './services/api';
 import { isPageAllowed } from './utils/permissions';
 
 const AppContent: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isSimulating, stopSimulation } = useAuth();
 
   if (!currentUser) {
     return <LoginPage />;
@@ -96,8 +96,26 @@ const AppContent: React.FC = () => {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onToggleSidebar={() => setIsSidebarMobileOpen(true)}
+        onNavigate={handleNavigate}
         unreadNotificationsCount={unreadCount}
       />
+
+      {/* Banner de Aviso de Simulação Administrativa */}
+      {isSimulating && (
+        <div className="bg-gradient-to-r from-amber-950 via-amber-900 to-amber-950 border-b border-amber-500/40 text-amber-200 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-lg sticky top-[57px] z-30">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="font-extrabold text-white uppercase tracking-wider">Modo de Simulação Setorial:</span>
+            <span>Visualizando a plataforma com as permissões restritas do <strong>{currentUser?.role_label}</strong>.</span>
+          </div>
+          <button
+            onClick={stopSimulation}
+            className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-black font-extrabold rounded-xl text-xs transition-transform active:scale-95 shadow-sm"
+          >
+            Encerrar Simulação & Voltar ao Admin
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 flex w-full">
         {/* Sidebar (Desktop persistent + Mobile slide-over) */}

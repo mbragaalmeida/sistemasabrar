@@ -6,13 +6,27 @@ import { useAuth } from '../context/AuthContext';
 import { CreateUserModal } from '../components/modals/CreateUserModal';
 
 export const UsersPage: React.FC = () => {
-  const { users, currentUser, switchUser, refreshUsers } = useAuth();
+  const { users, currentUser, isSimulating, switchUser, refreshUsers } = useAuth();
   const [roles, setRoles] = useState<any[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   useEffect(() => {
     api.getRoles().then(setRoles).catch(console.error);
+    refreshUsers();
   }, []);
+
+  // Bloqueio rigoroso: apenas Administrador Geral acessa a listagem e criação de perfis
+  if (currentUser?.role !== 'admin' && !isSimulating) {
+    return (
+      <div className="p-8 text-center bg-dark-900 rounded-3xl border border-dark-750 max-w-xl mx-auto mt-12 space-y-3">
+        <Shield className="w-12 h-12 text-rose-500 mx-auto" />
+        <h2 className="text-lg font-bold text-white">Acesso Restrito ao Administrador Geral</h2>
+        <p className="text-xs text-slate-400">
+          Seu perfil não possui autorização para gerenciar ou visualizar os perfis dos demais colaboradores da SABRAR.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
@@ -28,7 +42,7 @@ export const UsersPage: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            5 perfis especializados: Administrador, Setor de Orçamento, Engenharia, Almoxarifado e Compras
+            Gestão restrita de colaboradores e credenciais por setor da SABRAR
           </p>
         </div>
 
@@ -60,7 +74,7 @@ export const UsersPage: React.FC = () => {
                   </span>
                   {isCurrent && (
                     <span className="text-[10px] font-bold text-sabrar-400 bg-sabrar-950 border border-sabrar-500/40 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <UserCheck className="w-3 h-3" /> Ativo Agora
+                      <UserCheck className="w-3 h-3" /> Sessão Ativa
                     </span>
                   )}
                 </div>
@@ -79,18 +93,19 @@ export const UsersPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-dark-750 flex items-center justify-between">
-                <span className="text-xs text-slate-400 font-medium">Trocar para este perfil:</span>
+              <div className="mt-4 pt-3 border-t border-dark-750 flex items-center justify-between text-xs">
+                <span className="text-slate-500 text-[11px]">Teste administrativo:</span>
                 <button
                   onClick={() => switchUser(u.id)}
                   disabled={isCurrent}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                     isCurrent
                       ? 'bg-dark-800 text-slate-500 cursor-default border border-dark-700'
-                      : 'bg-sabrar-600 hover:bg-sabrar-500 text-white shadow-md shadow-sabrar-600/30'
+                      : 'bg-dark-800 hover:bg-dark-750 text-amber-300 border border-amber-500/30'
                   }`}
+                  title="Simular visualização deste usuário"
                 >
-                  {isCurrent ? 'Selecionado' : 'Alternar Perfil'}
+                  {isCurrent ? 'Perfil Atual' : 'Simular Visão'}
                 </button>
               </div>
             </div>
