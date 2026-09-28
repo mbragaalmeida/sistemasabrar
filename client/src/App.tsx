@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-dark-950 text-slate-900 dark:text-slate-100 flex flex-col selection:bg-sabrar-600 selection:text-white overflow-x-hidden w-full max-w-full">
+    <div className="min-h-screen bg-slate-50 dark:bg-dark-950 text-slate-900 dark:text-slate-100 flex flex-col selection:bg-sabrar-600 selection:text-white w-full max-w-full">
       {/* Top Header */}
       <Header
         onOpenSearch={() => setIsSearchOpen(true)}
@@ -117,7 +117,7 @@ const AppContent: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 flex w-full min-w-0 overflow-x-hidden">
+      <div className="flex-1 flex w-full min-w-0">
         {/* Sidebar (Desktop persistent + Mobile slide-over) */}
         <Sidebar
           currentPage={currentPage}
@@ -127,7 +127,7 @@ const AppContent: React.FC = () => {
         />
 
         {/* Main Content Area (Mobile First Responsive) */}
-        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full min-w-0 pb-24 md:pb-12 overflow-x-hidden">
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full min-w-0 pb-24 md:pb-12">
           {currentPage === 'dashboard' && (
             <DashboardPage
               onNavigate={handleNavigate}

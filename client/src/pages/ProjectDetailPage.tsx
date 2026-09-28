@@ -281,7 +281,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </button>
             )}
 
-            {['Aprovado', 'Em execução'].includes(project.status) && hasPermission(['engenharia']) && (
+            {project.status !== 'Cancelado' && hasPermission(['engenharia']) && (
               <button
                 onClick={() => setIsNewRequestModalOpen(true)}
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
@@ -301,7 +301,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             onClick={() => setActiveTab('geral')}
             className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${
               activeTab === 'geral'
-                ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                ? 'bg-emerald-600 dark:bg-sabrar-600 text-white font-bold shadow-md shadow-emerald-600/20'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
             }`}
           >
@@ -313,7 +313,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               onClick={() => setActiveTab('orcamento')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'orcamento'
-                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  ? 'bg-emerald-600 dark:bg-sabrar-600 text-white font-bold shadow-md shadow-emerald-600/20'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
@@ -321,7 +321,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               {editableMaterials.length > 0 && (
                 <span className={`text-[10px] px-1.5 rounded-full border ${
                   activeTab === 'orcamento'
-                    ? 'bg-emerald-100 dark:bg-sabrar-900 text-emerald-800 dark:text-sabrar-200 border-emerald-300 dark:border-sabrar-700'
+                    ? 'bg-emerald-700/90 text-white border-emerald-400/40'
                     : 'bg-slate-200 dark:bg-dark-800 text-slate-700 dark:text-slate-400 border-slate-300 dark:border-dark-700'
                 }`}>
                   {editableMaterials.length}
@@ -335,14 +335,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               onClick={() => setActiveTab('solicitacoes')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'solicitacoes'
-                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  ? 'bg-emerald-600 dark:bg-sabrar-600 text-white font-bold shadow-md shadow-emerald-600/20'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
               <span>Solicitações da Obra</span>
               <span className={`text-[10px] px-1.5 rounded-full border ${
                 activeTab === 'solicitacoes'
-                  ? 'bg-emerald-100 dark:bg-sabrar-900 text-emerald-800 dark:text-sabrar-200 border-emerald-300 dark:border-sabrar-700'
+                  ? 'bg-emerald-700/90 text-white border-emerald-400/40'
                   : 'bg-slate-200 dark:bg-dark-800 text-slate-700 dark:text-slate-400 border-slate-300 dark:border-dark-700'
               }`}>
                 {data.requests?.length || 0}
@@ -355,7 +355,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               onClick={() => setActiveTab('movimentacoes')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${
                 activeTab === 'movimentacoes'
-                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 shadow-xs'
+                  ? 'bg-emerald-600 dark:bg-sabrar-600 text-white font-bold shadow-md shadow-emerald-600/20'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
@@ -368,11 +368,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               onClick={() => setActiveTab('comparativo')}
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'comparativo'
-                  ? 'bg-emerald-50 dark:bg-sabrar-950/90 text-emerald-700 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/40 font-bold shadow-xs'
+                  ? 'bg-emerald-600 dark:bg-sabrar-600 text-white font-bold shadow-md shadow-emerald-600/20'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800'
               }`}
             >
-              <BarChart2 className="w-3.5 h-3.5 text-emerald-600 dark:text-sabrar-400" />
+              <BarChart2 className="w-3.5 h-3.5" />
               <span>Previsto × Realizado</span>
             </button>
           )}

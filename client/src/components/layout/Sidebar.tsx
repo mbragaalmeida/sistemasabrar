@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -14,10 +14,16 @@ import {
   Users,
   X,
   LogOut,
-  Wind
+  Wind,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  RotateCcw,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isPageAllowed } from '../../utils/permissions';
+import { UserRole } from '../../types';
 
 interface SidebarProps {
   currentPage: string;
@@ -44,8 +50,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpenMobile,
   onCloseMobile
 }) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, isSimulating, simulateRole, stopSimulation, logout } = useAuth();
   const userRole = currentUser?.role || 'admin';
+  const isAdmin = currentUser?.role === 'admin' && !isSimulating;
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const rawNavGroups: NavGroup[] = [
     {
@@ -131,9 +139,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* User Card with Logout */}
-        <div className="p-3.5 border-b border-slate-200 dark:border-[#222222] bg-slate-50 dark:bg-[#121212]">
-          <div className="flex items-center justify-between gap-2">
+        {/* User Card com Submenu Expansível (Perfil, Simulação, Gestão e Logout) */}
+        <div className="border-b border-slate-200 dark:border-[#222222] bg-slate-50 dark:bg-[#121212]">
+          <div
+            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+            className="p-3 flex items-center justify-between gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-[#181818] transition-colors select-none"
+            title="Clique para abrir opções de perfil e simulação"
+          >
             <div className="flex items-center gap-2.5 min-w-0">
               <img
                 src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
@@ -142,17 +154,154 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
               <div className="min-w-0">
                 <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentUser?.name}</div>
-                <div className="text-[11px] text-emerald-600 dark:text-sabrar-400 font-semibold truncate">{currentUser?.role_label}</div>
+                <div className="text-[11px] text-emerald-600 dark:text-sabrar-400 font-semibold truncate flex items-center gap-1">
+                  <span>{currentUser?.role_label}</span>
+                  {isSimulating && (
+                    <span className="text-[9px] bg-amber-500/20 text-amber-500 border border-amber-500/30 px-1 rounded font-bold">
+                      Simulando
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-            <button
-              onClick={logout}
-              title="Sair do Sistema"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50 transition-all shrink-0"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <div
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                aria-label="Abrir menu de perfil"
+              >
+                {isUserMenuOpen ? (
+                  <ChevronUp className="w-4 h-4 text-emerald-600 dark:text-sabrar-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* Submenu Retrátil do Usuário */}
+          {isUserMenuOpen && (
+            <div className="p-3 pt-0 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150 border-t border-slate-200/60 dark:border-[#222222]">
+              {/* 1. Header do Cartão: Dados do Usuário */}
+              <div className="flex items-center gap-2.5 p-2.5 bg-white dark:bg-[#181818] rounded-2xl border border-slate-200 dark:border-[#242424] shadow-xs mt-2">
+                <img
+                  src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                  alt={currentUser?.name}
+                  className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-[#333333] shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-slate-900 dark:text-white text-xs truncate">{currentUser?.name}</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{currentUser?.email}</div>
+                  <div className="text-[10px] font-semibold text-emerald-600 dark:text-sabrar-400 mt-0.5 truncate">{currentUser?.role_label}</div>
+                </div>
+              </div>
+
+              {/* 2. Informações de Restrição de Acesso Setorial */}
+              {!isAdmin && !isSimulating && (
+                <div className="px-2.5 py-2 bg-white dark:bg-dark-900 rounded-xl border border-slate-200 dark:border-dark-750 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed shadow-xs">
+                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-sabrar-400 font-bold mb-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Sessão Setorial Ativa</span>
+                  </div>
+                  <span>Acesso exclusivo aos módulos de <strong>{currentUser?.role_label}</strong> da SABRAR.</span>
+                </div>
+              )}
+
+              {/* 3. Se for Administrador Geral: Controles de Gestão e Simulação */}
+              {isAdmin && (
+                <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-[#222222]">
+                  {/* Botão Gestão de Usuários */}
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onNavigate('users');
+                      onCloseMobile();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-[#181818] dark:hover:bg-[#202020] border border-slate-200 dark:border-[#2a2a2a] text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white transition-colors shadow-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-600 dark:text-sabrar-400" />
+                      <span>Gerenciar Usuários & Perfis</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-sabrar-950 text-emerald-800 dark:text-sabrar-300 border border-emerald-300 dark:border-sabrar-500/30 font-bold">
+                      Admin
+                    </span>
+                  </button>
+
+                  {/* Ferramenta de Simulação para Testes de Telas */}
+                  <div className="bg-white dark:bg-[#181818] p-2.5 rounded-2xl border border-slate-200 dark:border-[#262626] space-y-1.5 shadow-xs">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
+                      <Eye className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Simular Visão de Setor</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[11px]">
+                      {(['orcamento', 'engenharia', 'almoxarifado', 'compras'] as UserRole[]).map((r) => {
+                        const labels: Record<string, string> = {
+                          orcamento: 'Orçamento',
+                          engenharia: 'Engenharia',
+                          almoxarifado: 'Almoxarifado',
+                          compras: 'Compras'
+                        };
+                        return (
+                          <button
+                            key={r}
+                            onClick={() => {
+                              setIsUserMenuOpen(false);
+                              simulateRole(r);
+                              onCloseMobile();
+                            }}
+                            className="px-2 py-1.5 bg-slate-50 hover:bg-amber-50 dark:bg-[#121212] dark:hover:bg-dark-800 border border-slate-200 dark:border-[#242424] rounded-lg text-left text-slate-700 dark:text-slate-300 hover:text-amber-800 dark:hover:text-amber-300 transition-colors font-medium truncate"
+                          >
+                            {labels[r]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Se estiver em Modo de Simulação: Botão de Retorno ao Admin */}
+              {isSimulating && (
+                <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-[#222222]">
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-600/40 rounded-2xl text-[11px] text-amber-900 dark:text-amber-200 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Simulação Ativa ({currentUser?.role_label})</span>
+                    </div>
+                    <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80 leading-tight">
+                      Visualizando como este setor. Clique abaixo para voltar à visão Admin Geral.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        stopSimulation();
+                        onCloseMobile();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl text-xs transition-colors shadow-sm"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Voltar para Administrador</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Ação de Logout */}
+              <div className="pt-2 border-t border-slate-200 dark:border-[#222222]">
+                <button
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    logout();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-700 dark:hover:text-rose-300 transition-colors font-bold bg-white dark:bg-[#181818] border border-rose-200 dark:border-rose-900/30 shadow-xs"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Sair do Sistema</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Navigation Items */}

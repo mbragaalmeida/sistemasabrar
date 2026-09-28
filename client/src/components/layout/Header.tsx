@@ -68,8 +68,8 @@ export const Header: React.FC<HeaderProps> = ({
             <Search className="w-5 h-5" />
           </button>
 
-          {/* User Profile Badge / Menu */}
-          <div className="relative">
+          {/* User Profile Badge / Menu (Exclusivo no Desktop - no mobile fica no menu lateral) */}
+          <div className="relative hidden md:block">
             <button
               onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
               className={`flex items-center gap-2 bg-[#141414] hover:bg-[#1E1E1E] text-white pl-2 pr-2.5 py-1.5 rounded-2xl border text-xs transition-all shadow-sm ${

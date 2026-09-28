@@ -36,17 +36,12 @@
     -webkit-tap-highlight-color: transparent;
     scroll-behavior: smooth;
     font-family: 'Inter', sans-serif;
-    overflow-x: hidden;
-    max-width: 100vw;
-    width: 100%;
   }
 
   body {
-    overscroll-behavior-y: none;
     transition: background-color 0.2s ease, color 0.2s ease;
-    overflow-x: hidden;
-    max-width: 100vw;
-    width: 100%;
+    overflow-x: clip;
+    min-height: 100vh;
   }
 }
 
@@ -148,17 +143,31 @@ header button[class*="bg-"],
   color: #64748B !important;
 }
 
-/* Preserva texto branco puro em botões com cores de destaque */
-.light button[class*="bg-sabrar-"],
-.light button[class*="bg-sabrar-"] *,
-.light button[class*="bg-emerald-"],
-.light button[class*="bg-emerald-"] *,
-.light button[class*="bg-rose-"],
-.light button[class*="bg-rose-"] *,
-.light button[class*="bg-teal-"],
-.light button[class*="bg-teal-"] *,
-.light button[class*="bg-blue-"],
-.light button[class*="bg-blue-"] *,
+/* Preserva texto branco puro APENAS em botões com fundos sólidos/escuros (500, 600, 700) */
+.light button[class*="bg-sabrar-500"],
+.light button[class*="bg-sabrar-500"] *,
+.light button[class*="bg-sabrar-600"],
+.light button[class*="bg-sabrar-600"] *,
+.light button[class*="bg-sabrar-700"],
+.light button[class*="bg-sabrar-700"] *,
+.light button[class*="bg-emerald-500"],
+.light button[class*="bg-emerald-500"] *,
+.light button[class*="bg-emerald-600"],
+.light button[class*="bg-emerald-600"] *,
+.light button[class*="bg-emerald-700"],
+.light button[class*="bg-emerald-700"] *,
+.light button[class*="bg-rose-500"],
+.light button[class*="bg-rose-500"] *,
+.light button[class*="bg-rose-600"],
+.light button[class*="bg-rose-600"] *,
+.light button[class*="bg-teal-500"],
+.light button[class*="bg-teal-500"] *,
+.light button[class*="bg-teal-600"],
+.light button[class*="bg-teal-600"] *,
+.light button[class*="bg-blue-500"],
+.light button[class*="bg-blue-500"] *,
+.light button[class*="bg-blue-600"],
+.light button[class*="bg-blue-600"] *,
 .light .bg-sabrar-600,
 .light .bg-sabrar-600 *,
 .light .bg-emerald-600,
@@ -166,6 +175,18 @@ header button[class*="bg-"],
 .light .bg-rose-600,
 .light .bg-rose-600 * {
   color: #FFFFFF !important;
+}
+
+/* Garante texto escuro e legível em botões com fundos claros/pastéis (50, 100) */
+.light button[class*="bg-emerald-50"],
+.light button[class*="bg-emerald-50"] *,
+.light button[class*="bg-emerald-100"],
+.light button[class*="bg-emerald-100"] *,
+.light button[class*="bg-sabrar-50"],
+.light button[class*="bg-sabrar-50"] *,
+.light button[class*="bg-sabrar-100"],
+.light button[class*="bg-sabrar-100"] * {
+  color: #064e3b !important; /* Verde escuro nítido */
 }
 
 /* ========================================================
