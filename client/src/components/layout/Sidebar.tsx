@@ -23,6 +23,7 @@ import {
   KeyRound
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { isPageAllowed } from '../../utils/permissions';
 import { UserRole } from '../../types';
 
@@ -54,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenChangePassword
 }) => {
   const { currentUser, isSimulating, simulateRole, stopSimulation, logout } = useAuth();
+  const { theme } = useTheme();
   const userRole = currentUser?.role || 'admin';
   const isAdmin = currentUser?.role === 'admin' && !isSimulating;
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -129,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#222222] md:hidden bg-white dark:bg-[#0A0A0A]">
           <div className="flex items-center">
             <img
-              src="/sabrar-logo.png"
+              src={theme === 'light' ? '/sabrar-logo-black.png' : '/sabrar-logo.png'}
               alt="SABRAR Engenharia"
               className="h-7 w-auto object-contain max-w-[190px]"
             />

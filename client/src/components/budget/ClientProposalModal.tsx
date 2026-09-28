@@ -84,7 +84,7 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-2 border-slate-900 gap-4">
             <div className="flex items-center gap-3">
               <img
-                src="/sabrar-logo.png"
+                src="/sabrar-logo-black.png"
                 alt="SABRAR Engenharia"
                 className="h-14 w-auto object-contain max-w-[240px]"
                 onError={(e) => {

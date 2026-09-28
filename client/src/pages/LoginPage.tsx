@@ -38,12 +38,12 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-dark-950 flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen w-full bg-slate-100 dark:bg-dark-950 flex items-center justify-center p-4 relative overflow-hidden transition-colors">
       {/* Floating Theme Toggle */}
       <button
         type="button"
         onClick={toggleTheme}
-        className="absolute top-4 right-4 p-2.5 rounded-2xl bg-dark-900/80 border border-dark-750 text-slate-400 hover:text-white transition-all shadow-md backdrop-blur-md z-20"
+        className="absolute top-4 right-4 p-2.5 rounded-2xl bg-white/90 dark:bg-dark-900/80 border border-slate-200 dark:border-dark-750 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all shadow-md backdrop-blur-md z-20"
         title={theme === 'dark' ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
       >
         {theme === 'dark' ? (
@@ -61,24 +61,24 @@ export const LoginPage: React.FC = () => {
         {/* Brand Header com Logomarca Oficial SABRAR */}
         <div className="text-center space-y-3 flex flex-col items-center">
           <img
-            src="/sabrar-logo.png"
+            src={theme === 'light' ? '/sabrar-logo-black.png' : '/sabrar-logo.png'}
             alt="SABRAR Engenharia"
             className="h-14 sm:h-16 w-auto object-contain drop-shadow-md transition-transform hover:scale-105"
           />
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
               Acesso ao Sistema
             </h1>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto mt-1">
+            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xs mx-auto mt-1">
               Plataforma de Orçamento Inteligente, Levantamento de Materiais e Gestão Operacional de Obras
             </p>
           </div>
         </div>
 
         {/* Login Card */}
-        <div className="bg-dark-900 border border-dark-750 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 backdrop-blur-xl">
+        <div className="bg-white dark:bg-dark-900 border border-slate-200 dark:border-dark-750 rounded-3xl p-6 sm:p-8 shadow-xl dark:shadow-2xl space-y-6 backdrop-blur-xl">
           {error && (
-            <div className="p-3.5 bg-rose-950/80 border border-rose-600/50 rounded-2xl text-xs text-rose-200 flex items-start gap-2.5 animate-in fade-in">
+            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-600/50 rounded-2xl text-xs text-rose-700 dark:text-rose-200 flex items-start gap-2.5 animate-in fade-in">
               <span className="font-bold shrink-0">Atenção:</span>
               <span className="leading-relaxed">{error}</span>
             </div>
@@ -86,11 +86,11 @@ export const LoginPage: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 E-mail Corporativo
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   value={email}
@@ -98,29 +98,29 @@ export const LoginPage: React.FC = () => {
                   placeholder="seu.email@sabrar.com.br"
                   required
                   autoFocus
-                  className="w-full bg-dark-850 border border-dark-700 rounded-2xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500 focus:ring-1 focus:ring-sabrar-500 transition-all"
+                  className="w-full bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 rounded-2xl pl-10 pr-4 py-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sabrar-500 focus:ring-1 focus:ring-sabrar-500 transition-all"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Senha de Acesso
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full bg-dark-850 border border-dark-700 rounded-2xl pl-10 pr-10 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500 focus:ring-1 focus:ring-sabrar-500 transition-all"
+                  className="w-full bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 rounded-2xl pl-10 pr-10 py-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sabrar-500 focus:ring-1 focus:ring-sabrar-500 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -144,46 +144,46 @@ export const LoginPage: React.FC = () => {
           </form>
 
           {/* Perfis de Demonstração */}
-          <div className="pt-4 border-t border-dark-750">
-            <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-2 text-center">
+          <div className="pt-4 border-t border-slate-200 dark:border-dark-750">
+            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-500 tracking-wider mb-2 text-center">
               Acesso Rápido para Demonstração
             </div>
               <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                 <button
                   type="button"
                   onClick={() => fillDemoUser('orcamento@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-dark-850 hover:bg-dark-800 border border-dark-700 rounded-xl text-left truncate text-slate-300 hover:text-white transition-colors"
+                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
                 >
-                  <span className="font-bold text-sabrar-400">Orçamento</span> (Mariana)
+                  <span className="font-bold text-sabrar-600 dark:text-sabrar-400">Orçamento</span> (Mariana)
                 </button>
                 <button
                   type="button"
                   onClick={() => fillDemoUser('engenharia@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-dark-850 hover:bg-dark-800 border border-dark-700 rounded-xl text-left truncate text-slate-300 hover:text-white transition-colors"
+                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
                 >
-                  <span className="font-bold text-amber-400">Engenharia</span> (Rafael)
+                  <span className="font-bold text-amber-600 dark:text-amber-400">Engenharia</span> (Rafael)
                 </button>
                 <button
                   type="button"
                   onClick={() => fillDemoUser('almoxarifado@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-dark-850 hover:bg-dark-800 border border-dark-700 rounded-xl text-left truncate text-slate-300 hover:text-white transition-colors"
+                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
                 >
-                  <span className="font-bold text-teal-400">Almoxarifado</span> (Tiago)
+                  <span className="font-bold text-teal-600 dark:text-teal-400">Almoxarifado</span> (Tiago)
                 </button>
                 <button
                   type="button"
                   onClick={() => fillDemoUser('compras@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-dark-850 hover:bg-dark-800 border border-dark-700 rounded-xl text-left truncate text-slate-300 hover:text-white transition-colors"
+                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
                 >
-                  <span className="font-bold text-indigo-400">Compras</span> (Fernanda)
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400">Compras</span> (Fernanda)
                 </button>
               </div>
             </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-center gap-2 text-slate-500 text-[11px]">
-          <ShieldCheck className="w-3.5 h-3.5 text-sabrar-400" />
+        <div className="flex items-center justify-center gap-2 text-slate-500 dark:text-slate-500 text-[11px]">
+          <ShieldCheck className="w-3.5 h-3.5 text-sabrar-500 dark:text-sabrar-400" />
           <span>SABRAR Engenharia • Ambiente Seguro & Conexão Criptografada</span>
         </div>
       </div>
