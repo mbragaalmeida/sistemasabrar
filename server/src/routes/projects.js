@@ -476,11 +476,17 @@ projectsRouter.patch('/:id/status', async (req, res) => {
   }
 });
 
-// Adiciona arquivo ou memorial ao projeto
+// Adiciona arquivo ou memorial ao projeto (suporta payloads JSON com texto extraído de arquivos grandes)
 projectsRouter.post('/:id/files', async (req, res) => {
   try {
-    const { type, original_name, content_summary, userId } = req.body;
+    const { type, original_name, file_size, mime_type, content_summary, userId, autoAnalyze } = req.body;
     const projectId = req.params.id;
+
+    // Remove registro prévio se existir para evitar duplicidade
+    await db.prepare(`
+      DELETE FROM project_files
+      WHERE project_id = ? AND original_name = ?
+    `).run(projectId, original_name || 'Documento_Tecnico.pdf');
 
     const insert = db.prepare(`
       INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
@@ -489,16 +495,21 @@ projectsRouter.post('/:id/files', async (req, res) => {
 
     const result = await insert.run(
       projectId,
-      type || 'MEMORIAL_DESCRITIVO',
+      type || 'PROJETO_TECNICO',
       original_name || 'Documento_Tecnico.pdf',
       `/uploads/${original_name || 'doc.pdf'}`,
-      (content_summary || '').length * 10,
-      'application/pdf',
+      file_size || (content_summary || '').length,
+      mime_type || 'application/pdf',
       content_summary || '',
       userId || 1
     );
 
-    res.status(201).json({ id: result.lastInsertRowid, original_name, type });
+    let aiResult = null;
+    if (autoAnalyze === 'true' || autoAnalyze === true) {
+      aiResult = await AIAnalysisService.analyzeProjectDocuments(projectId);
+    }
+
+    res.status(201).json({ id: result.lastInsertRowid, original_name, type, aiResult });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

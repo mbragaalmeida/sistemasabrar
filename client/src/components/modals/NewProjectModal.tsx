@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { FolderPlus, FileUp, FileText, X, AlertCircle, Check, Sparkles, UploadCloud, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { extractTextFromPDF } from '../../utils/pdfExtractor';
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -61,8 +62,16 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         content: `Documento técnico '${f.name}' carregado para análise automática da IA SABRAR.`
       });
 
-      // Se for arquivo de texto/csv, faz leitura direta do conteúdo
-      if (f.name.endsWith('.txt') || f.name.endsWith('.csv') || f.type.includes('text')) {
+      // Se for PDF, extrai texto diretamente no navegador em segundo plano para evitar payload de 4.5 MB
+      if (f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf') {
+        extractTextFromPDF(f).then((pdfText) => {
+          if (pdfText && pdfText.trim()) {
+            setUploadedFiles(prev => prev.map(p => p.name === f.name ? { ...p, content: pdfText } : p));
+          }
+        }).catch((err) => {
+          console.warn('[PDF Extract Warning]', err);
+        });
+      } else if (f.name.endsWith('.txt') || f.name.endsWith('.csv') || f.type.includes('text')) {
         const reader = new FileReader();
         reader.onload = (event) => {
           const text = event.target?.result as string;
@@ -93,8 +102,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     try {
       const realFiles = uploadedFiles.filter(f => f.file).map(f => f.file as File);
 
-      // 1. Cadastra o projeto. Se houver arquivos físicos para upload a seguir, não dispara autoAnalyze aqui
-      // para evitar analisar metadados vazios antes do processamento do PDF/DWG.
+      // 1. Cadastra o projeto com os metadados e documentos técnicos
       const res = await api.createProject({
         name: name.trim(),
         client: client.trim(),
@@ -105,21 +113,21 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         responsible_engineer: responsibleEngineer,
         notes: estimatedArea ? `[Área da Obra: ${estimatedArea} m²] ${notes.trim()}` : notes.trim(),
         initial_spec_text: optionalText.trim(),
-        uploadedDocuments: realFiles.length > 0 ? [] : uploadedFiles.map(d => ({
+        uploadedDocuments: uploadedFiles.map(d => ({
           name: d.name,
           size: d.size,
           type: d.type,
           content: d.content
         })),
-        autoAnalyze: autoAnalyzeWithAI && uploadedFiles.length > 0 && realFiles.length === 0,
+        autoAnalyze: autoAnalyzeWithAI && realFiles.length === 0,
         userId: currentUser?.id || 1
       });
 
-      // 2. Se houver arquivos reais em memória, envia via upload multipart e dispara a análise completa dos PDFs
+      // 2. Se houver arquivos físicos em memória, envia via upload seguro (individual + extração para arquivos > 3.5 MB)
       if (realFiles.length > 0 && res.id) {
         try {
           await api.uploadProjectFiles(res.id, realFiles, autoAnalyzeWithAI);
-        } catch (upErr) {
+        } catch (upErr: any) {
           console.warn('[Upload Files Warning]', upErr);
         }
       }

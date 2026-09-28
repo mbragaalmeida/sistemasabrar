@@ -1,3 +1,5 @@
+import { extractTextFromPDF } from '../utils/pdfExtractor';
+
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -49,20 +51,112 @@ export const api = {
   addProjectFile: (id: number | string, data: any) =>
     fetchJson<any>(`/projects/${id}/files`, { method: 'POST', body: JSON.stringify(data) }),
   uploadProjectFiles: async (projectId: number | string, files: File[], autoAnalyze?: boolean) => {
-    const formData = new FormData();
+    const results = [];
+    const VERCEL_MAX_SAFE_FILE_SIZE = 3.5 * 1024 * 1024; // 3.5 MB para respeitar a margem de segurança do limite de 4.5 MB da Vercel
+
     for (const f of files) {
-      formData.append('files', f);
+      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+      const isText = f.type.includes('text') || f.name.endsWith('.txt') || f.name.endsWith('.csv');
+
+      // Se for arquivo grande (> 3.5 MB) ou PDF/Texto, extrai texto diretamente no navegador
+      if (f.size > VERCEL_MAX_SAFE_FILE_SIZE || isText) {
+        let extractedText = '';
+        if (isPdf) {
+          try {
+            extractedText = await extractTextFromPDF(f);
+          } catch (e) {
+            console.warn('[Upload] Erro ao extrair PDF localmente:', e);
+          }
+        } else if (isText) {
+          try {
+            extractedText = await f.text();
+          } catch (e) {
+            console.warn('[Upload] Erro ao ler texto localmente:', e);
+          }
+        }
+
+        if (extractedText && extractedText.trim()) {
+          const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
+            method: 'POST',
+            body: JSON.stringify({
+              type: isPdf ? 'PROJETO_PDF' : 'MEMORIAL_DESCRITIVO',
+              original_name: f.name,
+              file_size: f.size,
+              mime_type: f.type || (isPdf ? 'application/pdf' : 'text/plain'),
+              content_summary: extractedText
+            })
+          });
+          results.push(resFile);
+          continue;
+        }
+      }
+
+      // Para arquivos menores ou sem texto extraído, envia via upload multipart individual
+      try {
+        const formData = new FormData();
+        formData.append('files', f);
+        const res = await fetch(`${API_BASE}/projects/${projectId}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          // Se Vercel rejeitar por tamanho (HTTP 413), executa extração do PDF como fallback
+          if (res.status === 413 && isPdf) {
+            const extractedText = await extractTextFromPDF(f);
+            if (extractedText && extractedText.trim()) {
+              const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  type: 'PROJETO_PDF',
+                  original_name: f.name,
+                  file_size: f.size,
+                  mime_type: 'application/pdf',
+                  content_summary: extractedText
+                })
+              });
+              results.push(resFile);
+              continue;
+            }
+          }
+          const err = await res.json().catch(() => ({ error: `Falha no upload do arquivo ${f.name} (Status ${res.status})` }));
+          throw new Error(err.error || `Falha no upload de ${f.name}`);
+        }
+
+        const data = await res.json();
+        results.push(data);
+      } catch (err: any) {
+        if (isPdf) {
+          const extractedText = await extractTextFromPDF(f);
+          if (extractedText && extractedText.trim()) {
+            const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
+              method: 'POST',
+              body: JSON.stringify({
+                type: 'PROJETO_PDF',
+                original_name: f.name,
+                file_size: f.size,
+                mime_type: 'application/pdf',
+                content_summary: extractedText
+              })
+            });
+            results.push(resFile);
+            continue;
+          }
+        }
+        throw err;
+      }
     }
-    if (autoAnalyze) formData.append('autoAnalyze', 'true');
-    const res = await fetch(`${API_BASE}/projects/${projectId}/upload`, {
-      method: 'POST',
-      body: formData
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Erro no upload' }));
-      throw new Error(err.error || 'Erro no upload');
+
+    // Se autoAnalyze solicitado, dispara análise com IA após todos os arquivos estarem devidamente registrados
+    let aiResult = null;
+    if (autoAnalyze) {
+      aiResult = await fetchJson<any>(`/projects/${projectId}/analyze`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
     }
-    return res.json();
+
+    return { files: results, aiResult };
   },
   importProjectSpreadsheet: async (projectId: number | string, file: File, userId?: number) => {
     const formData = new FormData();
