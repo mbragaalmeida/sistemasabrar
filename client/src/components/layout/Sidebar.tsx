@@ -199,18 +199,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
 
-              {/* 2. Informações de Restrição de Acesso Setorial */}
-              {!isAdmin && !isSimulating && (
-                <div className="px-2.5 py-2 bg-white dark:bg-dark-900 rounded-xl border border-slate-200 dark:border-dark-750 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed shadow-xs">
-                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-sabrar-400 font-bold mb-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Sessão Setorial Ativa</span>
-                  </div>
-                  <span>Acesso exclusivo aos módulos de <strong>{currentUser?.role_label}</strong> da SABRAR.</span>
-                </div>
-              )}
-
-              {/* 3. Se for Administrador Geral: Controles de Gestão e Simulação */}
+              {/* Se for Administrador Geral: Controles de Gestão e Simulação */}
               {isAdmin && (
                 <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-[#222222]">
                   {/* Botão Gestão de Usuários */}

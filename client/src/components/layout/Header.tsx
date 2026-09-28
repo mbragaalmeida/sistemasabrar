@@ -122,18 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
 
-                {/* 2. Informações de Restrição de Acesso Setorial */}
-                {!isAdmin && !isSimulating && (
-                  <div className="px-2.5 py-2 bg-dark-900 rounded-xl border border-dark-750 text-[11px] text-slate-400 leading-relaxed">
-                    <div className="flex items-center gap-1.5 text-sabrar-400 font-bold mb-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-sabrar-400 animate-pulse"></span>
-                      <span>Sessão Setorial Ativa</span>
-                    </div>
-                    <span>Seu perfil possui acesso exclusivo aos módulos de <strong>{currentUser?.role_label}</strong> da SABRAR.</span>
-                  </div>
-                )}
-
-                {/* 3. Se for Administrador Geral: Controles de Gestão e Simulação */}
+                {/* Se for Administrador Geral: Controles de Gestão e Simulação */}
                 {isAdmin && (
                   <div className="space-y-2 pt-1 border-t border-[#222222]">
                     {/* Botão Gestão de Usuários */}

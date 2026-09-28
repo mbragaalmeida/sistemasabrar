@@ -16,7 +16,6 @@ import {
   Clock,
   CheckCircle,
   Truck,
-  Database,
   Building2,
   BarChart3,
   PieChart,
@@ -132,17 +131,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             >
               <Package className="w-4 h-4 text-sabrar-400" />
               <span>Entrada Estoque</span>
-            </button>
-          )}
-
-          {activeRole === 'admin' && (
-            <button
-              onClick={() => setIsBulkImportOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-dark-800 hover:bg-dark-750 text-sabrar-300 border border-sabrar-500/30 text-xs font-bold transition-all active:scale-95 whitespace-nowrap shadow-sm"
-              title="Importar histórico de obras e consumo real em massa"
-            >
-              <Database className="w-4 h-4 text-sabrar-400" />
-              <span>Carga em Massa</span>
             </button>
           )}
         </div>
