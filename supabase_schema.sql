@@ -48,7 +48,15 @@ CREATE TABLE IF NOT EXISTS materials (
   category VARCHAR(100) NOT NULL,
   unit VARCHAR(100) NOT NULL,
   brand VARCHAR(100),
-  reference_price NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+  reference_price NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+  synonyms TEXT,
+  linear_weight NUMERIC(10, 4),
+  linear_weight_unit VARCHAR(20),
+  package_content NUMERIC(14, 4),
+  converted_unit VARCHAR(50),
+  converted_price NUMERIC(14, 4),
+  validation_status VARCHAR(50) DEFAULT 'OK',
+  pending_notes TEXT,
   supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
   stock_physical NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
   stock_reserved NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
@@ -57,6 +65,7 @@ CREATE TABLE IF NOT EXISTS materials (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
 
 -- 5. Projetos / Obras
 CREATE TABLE IF NOT EXISTS projects (

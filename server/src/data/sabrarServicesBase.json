@@ -1,0 +1,2218 @@
+[
+  {
+    "category": "Administrativo / logística",
+    "item": "Alimentação",
+    "unit": "mês",
+    "price": 900,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Alimentação",
+    "unit": "mês",
+    "price": 900,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Alimentação",
+    "unit": "mês",
+    "price": 660,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Alimentação",
+    "unit": "mês",
+    "price": 660,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Alimentação",
+    "unit": "mês",
+    "price": 660,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "ART",
+    "unit": "vb",
+    "price": 350,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "ART",
+    "unit": "vb",
+    "price": 300,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "ART",
+    "unit": "vb",
+    "price": 300,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "ART",
+    "unit": "vb",
+    "price": 300,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "ART",
+    "unit": "vb",
+    "price": 300,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "As Built",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "As Built",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "As Built",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "As Built",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "As Built",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Databook",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Databook",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Databook",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Databook",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Databook",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Engenheiro - salário-base",
+    "unit": "mês",
+    "price": 8000,
+    "supplier": "-",
+    "context": "Custos ADM"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Gasolina",
+    "unit": "L",
+    "price": 5,
+    "supplier": "-",
+    "context": "Custos ADM"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "GEM",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "GEM",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "GEM",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "GEM",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "GEM",
+    "unit": "vb",
+    "price": 1500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Hospedagem",
+    "unit": "mês",
+    "price": 6000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Hospedagem",
+    "unit": "mês",
+    "price": 6000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Hospedagem",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Hospedagem",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Hospedagem",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Içamento",
+    "unit": "diária",
+    "price": 6800,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Içamento",
+    "unit": "diária",
+    "price": 6800,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Içamento",
+    "unit": "diária",
+    "price": 6800,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Içamento",
+    "unit": "diária",
+    "price": 6800,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Içamento",
+    "unit": "diária",
+    "price": 6800,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Manual",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Manual",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Manual",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Manual",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Manual",
+    "unit": "vb",
+    "price": 500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Passagem Aérea (2x por mês)",
+    "unit": "qtd",
+    "price": 3500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Passagem Aérea (2x por mês)",
+    "unit": "qtd",
+    "price": 3500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Passagem Aérea (2x por mês)",
+    "unit": "qtd",
+    "price": 2500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Passagem Aérea (2x por mês)",
+    "unit": "qtd",
+    "price": 2500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Passagem Aérea (2x por mês)",
+    "unit": "qtd",
+    "price": 2500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Picagem/Trepanação Tubulação - SEM DRENAGEM DE ÁGUA (DUAS LINHAS) (CONGELAMENTO)",
+    "unit": "vb",
+    "price": 16000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Plataforma elevatória - se for pé direito duplo",
+    "unit": "mês",
+    "price": 10000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Plataforma elevatória - se for pé direito duplo",
+    "unit": "mês",
+    "price": 10000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Plataforma elevatória - se for pé direito duplo",
+    "unit": "mês",
+    "price": 10000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Plataforma elevatória - se for pé direito duplo",
+    "unit": "mês",
+    "price": 10000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Plataforma elevatória - se for pé direito duplo",
+    "unit": "mês",
+    "price": 10000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - 6 Horas - 22 Dias/ Mês",
+    "unit": "mês",
+    "price": 12000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - 6 Horas - 22 Dias/ Mês",
+    "unit": "mês",
+    "price": 12000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - 6 Horas - 22 Dias/ Mês",
+    "unit": "mês",
+    "price": 12000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - 6 Horas - 22 Dias/ Mês",
+    "unit": "mês",
+    "price": 12000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - 6 Horas - 22 Dias/ Mês",
+    "unit": "mês",
+    "price": 12000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Supervisor - salário-base",
+    "unit": "mês",
+    "price": 5000,
+    "supplier": "-",
+    "context": "Custos ADM"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Transporte",
+    "unit": "mês",
+    "price": 550,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Transporte",
+    "unit": "mês",
+    "price": 550,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Transporte",
+    "unit": "mês",
+    "price": 390,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Transporte",
+    "unit": "mês",
+    "price": 390,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Administrativo / logística",
+    "item": "Transporte",
+    "unit": "mês",
+    "price": 390,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Dutos",
+    "item": "Limpeza de dutos",
+    "unit": "m linear",
+    "price": 12,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Limpeza de dutos",
+    "unit": "m linear",
+    "price": 12,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Dutos",
+    "item": "Limpeza de dutos",
+    "unit": "m linear",
+    "price": 12,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Limpeza de dutos",
+    "unit": "m linear",
+    "price": 12,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Dutos",
+    "item": "Pintura dos dutos (Tinta+acessórios e MDO)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Pintura dos dutos (Tinta+acessórios e MDO)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Dutos",
+    "item": "Pintura dos dutos (Tinta+acessórios e MDO)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Dutos",
+    "item": "Pintura dos dutos (Tinta+acessórios e MDO)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Pintura dos dutos (Tinta+acessórios e MDO)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Dutos",
+    "item": "Remanejamento de duto",
+    "unit": "kg *2",
+    "price": 150,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Remanejamento de duto",
+    "unit": "m linear",
+    "price": 150,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Dutos",
+    "item": "Remanejamento de duto",
+    "unit": "m linear",
+    "price": 150,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 V OU 380 V (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 3900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 V OU 380 V (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 3900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 V OU 380 V (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 3900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 V OU 380 V (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 3900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 12.5 CV ATÉ 15 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 7800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 12.5 CV ATÉ 15 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 7800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 12.5 CV ATÉ 15 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 7800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 12.5 CV ATÉ 15 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 7800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5 CV ATÉ 10 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 6900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5 CV ATÉ 10 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 6900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5 CV ATÉ 10 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 6900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5 CV ATÉ 10 CV 380 VCA (PARTIDA SOFT STARTER)",
+    "unit": "unid",
+    "price": 6900,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5CV ATÉ 15 CV SENDO 220 VCA (PARTIDA ESTRELA TRIANGULO)",
+    "unit": "unid",
+    "price": 3600,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5CV ATÉ 15 CV SENDO 220 VCA (PARTIDA ESTRELA TRIANGULO)",
+    "unit": "unid",
+    "price": 3600,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5CV ATÉ 15 CV SENDO 220 VCA (PARTIDA ESTRELA TRIANGULO)",
+    "unit": "unid",
+    "price": 3600,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 01 MOTOR DE 7.5CV ATÉ 15 CV SENDO 220 VCA (PARTIDA ESTRELA TRIANGULO)",
+    "unit": "unid",
+    "price": 3600,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 4800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 4800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 4800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Elétrica",
+    "item": "QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (PARTIDA DIRETA)",
+    "unit": "unid",
+    "price": 4800,
+    "supplier": "MS Quadros - 04-08-26",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Hidráulica / acessórios",
+    "item": "Válvula esfera Bipartida, aço carbono, ANSI-150-LBS-RF- 5\"",
+    "unit": "unid",
+    "price": 7056,
+    "supplier": "Valflor 06-01-2026",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Hidráulica / acessórios",
+    "item": "Válvula esfera Bipartida, aço carbono, ANSI-150-LBS-RF- 6\"",
+    "unit": "unid",
+    "price": 7056,
+    "supplier": "Valflor 06-01-2026",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Linha frigorígena",
+    "item": "Capacidade Total das Evaporadoras (HP) — Utilizado na Ausência de Caminhamento de cobre",
+    "unit": "HP",
+    "price": 2800,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (fabricação e montagem)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (fabricação e montagem)",
+    "unit": "m linear",
+    "price": 150,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (fabricação e montagem)",
+    "unit": "m²",
+    "price": 100,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (fabricação e montagem)",
+    "unit": "m linear",
+    "price": 150,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Fabricação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 4,
+    "supplier": "---",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Fabricação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 4,
+    "supplier": "---",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Fabricação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 4,
+    "supplier": "---",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Fabricação) - Insuflamento e Retorno",
+    "unit": "KG",
+    "price": 4,
+    "supplier": "---",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Fabricação) - Insuflamento e Retorno",
+    "unit": "KG",
+    "price": 4,
+    "supplier": "---",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Instalação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 15,
+    "supplier": "---",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Instalação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 15,
+    "supplier": "---",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Instalação) - Exaustão e Ventilação",
+    "unit": "KG",
+    "price": 18,
+    "supplier": "---",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Instalação) - Insuflamento e Retorno",
+    "unit": "KG",
+    "price": 15,
+    "supplier": "---",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro (Instalação) - Insuflamento e Retorno",
+    "unit": "KG",
+    "price": 15,
+    "supplier": "---",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro + Soldador (Fabricação) - Exaustão Chapa Preta",
+    "unit": "KG",
+    "price": 8,
+    "supplier": "---",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro + Soldador (Fabricação) - Exaustão Chapa Preta",
+    "unit": "KG",
+    "price": 8,
+    "supplier": "---",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro + Soldador (Instalação) - Exaustão Chapa Preta",
+    "unit": "KG",
+    "price": 20,
+    "supplier": "---",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiro + Soldador (Instalação) - Exaustão Chapa Preta",
+    "unit": "KG",
+    "price": 20,
+    "supplier": "---",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto",
+    "unit": "vb",
+    "price": 6000,
+    "supplier": "---",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "---",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "---",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto - abaixo de 200 KG",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Duteiros - Preço Fixo Caso seja pouco duto - abaixo de 200 KG",
+    "unit": "vb",
+    "price": 8000,
+    "supplier": "---",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "09.000 a 12.000 Btu/h | unid",
+    "price": 630,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "18.000 a 22.000 Btu/h | unid",
+    "price": 840,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "30.000 a 36.000 Btu/h | unid",
+    "price": 980,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "48.000 a 60.000 Btu/h | unid",
+    "price": 1120,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Built In | 09.000 a 12.000 Btu/h | unid",
+    "price": 1400,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Built In | 18.000 a 22.000 Btu/h | unid",
+    "price": 1600,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Built In | 30.000 a 36.000 Btu/h | unid",
+    "price": 1800,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Built In | 48.000 a 60.000 Btu/h | unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Cassete | 09.000 a 12.000 Btu/h | unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Cassete | 18.000 a 22.000 Btu/h | unid",
+    "price": 1400,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Cassete | 30.000 a 36.000 Btu/h | unid",
+    "price": 1600,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Cassete | 48.000 a 60.000 Btu/h | unid",
+    "price": 1800,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Hi Wall | 09.000 a 12.000 Btu/h | unid",
+    "price": 900,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Hi Wall | 18.000 a 22.000 Btu/h | unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Piso Teto | 30.000 a 36.000 Btu/h | unid",
+    "price": 1400,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Comercial",
+    "unit": "Piso Teto | 48.000 a 60.000 Btu/h | unid",
+    "price": 1600,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "09.000 a 12.000 Btu/h | unid",
+    "price": 787.5,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "18.000 a 22.000 Btu/h | unid",
+    "price": 1050,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "30.000 a 36.000 Btu/h | unid",
+    "price": 1225,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "48.000 a 60.000 Btu/h | unid",
+    "price": 1400,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Built In | 09.000 a 12.000 Btu/h | unid",
+    "price": 1750,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Built In | 18.000 a 22.000 Btu/h | unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Built In | 30.000 a 36.000 Btu/h | unid",
+    "price": 2250,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Built In | 48.000 a 60.000 Btu/h | unid",
+    "price": 2500,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Cassete | 09.000 a 12.000 Btu/h | unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Cassete | 18.000 a 22.000 Btu/h | unid",
+    "price": 1750,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Cassete | 30.000 a 36.000 Btu/h | unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Cassete | 48.000 a 60.000 Btu/h | unid",
+    "price": 2250,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Hi Wall | 09.000 a 12.000 Btu/h | unid",
+    "price": 1125,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Hi Wall | 18.000 a 22.000 Btu/h | unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Piso Teto | 30.000 a 36.000 Btu/h | unid",
+    "price": 1750,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Horario Extra",
+    "unit": "Piso Teto | 48.000 a 60.000 Btu/h | unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Cortina de Ar",
+    "unit": "unid",
+    "price": 800,
+    "supplier": "29/12/25",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - 1 1/2\"",
+    "unit": "unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - 1 1/4\"",
+    "unit": "unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - 2 1/2\"",
+    "unit": "unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - 2\"",
+    "unit": "unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - 3\"",
+    "unit": "unid",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - Bomba",
+    "unit": "unid",
+    "price": 5000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - Chiller",
+    "unit": "unid",
+    "price": 5000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico - Torre",
+    "unit": "unid",
+    "price": 5000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Fechamento Hidráulico Fancolete",
+    "unit": "Unid.",
+    "price": 600,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Proteção Mecânica - Aluminio 0,7 mm",
+    "unit": "m linear",
+    "price": 80,
+    "supplier": "JUVENAL",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Proteção Mecânica - Aluminio 0,7 mm",
+    "unit": "m linear",
+    "price": 80,
+    "supplier": "JUVENAL",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Proteção Mecânica - Aluminio Corrugado 0,40 mm",
+    "unit": "m linear",
+    "price": 80,
+    "supplier": "JUVENAL",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Proteção Mecânica - Fibraflex - de 2 1/2\" até 3\"",
+    "unit": "m linear",
+    "price": 90,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Proteção Mecânica - Fibraflex - de 3/4\" até 2\"",
+    "unit": "m linear",
+    "price": 70,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Tubulação Água Gelada - 2 1/2\" até 3\"",
+    "unit": "m",
+    "price": 150,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Tubulação Água Gelada - até 10\"",
+    "unit": "m",
+    "price": 200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O - Tubulação Água Gelada - até 2\"",
+    "unit": "m",
+    "price": 120,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "kg",
+    "price": 10,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "M",
+    "price": 10,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "kg",
+    "price": 35,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "kg",
+    "price": 10,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "M",
+    "price": 10,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "M",
+    "price": 10,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "M.O. - Apenas Instalação",
+    "unit": "M",
+    "price": 10,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de obra",
+    "unit": "unid.",
+    "price": 120,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos COIFA",
+    "unit": "unid",
+    "price": 800,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos COIFA WASH PULL",
+    "unit": "unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos EXAUSTOR AXIAIS (ACI, etc)",
+    "unit": "unid",
+    "price": 1000,
+    "supplier": "29-12-25",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos EXAUSTOR/CAIXA VENTILADORA",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos EXAUSTOR/CAIXA VENTILADORA",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "29-12-25",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos EXAUSTOR/CAIXA VENTILADORA",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos FANCOIL 12,5 a 25 TR",
+    "unit": "unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos FANCOIL acima 30 TR",
+    "unit": "unid",
+    "price": 2000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos FANCOIL até 10 TR",
+    "unit": "unid",
+    "price": 1000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos FANCOLETE",
+    "unit": "unid",
+    "price": 800,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos FILTRO ELETROESTÁTICO",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Apenas instalação do Equipamentos LAVADOR DE GASES",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de obra - Esp. Elastomérica",
+    "unit": "m²",
+    "price": 50,
+    "supplier": "---",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de obra - Esp. Elastomérica",
+    "unit": "m²",
+    "price": 50,
+    "supplier": "---",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Caixa GSP",
+    "unit": "unid",
+    "price": 500,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Caixa GSP",
+    "unit": "unid",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Caixa GSP",
+    "unit": "unid",
+    "price": 500,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Caixa GSP",
+    "unit": "unid",
+    "price": 500,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 01 motor",
+    "unit": "unid",
+    "price": 1700,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 01 motor",
+    "unit": "unid",
+    "price": 1700,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 01 motor",
+    "unit": "unid",
+    "price": 1700,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 01 motor",
+    "unit": "unid",
+    "price": 1700,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 03 motores",
+    "unit": "unid",
+    "price": 2800,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 03 motores",
+    "unit": "unid",
+    "price": 2800,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 03 motores",
+    "unit": "unid",
+    "price": 2800,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1 a 5CV para 03 motores",
+    "unit": "unid",
+    "price": 2800,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 2300,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 2300,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 2300,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 2300,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 3000,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 3000,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 3000,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 1CV até 5CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 3000,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 3500,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 3500,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 3500,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 01 motor com inversor",
+    "unit": "unid",
+    "price": 3500,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 4500,
+    "supplier": "L.J.D 160",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 4500,
+    "supplier": "L.J.D 160",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 4500,
+    "supplier": "L.J.D 160",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Instalação de Quadro Elétrico - 7,5CV até 15CV para 03 motores com inversor",
+    "unit": "unid",
+    "price": 4500,
+    "supplier": "L.J.D 160",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Intertravamento",
+    "unit": "unid",
+    "price": 750,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Intertravamento",
+    "unit": "unid",
+    "price": 750,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Intertravamento",
+    "unit": "unid",
+    "price": 750,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra - Intertravamento",
+    "unit": "unid",
+    "price": 750,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra VRF — Condensadoras",
+    "unit": "unid.",
+    "price": 1000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra VRF — Evaporadoras + Infraestrutura",
+    "unit": "HP",
+    "price": 750,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra VRF — Evaporadoras + Infraestrutura",
+    "unit": "Und",
+    "price": 1000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Mão de Obra VRF — Somente Infraestrutura",
+    "unit": "HP",
+    "price": 550,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Preço Mão de Obra Unidade Condensadora (1 por sistema) (MO)",
+    "unit": "Unid.",
+    "price": 3000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Preço Mão de Obra Unidade Condensadora (1 por sistema) (MO) - ESPECIAIS",
+    "unit": "Unid.",
+    "price": 6000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Preço Mão de Obra Unidade Condensadora (2 por sistema) (MO)",
+    "unit": "Unid.",
+    "price": 6000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Preço Mão de Obra Unidade Condensadora (2 por sistema) (MO) - ESPECIAIS",
+    "unit": "Unid.",
+    "price": 12000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "09.000 a 12.000 Btu/h | unid",
+    "price": 850.5,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "18.000 a 22.000 Btu/h | unid",
+    "price": 1134,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "30.000 a 36.000 Btu/h | unid",
+    "price": 1323,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "48.000 a 60.000 Btu/h | unid",
+    "price": 1512,
+    "supplier": "-",
+    "context": "AC Direta - tabela simplificada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Built In | 09.000 a 12.000 Btu/h | unid",
+    "price": 1890,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Built In | 18.000 a 22.000 Btu/h | unid",
+    "price": 2160,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Built In | 30.000 a 36.000 Btu/h | unid",
+    "price": 2430,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Built In | 48.000 a 60.000 Btu/h | unid",
+    "price": 2700,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Cassete | 09.000 a 12.000 Btu/h | unid",
+    "price": 1620,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Cassete | 18.000 a 22.000 Btu/h | unid",
+    "price": 1890,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Cassete | 30.000 a 36.000 Btu/h | unid",
+    "price": 2160,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Cassete | 48.000 a 60.000 Btu/h | unid",
+    "price": 2430,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Hi Wall | 09.000 a 12.000 Btu/h | unid",
+    "price": 1215,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Hi Wall | 18.000 a 22.000 Btu/h | unid",
+    "price": 1620,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Piso Teto | 30.000 a 36.000 Btu/h | unid",
+    "price": 1890,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Mão de obra",
+    "item": "Residencial alto Padrão",
+    "unit": "Piso Teto | 48.000 a 60.000 Btu/h | unid",
+    "price": 2160,
+    "supplier": "-",
+    "context": "AC Direta - tabela detalhada"
+  },
+  {
+    "category": "Outros",
+    "item": "Andaime (caso seja necessário)",
+    "unit": "mês",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "Andaime (caso seja necessário)",
+    "unit": "mês",
+    "price": 1200,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Outros",
+    "item": "Andaime (caso seja necessário)",
+    "unit": "mês",
+    "price": 600,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Outros",
+    "item": "Andaime (caso seja necessário)",
+    "unit": "mês",
+    "price": 600,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Outros",
+    "item": "Andaime (caso seja necessário)",
+    "unit": "mês",
+    "price": 600,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Outros",
+    "item": "Carro (Strada)",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "Carro (Strada)",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Outros",
+    "item": "Carro (Strada)",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Outros",
+    "item": "Carro (Strada)",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Outros",
+    "item": "Carro (Strada)",
+    "unit": "mês",
+    "price": 3000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Outros",
+    "item": "Horario Comercial",
+    "unit": "Hi Wall | 09.000 a 12.000 Btu/h | unid",
+    "price": 900,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "Infra (distância até o ponto mais distante)",
+    "unit": "mts",
+    "price": 40,
+    "supplier": "Services BR",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Outros",
+    "item": "Interligações Elétricas",
+    "unit": "unid",
+    "price": 1500,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "Remanejamento",
+    "unit": "m linear",
+    "price": 150,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Outros",
+    "item": "Residencial alto Padrão",
+    "unit": "18.000 a 22.000 Btu/h | unid",
+    "price": 1134,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "TAB",
+    "unit": "diária",
+    "price": 1000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "TAB",
+    "unit": "diária",
+    "price": 1000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Outros",
+    "item": "TAB",
+    "unit": "diária",
+    "price": 1000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Outros",
+    "item": "TAB",
+    "unit": "diária",
+    "price": 1000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Outros",
+    "item": "Teste de estanqueidade",
+    "unit": "diária",
+    "price": 5000,
+    "supplier": "-",
+    "context": "AC - DIRETA - COBRE"
+  },
+  {
+    "category": "Outros",
+    "item": "Teste de estanqueidade",
+    "unit": "diária",
+    "price": 5000,
+    "supplier": "-",
+    "context": "AC - INDIRETA - AGUA"
+  },
+  {
+    "category": "Outros",
+    "item": "Teste de estanqueidade",
+    "unit": "diária",
+    "price": 5000,
+    "supplier": "-",
+    "context": "EX Cozinha"
+  },
+  {
+    "category": "Outros",
+    "item": "Teste de estanqueidade",
+    "unit": "diária",
+    "price": 5000,
+    "supplier": "-",
+    "context": "EX_AE"
+  },
+  {
+    "category": "Outros",
+    "item": "Teste de estanqueidade",
+    "unit": "diária",
+    "price": 5000,
+    "supplier": "-",
+    "context": "Pressurização"
+  },
+  {
+    "category": "Outros",
+    "item": "Verba de Manutenção de limpeza na linha (141B, Solda Phoscoper, Nitrogênio, Oxigênio,etc)",
+    "unit": "Nº SISTEMA",
+    "price": 850,
+    "supplier": "29-12-25",
+    "context": "AC - DIRETA - COBRE"
+  }
+]

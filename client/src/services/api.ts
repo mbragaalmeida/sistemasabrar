@@ -98,6 +98,7 @@ export const api = {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return fetchJson<any[]>(`/materials${qs}`);
   },
+  getMaterialCategories: () => fetchJson<{ category: string; count: number }[]>('/materials/categories'),
   getMaterial: (id: number | string) => fetchJson<any>(`/materials/${id}`),
   createMaterial: (data: any) => fetchJson<any>('/materials', { method: 'POST', body: JSON.stringify(data) }),
   updateMaterial: (id: number | string, data: any) =>

@@ -9,6 +9,7 @@ import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 
 export const MaterialsPage: React.FC = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [onlyBelowMin, setOnlyBelowMin] = useState(false);
@@ -19,6 +20,15 @@ export const MaterialsPage: React.FC = () => {
   const [isNewMaterialModalOpen, setIsNewMaterialModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | undefined>(undefined);
+
+  const fetchCategories = async () => {
+    try {
+      const data = await api.getMaterialCategories();
+      setCategories(data);
+    } catch (err) {
+      console.error('Erro ao buscar categorias:', err);
+    }
+  };
 
   const fetchMaterials = async () => {
     setLoading(true);
@@ -36,6 +46,10 @@ export const MaterialsPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     fetchMaterials();
@@ -144,26 +158,17 @@ export const MaterialsPage: React.FC = () => {
             Todas
           </button>
 
-          {[
-            'Dutos',
-            'Isolamento',
-            'Linha frigorígena',
-            'Hidráulica / acessórios',
-            'Elétrica',
-            'Rede hidráulica',
-            'Automação',
-            'Outros'
-          ].map((cat) => (
+          {categories.map((c) => (
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              key={c.category}
+              onClick={() => setSelectedCategory(c.category)}
               className={`px-3 py-1 rounded-xl font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === cat
+                selectedCategory === c.category
                   ? 'bg-sabrar-600 text-white font-bold shadow-md shadow-sabrar-600/30'
                   : 'bg-dark-800 text-slate-300 hover:bg-dark-750 border border-dark-700'
               }`}
             >
-              {cat}
+              {c.category} <span className="text-[10px] opacity-70">({c.count})</span>
             </button>
           ))}
 
@@ -191,6 +196,16 @@ export const MaterialsPage: React.FC = () => {
           {materials.map((m) => {
             const isBelow = m.stock_physical <= m.stock_minimum;
             const isZero = m.stock_physical === 0;
+
+            const formatPrice = (value: number | undefined | null) => {
+              if (value === undefined || value === null || isNaN(value)) return '0,00';
+              const val = Number(value);
+              const hasMoreDecimals = Math.abs(Math.round(val * 100) - val * 100) > 0.0001;
+              return val.toLocaleString('pt-BR', {
+                minimumFractionDigits: hasMoreDecimals ? 3 : 2,
+                maximumFractionDigits: 4,
+              });
+            };
 
             return (
               <div
@@ -227,6 +242,38 @@ export const MaterialsPage: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Alerta de Validação Pendente (Status VALIDAR) */}
+                  {m.validation_status === 'VALIDAR' && (
+                    <div className="mt-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Atenção:</span> {m.pending_notes || 'Item pendente de validação com a engenharia.'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Peso Linear (ex: Tubos de Cobre) */}
+                  {m.linear_weight != null && (
+                    <div className="mt-1.5 text-[11px] text-cyan-400 font-mono flex items-center gap-1">
+                      <span>⚖️ Peso linear: {m.linear_weight} {m.linear_weight_unit || 'kg/m'}</span>
+                    </div>
+                  )}
+
+                  {/* Sinônimos */}
+                  {m.synonyms && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px]">
+                      <span className="text-slate-500 font-semibold">Sinônimos:</span>
+                      {m.synonyms.split(',').slice(0, 3).map((syn, idx) => (
+                        <span key={idx} className="bg-dark-800 text-slate-300 px-1.5 py-0.5 rounded border border-dark-700/60 font-mono text-[9px]">
+                          {syn.trim()}
+                        </span>
+                      ))}
+                      {m.synonyms.split(',').length > 3 && (
+                        <span className="text-[9px] text-slate-500">+{m.synonyms.split(',').length - 3}</span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Diagnóstico de Estoque: Físico, Reservado, Disponível */}
                   <div className="mt-3 grid grid-cols-3 gap-1.5 p-2.5 rounded-2xl bg-dark-850 border border-dark-700 text-center">
                     <div>
@@ -249,8 +296,14 @@ export const MaterialsPage: React.FC = () => {
                   <div>
                     <div className="text-[10px] text-slate-400 font-semibold uppercase">Preço Referência</div>
                     <div className="font-extrabold text-xs sm:text-sm text-white">
-                      R$ {m.reference_price.toFixed(2)} <span className="text-[10px] text-slate-500 font-normal">/{m.unit}</span>
+                      R$ {formatPrice(Number(m.reference_price))} <span className="text-[10px] text-slate-500 font-normal">/{m.unit}</span>
                     </div>
+                    {m.converted_price != null && m.converted_unit && (
+                      <div className="text-[10px] text-teal-400 font-semibold mt-0.5">
+                        ≈ R$ {formatPrice(Number(m.converted_price))}/{m.converted_unit}
+                        {m.package_content ? ` (emb. ${m.package_content} ${m.converted_unit})` : ''}
+                      </div>
+                    )}
                   </div>
 
                   <button

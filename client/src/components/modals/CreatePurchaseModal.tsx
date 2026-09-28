@@ -195,7 +195,7 @@ export const CreatePurchaseModal: React.FC<CreatePurchaseModalProps> = ({
                 <option value="">Selecione o material desejado...</option>
                 {filteredMaterials.map((m) => (
                   <option key={m.id} value={m.id} className="bg-dark-900 text-white">
-                    {m.name} ({m.code}) — {m.category} | Ref: R$ {m.reference_price.toFixed(2)} / {m.unit}
+                    {m.name} ({m.code}) — {m.category} | Ref: R$ {Number(m.reference_price || 0).toFixed(2)} / {m.unit}
                   </option>
                 ))}
               </select>

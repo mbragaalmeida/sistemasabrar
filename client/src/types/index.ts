@@ -85,6 +85,14 @@ export interface Material {
   unit: string;
   brand?: string;
   reference_price: number;
+  synonyms?: string;
+  linear_weight?: number;
+  linear_weight_unit?: string;
+  package_content?: number;
+  converted_unit?: string;
+  converted_price?: number;
+  validation_status?: 'OK' | 'VALIDAR';
+  pending_notes?: string;
   supplier_id?: number;
   supplier_name?: string;
   stock_physical: number;
