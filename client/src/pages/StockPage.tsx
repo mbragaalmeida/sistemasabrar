@@ -90,30 +90,30 @@ export const StockPage: React.FC = () => {
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="p-4 bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Total Itens Ativos</div>
-            <div className="text-2xl font-black text-white mt-1">{summary.totalItems}</div>
-            <div className="text-xs text-slate-400 mt-0.5">Cadastrados na SABRAR</div>
+          <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Total Itens Ativos</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">{summary.totalItems}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Cadastrados na SABRAR</div>
           </div>
 
-          <div className="p-4 bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Valuation em Estoque</div>
-            <div className="text-2xl font-black text-sabrar-400 mt-1">
+          <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Valuation em Estoque</div>
+            <div className="text-2xl font-black text-emerald-700 dark:text-sabrar-400 mt-1">
               R$ {summary.totalPhysicalValuation.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </div>
-            <div className="text-xs text-sabrar-400/80 font-semibold mt-0.5">Preço médio de referência</div>
+            <div className="text-xs text-emerald-800 dark:text-sabrar-300 font-bold mt-0.5">Preço médio de referência</div>
           </div>
 
-          <div className="p-4 bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Materiais Reservados</div>
-            <div className="text-2xl font-black text-amber-400 mt-1">{summary.totalReservedItems}</div>
-            <div className="text-xs text-amber-400/80 font-semibold mt-0.5">Para obras em andamento</div>
+          <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Materiais Reservados</div>
+            <div className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1">{summary.totalReservedItems}</div>
+            <div className="text-xs text-amber-800 dark:text-amber-300 font-bold mt-0.5">Para obras em andamento</div>
           </div>
 
-          <div className="p-4 bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Abaixo do Mínimo</div>
-            <div className="text-2xl font-black text-rose-400 mt-1">{summary.belowMinimumCount}</div>
-            <div className="text-xs text-rose-400/80 font-semibold mt-0.5">Requer compras urgentes</div>
+          <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Abaixo do Mínimo</div>
+            <div className="text-2xl font-black text-rose-700 dark:text-rose-400 mt-1">{summary.belowMinimumCount}</div>
+            <div className="text-xs text-rose-800 dark:text-rose-300 font-bold mt-0.5">Requer compras urgentes</div>
           </div>
         </div>
       )}

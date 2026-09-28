@@ -143,50 +143,36 @@ header button[class*="bg-"],
   color: #64748B !important;
 }
 
-/* Preserva texto branco puro APENAS em botões com fundos sólidos/escuros (500, 600, 700) */
-.light button[class*="bg-sabrar-500"],
-.light button[class*="bg-sabrar-500"] *,
+/* Preserva texto branco puro em botões com fundos sólidos/escuros (500, 600, 700) */
 .light button[class*="bg-sabrar-600"],
 .light button[class*="bg-sabrar-600"] *,
-.light button[class*="bg-sabrar-700"],
-.light button[class*="bg-sabrar-700"] *,
-.light button[class*="bg-emerald-500"],
-.light button[class*="bg-emerald-500"] *,
+.light button[class*="bg-sabrar-500"],
+.light button[class*="bg-sabrar-500"] *,
 .light button[class*="bg-emerald-600"],
 .light button[class*="bg-emerald-600"] *,
-.light button[class*="bg-emerald-700"],
-.light button[class*="bg-emerald-700"] *,
-.light button[class*="bg-rose-500"],
-.light button[class*="bg-rose-500"] *,
+.light button[class*="bg-emerald-500"],
+.light button[class*="bg-emerald-500"] *,
 .light button[class*="bg-rose-600"],
 .light button[class*="bg-rose-600"] *,
-.light button[class*="bg-teal-500"],
-.light button[class*="bg-teal-500"] *,
+.light button[class*="bg-rose-500"],
+.light button[class*="bg-rose-500"] *,
 .light button[class*="bg-teal-600"],
 .light button[class*="bg-teal-600"] *,
-.light button[class*="bg-blue-500"],
-.light button[class*="bg-blue-500"] *,
+.light button[class*="bg-teal-500"],
+.light button[class*="bg-teal-500"] *,
 .light button[class*="bg-blue-600"],
 .light button[class*="bg-blue-600"] *,
+.light button[class*="bg-blue-500"],
+.light button[class*="bg-blue-500"] *,
 .light .bg-sabrar-600,
 .light .bg-sabrar-600 *,
 .light .bg-emerald-600,
 .light .bg-emerald-600 *,
 .light .bg-rose-600,
-.light .bg-rose-600 * {
+.light .bg-rose-600 *,
+.light .bg-teal-600,
+.light .bg-teal-600 * {
   color: #FFFFFF !important;
-}
-
-/* Garante texto escuro e legível em botões com fundos claros/pastéis (50, 100) */
-.light button[class*="bg-emerald-50"],
-.light button[class*="bg-emerald-50"] *,
-.light button[class*="bg-emerald-100"],
-.light button[class*="bg-emerald-100"] *,
-.light button[class*="bg-sabrar-50"],
-.light button[class*="bg-sabrar-50"] *,
-.light button[class*="bg-sabrar-100"],
-.light button[class*="bg-sabrar-100"] * {
-  color: #064e3b !important; /* Verde escuro nítido */
 }
 
 /* ========================================================
@@ -250,56 +236,65 @@ header button[class*="bg-"],
 }
 
 /* ========================================================
-   CONTRASTE DE CORES E BADGES NO TEMA CLARO (LIGHT THEME)
+   CONTRASTE DE CORES E TEXTOS NO TEMA CLARO (LIGHT THEME)
    ======================================================== */
+.light [class*="text-cyan-"],
 .light .text-cyan-400,
 .light .text-cyan-300 {
   color: #0369a1 !important; /* Cyan / Sky 700 */
 }
 
+.light [class*="text-amber-"],
+.light [class*="text-yellow-"],
 .light .text-amber-400,
-.light .text-amber-300 {
-  color: #92400e !important; /* Âmbar 800 */
+.light .text-amber-300,
+.light .text-yellow-400,
+.light .text-yellow-300 {
+  color: #92400e !important; /* Âmbar 800 - castanho/dourado escuro de altíssimo contraste */
 }
 
+.light [class*="text-emerald-"],
+.light [class*="text-sabrar-"],
 .light .text-emerald-400,
 .light .text-emerald-300 {
   color: #15803d !important; /* Esmeralda 700 */
 }
 
+.light [class*="text-purple-"],
 .light .text-purple-400,
 .light .text-purple-300 {
   color: #6b21a8 !important; /* Roxo 800 para legibilidade perfeita */
 }
 
+.light [class*="text-rose-"],
+.light [class*="text-red-"],
 .light .text-rose-400,
 .light .text-rose-300 {
-  color: #9f1239 !important; /* Vermelho/Rose 800 */
+  color: #9f1239 !important; /* Vermelho/Rose 800 - carmesim escuro de altíssimo contraste */
 }
 
+.light [class*="text-blue-"],
 .light .text-blue-400,
 .light .text-blue-300 {
   color: #1d4ed8 !important; /* Azul 700 */
 }
 
+.light [class*="text-teal-"],
 .light .text-teal-400,
 .light .text-teal-300 {
   color: #0f766e !important; /* Verde Petróleo 700 */
 }
 
+.light [class*="text-indigo-"],
 .light .text-indigo-400,
 .light .text-indigo-300 {
   color: #4338ca !important; /* Índigo 700 */
 }
 
+.light [class*="text-orange-"],
 .light .text-orange-400,
 .light .text-orange-300 {
   color: #c2410c !important; /* Laranja 700 */
-}
-
-.light .text-yellow-400,
-.light .text-yellow-300 {
-  color: #854d0e !important; /* Amarelo 800 */
 }
 
 /* Fundo pastel limpo e elegante para caixas de ícones, badges e status no tema claro */
