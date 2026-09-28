@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Bell, Menu, Shield, UserCheck, ChevronDown, LogOut, Sun, Moon, Users, Eye, RotateCcw } from 'lucide-react';
+import { Search, Bell, Menu, Shield, UserCheck, ChevronDown, LogOut, Sun, Moon, Users, Eye, RotateCcw, KeyRound } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { UserRole } from '../../types';
@@ -10,6 +10,7 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onNavigate?: (page: string) => void;
   unreadNotificationsCount?: number;
+  onOpenChangePassword?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,7 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onToggleSidebar,
   onNavigate,
-  unreadNotificationsCount = 0
+  unreadNotificationsCount = 0,
+  onOpenChangePassword
 }) => {
   const { currentUser, isSimulating, originalAdmin, simulateRole, stopSimulation, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -209,6 +211,20 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Opção de Troca de Senha */}
+                <div className="pt-2 border-t border-[#222222]">
+                  <button
+                    onClick={() => {
+                      setRoleDropdownOpen(false);
+                      onOpenChangePassword?.();
+                    }}
+                    className="w-full flex items-center justify-start gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#1E1E1E] transition-colors"
+                  >
+                    <KeyRound className="w-4 h-4 text-cyan-400" />
+                    <span>Alterar Minha Senha</span>
+                  </button>
+                </div>
 
                 {/* 5. Ação de Logout */}
                 <div className="pt-2 border-t border-[#222222]">

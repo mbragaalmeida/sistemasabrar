@@ -19,7 +19,8 @@ import {
   ChevronUp,
   Eye,
   RotateCcw,
-  Shield
+  Shield,
+  KeyRound
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isPageAllowed } from '../../utils/permissions';
@@ -30,6 +31,7 @@ interface SidebarProps {
   onNavigate: (page: string) => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
+  onOpenChangePassword?: () => void;
 }
 
 interface NavItem {
@@ -48,7 +50,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentPage,
   onNavigate,
   isOpenMobile,
-  onCloseMobile
+  onCloseMobile,
+  onOpenChangePassword
 }) => {
   const { currentUser, isSimulating, simulateRole, stopSimulation, logout } = useAuth();
   const userRole = currentUser?.role || 'admin';
@@ -286,6 +289,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Opção de Troca de Senha */}
+              <div className="pt-2 border-t border-slate-200 dark:border-[#222222]">
+                <button
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    onCloseMobile();
+                    onOpenChangePassword?.();
+                  }}
+                  className="w-full flex items-center justify-start gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#222222] transition-colors"
+                >
+                  <KeyRound className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                  <span>Alterar Minha Senha</span>
+                </button>
+              </div>
 
               {/* 5. Ação de Logout */}
               <div className="pt-2 border-t border-slate-200 dark:border-[#222222]">

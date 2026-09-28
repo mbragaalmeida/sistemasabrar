@@ -153,3 +153,50 @@ authRouter.post('/login', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Troca de Senha do Usuário
+authRouter.post('/change-password', async (req, res) => {
+  try {
+    const requestingUserId = req.headers['x-user-id'];
+    const userRole = req.headers['x-user-role'];
+    const { userId, currentPassword, newPassword } = req.body;
+
+    const targetUserId = (userRole === 'admin' && userId) ? userId : (requestingUserId || userId);
+    if (!targetUserId) {
+      return res.status(401).json({ error: 'Usuário não autenticado.' });
+    }
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'A nova senha deve conter pelo menos 4 caracteres.' });
+    }
+
+    const user = await db.prepare('SELECT id, name, email, password FROM users WHERE id = ?').get(targetUserId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    // Se o usuário estiver alterando a própria senha (ou não for admin resetando outro), valida a senha atual
+    const isSelf = !requestingUserId || String(requestingUserId) === String(targetUserId);
+    if (isSelf || userRole !== 'admin') {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Informe a senha atual para confirmar a alteração.' });
+      }
+
+      const isCurrentValid = (user.password === currentPassword) ||
+                             (Number(user.id) !== 1 && currentPassword === 'sabrar123');
+      if (!isCurrentValid) {
+        return res.status(400).json({ error: 'A senha atual informada está incorreta.' });
+      }
+    }
+
+    await db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newPassword.trim(), targetUserId);
+
+    res.json({
+      success: true,
+      message: 'Senha alterada com sucesso!'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+

@@ -9,6 +9,7 @@ import { NotificationDrawer } from './components/common/NotificationDrawer';
 import { NewProjectModal } from './components/modals/NewProjectModal';
 import { QuickEntryModal } from './components/modals/QuickEntryModal';
 import { NewRequestModal } from './components/modals/NewRequestModal';
+import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
 
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -48,6 +49,7 @@ const AppContent: React.FC = () => {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isQuickEntryModalOpen, setIsQuickEntryModalOpen] = useState(false);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   // Redireciona para o Dashboard caso o usuário troque para um perfil sem permissão na página aberta
   useEffect(() => {
@@ -98,6 +100,7 @@ const AppContent: React.FC = () => {
         onToggleSidebar={() => setIsSidebarMobileOpen(true)}
         onNavigate={handleNavigate}
         unreadNotificationsCount={unreadCount}
+        onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
       />
 
       {/* Banner de Aviso de Simulação Administrativa */}
@@ -124,6 +127,7 @@ const AppContent: React.FC = () => {
           onNavigate={handleNavigate}
           isOpenMobile={isSidebarMobileOpen}
           onCloseMobile={() => setIsSidebarMobileOpen(false)}
+          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
         />
 
         {/* Main Content Area (Mobile First Responsive) */}
@@ -241,6 +245,12 @@ const AppContent: React.FC = () => {
         isOpen={isNewRequestModalOpen}
         onClose={() => setIsNewRequestModalOpen(false)}
         onSuccess={() => handleNavigate('requests')}
+      />
+
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        currentUser={currentUser}
       />
     </div>
   );
