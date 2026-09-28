@@ -232,65 +232,71 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
       {/* Top Navigation & Status Banner */}
-      <div className="bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl flex flex-col gap-4">
+      <div className="bg-white dark:bg-dark-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-xl flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button
               onClick={onBack}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-dark-800 transition-colors"
               title="Voltar"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
+                <span className="text-xs font-mono font-bold text-emerald-700 dark:text-sabrar-400 bg-slate-100 dark:bg-dark-800 border border-slate-300 dark:border-dark-700 px-2 py-0.5 rounded">
                   {project.code}
                 </span>
                 <StatusBadge status={project.status} />
               </div>
-              <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight mt-1">
+              <h1 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
                 {project.name}
               </h1>
             </div>
           </div>
 
-          {/* Action CTAs específicos do perfil */}
-          <div className="flex items-center gap-2 self-end sm:self-center overflow-x-auto pb-1 sm:pb-0">
+          {/* Action CTAs específicos do perfil (Encurtados no mobile para evitar overflow horizontal) */}
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-start sm:justify-end mt-1 sm:mt-0">
             {hasPermission(['orcamento']) && (
               <button
                 onClick={() => setIsAIModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-lg shadow-sabrar-600/30 active:scale-95 transition-all whitespace-nowrap"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 active:scale-95 transition-all whitespace-nowrap"
+                title="Analisar com Inteligência Artificial"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Analisar com IA</span>
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="sm:hidden">Analisar</span>
+                <span className="hidden sm:inline">Analisar com IA</span>
               </button>
             )}
 
             {budget && hasPermission(['orcamento']) && (
               <button
                 onClick={() => setIsProposalModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-dark-800 hover:bg-slate-200 dark:hover:bg-dark-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-dark-700 text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-xs"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-dark-800 hover:bg-slate-200 dark:hover:bg-dark-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-dark-700 text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-xs"
+                title="Proposta Comercial para o Cliente"
               >
-                <Printer className="w-4 h-4 text-emerald-600 dark:text-sabrar-400" />
-                <span>Proposta Cliente</span>
+                <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-emerald-600 dark:text-sabrar-400" />
+                <span className="sm:hidden">Proposta</span>
+                <span className="hidden sm:inline">Proposta Cliente</span>
               </button>
             )}
 
             {['Aprovado', 'Em execução'].includes(project.status) && hasPermission(['engenharia']) && (
               <button
                 onClick={() => setIsNewRequestModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
+                title="Solicitar Material da Obra"
               >
-                <Plus className="w-4 h-4" />
-                <span>Solicitar Material</span>
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="sm:hidden">Solicitar</span>
+                <span className="hidden sm:inline">Solicitar Material</span>
               </button>
             )}
           </div>
         </div>
 
         {/* Tab Navigation (Filtrada por perfil para foco e sem duplicidade) */}
-        <div className="flex items-center gap-1.5 border-t border-slate-200 dark:border-dark-750 pt-3 overflow-x-auto text-xs font-bold">
+        <div className="flex items-center gap-1.5 border-t border-slate-200 dark:border-dark-750 pt-3 overflow-x-auto no-scrollbar text-xs font-bold w-full min-w-0">
           <button
             onClick={() => setActiveTab('geral')}
             className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${
@@ -948,14 +954,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       {/* TAB 3: SOLICITAÇÕES DE MATERIAIS */}
       {activeTab === 'solicitacoes' && (
         <div className="space-y-4 animate-in fade-in">
-          <div className="flex items-center justify-between bg-dark-900 p-4 rounded-3xl border border-dark-750">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-dark-900 p-4 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div>
-              <h3 className="font-extrabold text-sm text-white">Solicitações de Materiais da Obra</h3>
-              <p className="text-xs text-slate-400">Módulo operacional da Engenharia com verificação de estoque</p>
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">Solicitações de Materiais da Obra</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Módulo operacional da Engenharia com verificação de estoque</p>
             </div>
             <button
               onClick={() => setIsNewRequestModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 active:scale-95 transition-all shrink-0 w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Nova Solicitação</span>
@@ -964,38 +970,38 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
 
           <div className="space-y-3">
             {(data.requests || []).map((req: any) => (
-              <div key={req.id} className="bg-dark-900 p-4 rounded-3xl border border-dark-750 shadow-md space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-xs bg-dark-800 border border-dark-700 px-2 py-0.5 rounded text-sabrar-400">
+              <div key={req.id} className="bg-white dark:bg-dark-900 p-4 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-bold text-xs bg-slate-100 dark:bg-dark-800 border border-slate-300 dark:border-dark-700 px-2 py-0.5 rounded text-emerald-700 dark:text-sabrar-400">
                       {req.code}
                     </span>
                     <StatusBadge status={req.priority} size="sm" />
                     <StatusBadge status={req.status} size="sm" />
                   </div>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
                     {new Date(req.created_at).toLocaleDateString('pt-BR')} por {req.requested_by_name}
                   </span>
                 </div>
 
-                <div className="divide-y divide-dark-750 border border-dark-700 rounded-2xl p-2 bg-dark-850">
+                <div className="divide-y divide-slate-200 dark:divide-dark-750 border border-slate-200 dark:border-dark-700 rounded-2xl p-2 bg-slate-50 dark:bg-dark-850">
                   {(req.items || []).map((it: any) => (
-                    <div key={it.id} className="py-2 px-2 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-white">{it.material_name}</span>
-                        <span className="text-[11px] text-slate-400 ml-2 font-mono">({it.material_code})</span>
+                    <div key={it.id} className="py-2.5 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-900 dark:text-white block sm:inline">{it.material_name}</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 sm:ml-2 font-mono">({it.material_code})</span>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-semibold text-slate-300">
-                          Solicitado: <span className="font-bold text-white">{it.quantity_requested} {it.material_unit}</span>
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-4 shrink-0">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                          Solicitado: <span className="font-bold text-slate-900 dark:text-white">{it.quantity_requested} {it.material_unit}</span>
                         </span>
                         {it.deficit > 0 && (
-                          <span className="font-bold text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700 text-[11px]">
+                          <span className="font-bold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-950/80 px-2 py-0.5 rounded border border-rose-300 dark:border-rose-700 text-[11px]">
                             Déficit: {it.deficit} (Compras notificado)
                           </span>
                         )}
                         {it.quantity_delivered > 0 && (
-                          <span className="font-bold text-sabrar-300 bg-sabrar-950 px-2 py-0.5 rounded border border-sabrar-500/40 text-[11px]">
+                          <span className="font-bold text-emerald-800 dark:text-sabrar-300 bg-emerald-100 dark:bg-sabrar-950 px-2 py-0.5 rounded border border-emerald-300 dark:border-sabrar-500/40 text-[11px]">
                             Entregue: {it.quantity_delivered}
                           </span>
                         )}
@@ -1012,41 +1018,41 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       {/* TAB 4: ALMOXARIFADO & DEVOLUÇÕES */}
       {activeTab === 'movimentacoes' && (
         <div className="space-y-4 animate-in fade-in">
-          <div className="flex items-center justify-between bg-dark-900 p-4 rounded-3xl border border-dark-750">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-dark-900 p-4 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div>
-              <h3 className="font-extrabold text-sm text-white">Almoxarifado & Devoluções da Obra</h3>
-              <p className="text-xs text-slate-400">Histórico de saídas para o canteiro e retorno de sobras</p>
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">Almoxarifado & Devoluções da Obra</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Histórico de saídas para o canteiro e retorno de sobras</p>
             </div>
             <button
               onClick={() => setIsNewReturnModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-600/30"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-600/30 active:scale-95 transition-all shrink-0 w-full sm:w-auto"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Registrar Devolução</span>
             </button>
           </div>
 
-          <div className="bg-dark-900 rounded-3xl border border-dark-750 p-4 shadow-md">
-            <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider mb-3">
+          <div className="bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 p-4 shadow-md">
+            <h4 className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
               Devoluções Registradas ao Almoxarifado
             </h4>
             {(data.returns || []).length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500">
+              <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
                 Nenhuma devolução registrada nesta obra até o momento.
               </div>
             ) : (
-              <div className="divide-y divide-dark-750">
+              <div className="divide-y divide-slate-200 dark:divide-dark-750">
                 {data.returns.map((ret: any) => (
                   <div key={ret.id} className="py-3 flex items-center justify-between text-xs">
                     <div>
-                      <div className="font-bold text-white">{ret.code} — {ret.material_name}</div>
-                      <div className="text-[11px] text-slate-400">
+                      <div className="font-bold text-slate-900 dark:text-white">{ret.code} — {ret.material_name}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
                         Motivo: {ret.reason || 'Sobra reutilizável'} • Recebido por: {ret.received_by_name}
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="font-black text-teal-400 text-sm">+{ret.quantity} {ret.material_unit}</span>
-                      <div className="text-[10px] text-slate-500">Voltaram ao estoque físico</div>
+                      <span className="font-black text-teal-600 dark:text-teal-400 text-sm">+{ret.quantity} {ret.material_unit}</span>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500">Voltaram ao estoque físico</div>
                     </div>
                   </div>
                 ))}
