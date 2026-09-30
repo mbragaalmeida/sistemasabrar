@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -10,11 +12,13 @@ interface ProjectsPageProps {
 }
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNewProject }) => {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [loading, setLoading] = useState(true);
+  const [assigningProject, setAssigningProject] = useState<Project | null>(null);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -178,9 +182,30 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                       <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       <span className="truncate">{p.address || `${p.city} - ${p.state}`}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <HardHat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span>{p.responsible_engineer || 'Eng. Rafael Santos'}</span>
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <HardHat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        {p.responsible_engineer ? (
+                          <span className="truncate text-slate-300 font-semibold">{p.responsible_engineer}</span>
+                        ) : (
+                          <span className="text-amber-400 font-bold text-[11px] bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/40">
+                            ⚠ Sem engenheiro atribuído
+                          </span>
+                        )}
+                      </div>
+                      {currentUser?.role === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAssigningProject(p);
+                          }}
+                          className="text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 px-2.5 py-1 rounded-xl border border-amber-600/40 shrink-0 transition-colors shadow-xs"
+                          title="Atribuir ou alterar engenheiros responsáveis desta obra"
+                        >
+                          {p.responsible_engineer ? 'Editar Eng.' : '+ Atribuir Eng.'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -205,6 +230,22 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
             );
           })}
         </div>
+      )}
+
+      {/* Modal para Atribuição de Engenheiros da Obra */}
+      {assigningProject && (
+        <AssignEngineersModal
+          isOpen={!!assigningProject}
+          onClose={() => setAssigningProject(null)}
+          projectId={assigningProject.id}
+          projectName={assigningProject.name}
+          projectCode={assigningProject.code}
+          currentEngineerIds={assigningProject.assigned_engineer_ids || []}
+          onSuccess={() => {
+            fetchProjects();
+            setAssigningProject(null);
+          }}
+        />
       )}
     </div>
   );

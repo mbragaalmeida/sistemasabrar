@@ -15,11 +15,13 @@ import {
   Trash2,
   RefreshCw,
   Sparkles,
-  Info
+  Info,
+  HardHat
 } from 'lucide-react';
 import { Project, Material } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { AssignEngineersModal } from './AssignEngineersModal';
 
 interface NewRequestModalProps {
   isOpen: boolean;
@@ -43,6 +45,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [loadingBudget, setLoadingBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+
+  const selectedProject = useMemo(() => {
+    return projects.find(p => p.id === Number(selectedProjectId));
+  }, [projects, selectedProjectId]);
 
   // Modo de Solicitação: 'batch' (orçamento da obra) ou 'custom' (lista avulsa montada pelo engenheiro)
   const [requestMode, setRequestMode] = useState<'batch' | 'custom'>('batch');
@@ -160,16 +167,21 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         if (budgetData && budgetData.items && budgetData.items.length > 0) {
           setBudgetItems(budgetData.items);
           setRequestMode('batch');
-          const allIds = new Set<number>(budgetData.items.map((it: any) => it.id));
-          setSelectedItemIds(allIds);
 
           const initialQtys: Record<number, number> = {};
+          const selected = new Set<number>();
           budgetData.items.forEach((it: any) => {
             const q = qMap[it.material_id];
-            // Se houver cota remanescente, sugere o saldo; caso esgotado, sugere o previsto
-            const remaining = q ? q.remainingQuota : Number(it.quantity || 1);
-            initialQtys[it.id] = remaining > 0 ? remaining : Number(it.quantity || 1);
+            // Se houver cota calculada, usa o saldo remanescente; caso contrário, usa o previsto
+            const remaining = q !== undefined && q !== null ? Number(q.remainingQuota) : Number(it.quantity || 0);
+            const qty = Math.max(0, remaining);
+            initialQtys[it.id] = qty;
+            // Só seleciona por padrão os itens que ainda têm cota disponível (> 0)
+            if (qty > 0) {
+              selected.add(it.id);
+            }
           });
+          setSelectedItemIds(selected);
           setItemQuantities(initialQtys);
         } else {
           setBudgetItems([]);
@@ -280,10 +292,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
   const handleBudgetQuantityChange = (id: number, val: string) => {
     const num = parseFloat(val);
+    const newQty = isNaN(num) || num < 0 ? 0 : num;
     setItemQuantities(prev => ({
       ...prev,
-      [id]: isNaN(num) || num < 0 ? 0 : num
+      [id]: newQty
     }));
+    if (newQty > 0) {
+      setSelectedItemIds(prev => new Set(prev).add(id));
+    }
   };
 
   const handleRemoveBudgetItem = (id: number) => {
@@ -636,6 +652,31 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 Nenhuma obra com status ativo está atribuída ao seu perfil de engenheiro ({currentUser?.name}).
               </p>
             )}
+
+            {selectedProject && (
+              <div className="mt-2.5 p-3 rounded-2xl bg-dark-800/80 border border-dark-700/80 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-xl bg-amber-950/80 border border-amber-600/40 flex items-center justify-center text-amber-400 shrink-0">
+                    <HardHat className="w-4 h-4" />
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-slate-400 font-medium">Engenheiro(s) da Obra: </span>
+                    <strong className={selectedProject.responsible_engineer ? "text-amber-300 font-bold" : "text-rose-400 font-bold"}>
+                      {selectedProject.responsible_engineer || 'Pendente de atribuição'}
+                    </strong>
+                  </div>
+                </div>
+                {currentUser?.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAssignModalOpen(true)}
+                    className="px-2.5 py-1 text-[11px] font-bold text-amber-400 hover:text-white bg-amber-950/60 hover:bg-amber-900 border border-amber-700/50 rounded-xl transition-colors active:scale-95"
+                  >
+                    {selectedProject.responsible_engineer ? 'Alterar Engenheiro(s)' : '+ Atribuir Engenheiro(s)'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Seletor de Modo: Orçamento da Obra vs Solicitação Avulsa (Montar Lista) */}
@@ -966,6 +1007,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
                                   <span>• Já Solicitado: <strong className="text-slate-300">{it.previouslyRequested} {it.unit}</strong></span>
                                   <span>• Saldo Disponível: <strong className={it.remainingQuota > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold'}>{it.remainingQuota} {it.unit}</strong></span>
+                                  {it.remainingQuota <= 0 && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-dark-750 text-slate-300">
+                                      Cota 100% consumida
+                                    </span>
+                                  )}
                                   {it.isOverBudget ? (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
                                       <AlertTriangle className="w-3 h-3 text-amber-400" />
@@ -987,9 +1033,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 <input
                                   type="number"
                                   step="any"
-                                  min="0.1"
+                                  min="0"
                                   disabled={!it.isSelected}
-                                  value={itemQuantities[it.id] ?? it.quantity}
+                                  value={itemQuantities[it.id] !== undefined ? itemQuantities[it.id] : (it.remainingQuota > 0 ? it.remainingQuota : 0)}
                                   onChange={(e) => handleBudgetQuantityChange(it.id, e.target.value)}
                                   className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
                                 />
@@ -1417,6 +1463,22 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           </div>
         </form>
       </div>
+
+      {selectedProject && (
+        <AssignEngineersModal
+          isOpen={isAssignModalOpen}
+          onClose={() => setIsAssignModalOpen(false)}
+          projectId={selectedProject.id}
+          projectName={selectedProject.name}
+          projectCode={selectedProject.code}
+          currentEngineerIds={selectedProject.assigned_engineer_ids || []}
+          onSuccess={async () => {
+            setIsAssignModalOpen(false);
+            const projs = await api.getProjects().catch(() => []);
+            setProjects(projs);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -32,6 +32,7 @@ import { NewRequestModal } from '../components/modals/NewRequestModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { ImportSpreadsheetModal } from '../components/modals/ImportSpreadsheetModal';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
+import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 
 interface ProjectDetailPageProps {
   projectId: number;
@@ -56,6 +57,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [isNewReturnModalOpen, setIsNewReturnModalOpen] = useState(false);
   const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
   const [isAssignEngineersModalOpen, setIsAssignEngineersModalOpen] = useState(false);
+  const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
 
   // Estados locais para edição de orçamento
   const [editableMaterials, setEditableMaterials] = useState<any[]>([]);
@@ -192,17 +194,22 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
 
   const handleApproveBudget = async () => {
     if (!budget) return;
+
+    if (!project.responsible_engineer || (project.assigned_engineers && project.assigned_engineers.length === 0)) {
+      alert('Para iniciar a obra e liberar as solicitações de materiais, é necessário designar ao menos um Engenheiro Responsável. O assistente de designação será aberto agora.');
+      setIsAssignEngineersModalOpen(true);
+      return;
+    }
+
     if (!window.confirm('Confirma a aprovação deste orçamento? A obra mudará para o status "Em execução" e as solicitações de materiais da Engenharia serão liberadas.')) {
       return;
     }
     try {
       await api.approveBudget(budget.id, currentUser?.id, currentUser?.name);
       await fetchProjectData();
-      if (!project.responsible_engineer || (project.assigned_engineers && project.assigned_engineers.length === 0)) {
-        setIsAssignEngineersModalOpen(true);
-      }
     } catch (err) {
       console.error('Erro ao aprovar orçamento:', err);
+      alert('Erro ao aprovar orçamento');
     }
   };
 
@@ -257,6 +264,30 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               <h1 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
                 {project.name}
               </h1>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Engenheiro(s) Responsável(is):</span>
+                {project.responsible_engineer ? (
+                  <span className="text-xs font-bold text-amber-500 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs">
+                    <HardHat className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                    {project.responsible_engineer}
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                    Pendente de designação
+                  </span>
+                )}
+                {hasPermission(['admin']) && (
+                  <button
+                    onClick={() => setIsAssignEngineersModalOpen(true)}
+                    className="text-[11px] font-bold text-amber-600 dark:text-amber-300 hover:text-white bg-slate-100 dark:bg-dark-800 hover:bg-amber-600 dark:hover:bg-amber-600 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-dark-700 transition-all flex items-center gap-1 shadow-xs active:scale-95"
+                    title="Atribuir ou alterar os engenheiros responsáveis por esta obra"
+                  >
+                    <HardHat className="w-3 h-3" />
+                    <span>{project.responsible_engineer ? 'Editar Engenheiros' : '+ Atribuir Engenheiro'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -630,6 +661,27 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             <div className="p-3 bg-sabrar-950/80 border border-sabrar-500/50 text-sabrar-300 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
               <CheckCircle className="w-4 h-4 text-sabrar-400" />
               Orçamento salvo com sucesso! Todas as alterações humanas foram salvas e calibrarão a IA.
+            </div>
+          )}
+
+          {!project.responsible_engineer && (
+            <div className="p-3.5 bg-amber-950/40 border border-amber-600/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 text-amber-300 font-semibold">
+                <HardHat className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Atenção:</strong> Esta obra ainda não possui Engenheiro Responsável atribuído. 
+                  O orçamento pode ser elaborado normalmente, mas a designação será obrigatória antes de iniciar a execução da obra.
+                </span>
+              </div>
+              {hasPermission(['admin']) && (
+                <button
+                  type="button"
+                  onClick={() => setIsAssignEngineersModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs transition-colors shrink-0 shadow-sm active:scale-95"
+                >
+                  Atribuir Engenheiro Agora
+                </button>
+              )}
             </div>
           )}
 
@@ -1060,11 +1112,69 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     </span>
                     <StatusBadge status={req.priority} size="sm" />
                     <StatusBadge status={req.status} size="sm" />
+                    {req.status === 'Aguardando aprovação' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-950 text-amber-300 border border-amber-600/50">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        Aguardando Aprovação Admin (Extras)
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {new Date(req.created_at).toLocaleDateString('pt-BR')} por {req.requested_by_name}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {new Date(req.created_at).toLocaleDateString('pt-BR')} por {req.requested_by_name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRequestForPrint({
+                          ...req,
+                          project_name: project.name,
+                          project_code: project.code,
+                          client_name: project.client,
+                          responsible_engineer: project.responsible_engineer
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all active:scale-95"
+                      title="Imprimir Romaneio de Separação de Materiais"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Imprimir Romaneio</span>
+                    </button>
+                  </div>
                 </div>
+
+                {req.status === 'Aguardando aprovação' && hasPermission(['admin']) && (
+                  <div className="p-3 bg-amber-950/40 border border-amber-600/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <span className="text-amber-300 font-medium">Esta solicitação contém materiais extras além do orçamento previsto e requer autorização da administração.</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (window.confirm(`Aprovar liberação dos materiais extras da solicitação ${req.code}?`)) {
+                            await api.approveExtraRequest(req.id, currentUser?.id, 'Aprovado pelo Administrador na Obra');
+                            await fetchProjectData();
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition-colors"
+                      >
+                        Aprovar Extras
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const note = prompt('Motivo da recusa do material extra:');
+                          if (note) {
+                            await api.rejectExtraRequest(req.id, currentUser?.id, note);
+                            await fetchProjectData();
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-sm transition-colors"
+                      >
+                        Recusar
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="divide-y divide-slate-200 dark:divide-dark-750 border border-slate-200 dark:border-dark-700 rounded-2xl p-2 bg-slate-50 dark:bg-dark-850">
                   {(req.items || []).map((it: any) => (
@@ -1072,6 +1182,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                       <div className="min-w-0">
                         <span className="font-bold text-slate-900 dark:text-white block sm:inline">{it.material_name}</span>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 sm:ml-2 font-mono">({it.material_code})</span>
+                        {it.is_extra && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
+                            Extra Obra (+{it.extra_quantity || it.quantity_requested})
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 sm:gap-4 shrink-0">
                         <span className="font-semibold text-slate-600 dark:text-slate-300">
@@ -1281,6 +1396,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         projectCode={project.code}
         currentEngineerIds={project.assigned_engineer_ids || []}
         onSuccess={() => fetchProjectData()}
+      />
+
+      <PrintRequestModal
+        isOpen={!!selectedRequestForPrint}
+        onClose={() => setSelectedRequestForPrint(null)}
+        request={selectedRequestForPrint}
       />
     </div>
   );
