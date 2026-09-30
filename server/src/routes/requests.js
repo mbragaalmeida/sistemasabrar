@@ -9,10 +9,12 @@ requestsRouter.get('/', async (req, res) => {
   try {
     const { project_id, status, priority } = req.query;
     let query = `
-      SELECT mr.*, p.name as project_name, p.code as project_code, u.name as requested_by_name
+      SELECT mr.*, p.name as project_name, p.code as project_code, p.responsible_engineer,
+             u.name as requested_by_name, u_admin.name as admin_approved_by_name
       FROM material_requests mr
       JOIN projects p ON mr.project_id = p.id
       JOIN users u ON mr.requested_by = u.id
+      LEFT JOIN users u_admin ON mr.admin_approved_by = u_admin.id
       WHERE 1=1
     `;
     const params = [];
@@ -36,10 +38,12 @@ requestsRouter.get('/', async (req, res) => {
 
     const enriched = await Promise.all(requests.map(async r => {
       const items = await db.prepare(`
-        SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit, m.stock_physical, m.stock_reserved
+        SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit,
+               m.stock_physical, m.stock_reserved
         FROM material_request_items mri
         JOIN materials m ON mri.material_id = m.id
         WHERE mri.request_id = ?
+        ORDER BY mri.id ASC
       `).all(r.id);
 
       return { ...r, items };
@@ -60,7 +64,7 @@ requestsRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Projeto de destino é obrigatório' });
     }
 
-    // Validação de responsabilidade técnica do engenheiro (Requisito 3)
+    // Validação de responsabilidade técnica do engenheiro (Requisito 1 e 3)
     if (userId) {
       const user = await db.prepare(`
         SELECT u.*, r.name as role_name 
@@ -72,12 +76,17 @@ requestsRouter.post('/', async (req, res) => {
       if (user && user.role_name === 'engenharia') {
         const project = await db.prepare('SELECT id, name, responsible_engineer FROM projects WHERE id = ?').get(projectId);
         if (project) {
-          const normUser = user.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
-          const normProj = (project.responsible_engineer || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
-          if (!normProj.includes(normUser) && !normUser.includes(normProj)) {
-            return res.status(403).json({
-              error: `Acesso restrito: Como engenheiro, você só pode solicitar materiais para obras sob sua responsabilidade técnica. Esta obra está sob responsabilidade de: ${project.responsible_engineer || 'Não atribuído'}.`
-            });
+          // Verifica se o usuário está associado em project_engineers
+          const isAssigned = await db.prepare('SELECT 1 FROM project_engineers WHERE project_id = ? AND user_id = ?').get(projectId, userId);
+          
+          if (!isAssigned) {
+            const normUser = user.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+            const normProj = (project.responsible_engineer || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+            if (!normProj.includes(normUser) && !normUser.includes(normProj)) {
+              return res.status(403).json({
+                error: `Acesso restrito: Como engenheiro, você só pode solicitar materiais para obras sob sua responsabilidade técnica. Esta obra está sob responsabilidade de: ${project.responsible_engineer || 'Pendente de atribuição pelo administrador'}.`
+              });
+            }
           }
         }
       }
@@ -104,12 +113,36 @@ requestsRouter.post('/', async (req, res) => {
         materialId,
         quantity,
         priority || 'Média',
-        userId || 3, // Default Eng. Rafael
+        userId || 3,
         notes
       );
     }
 
     res.status(201).json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Aprovação de solicitação com materiais extras por um Administrador (Requisito 2 e 4)
+requestsRouter.post('/:id/approve-extra', async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const { userId, notes } = req.body;
+    const result = await StockService.approveExtraRequest(requestId, userId || 1, notes);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Rejeição de solicitação com materiais extras por um Administrador (Requisito 2 e 4)
+requestsRouter.post('/:id/reject-extra', async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const { userId, reason } = req.body;
+    const result = await StockService.rejectExtraRequest(requestId, userId || 1, reason);
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

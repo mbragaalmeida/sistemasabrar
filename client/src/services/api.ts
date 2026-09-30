@@ -69,6 +69,13 @@ export const api = {
   },
   getProject: (id: number | string) => fetchJson<any>(`/projects/${id}`),
   createProject: (data: any) => fetchJson<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  assignProjectEngineers: (projectId: number | string, engineerIds: number[], userId?: number) =>
+    fetchJson<any>(`/projects/${projectId}/engineers`, {
+      method: 'PATCH',
+      body: JSON.stringify({ engineerIds, userId })
+    }),
+  getProjectMaterialQuotas: (projectId: number | string) =>
+    fetchJson<{ projectId: number; hasBudget: boolean; budgetStatus?: string; quotas: any[] }>(`/projects/${projectId}/material-quotas`),
   updateProjectStatus: (id: number | string, status: string, userId?: number) =>
     fetchJson<any>(`/projects/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, userId }) }),
   addProjectFile: (id: number | string, data: any) =>
@@ -231,6 +238,16 @@ export const api = {
   createRequest: (data: any) => fetchJson<any>('/requests', { method: 'POST', body: JSON.stringify(data) }),
   updateRequestStatus: (id: number | string, status: string, notes?: string, userId?: number) =>
     fetchJson<any>(`/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, notes, userId }) }),
+  approveExtraRequest: (requestId: number | string, userId?: number, notes?: string) =>
+    fetchJson<any>(`/requests/${requestId}/approve-extra`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, notes })
+    }),
+  rejectExtraRequest: (requestId: number | string, userId?: number, reason?: string) =>
+    fetchJson<any>(`/requests/${requestId}/reject-extra`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, reason })
+    }),
 
   // Compras
   getPurchases: (params?: Record<string, string>) => {

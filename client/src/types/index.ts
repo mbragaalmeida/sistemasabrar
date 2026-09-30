@@ -45,7 +45,9 @@ export interface Project {
   project_type: 'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura';
   start_date?: string;
   expected_end_date?: string;
-  responsible_engineer: string;
+  responsible_engineer?: string | null;
+  assigned_engineers?: Array<{ id: number; name: string; email: string; phone?: string; avatar?: string }>;
+  assigned_engineer_ids?: number[];
   notes?: string;
   status: ProjectStatus;
   total_budget_materials: number;
@@ -129,10 +131,18 @@ export interface MaterialRequest {
   project_id: number;
   project_name?: string;
   project_code?: string;
+  responsible_engineer?: string | null;
   requested_by: number;
   requested_by_name?: string;
   priority: 'Baixa' | 'Média' | 'Alta' | 'Urgente';
-  status: 'Solicitado' | 'Reservado' | 'Em separação' | 'Separado' | 'Entregue' | 'Cancelado';
+  status: 'Solicitado' | 'Reservado' | 'Em separação' | 'Separado' | 'Entregue' | 'Cancelado' | 'Parcialmente Atendido' | 'Aguardando aprovação';
+  requires_admin_approval?: boolean;
+  admin_approval_status?: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  admin_approved_by?: number;
+  admin_approved_by_name?: string;
+  admin_approved_at?: string;
+  admin_approval_notes?: string;
+  has_extra_items?: boolean;
   notes?: string;
   items?: MaterialRequestItem[];
   created_at: string;
@@ -150,6 +160,25 @@ export interface MaterialRequestItem {
   quantity_reserved: number;
   quantity_delivered: number;
   deficit: number;
+  is_extra?: boolean;
+  budget_quantity?: number;
+  previously_requested?: number;
+  extra_quantity?: number;
+}
+
+export interface MaterialQuota {
+  budgetItemId?: number;
+  materialId: number;
+  materialName: string;
+  materialCode: string;
+  unit: string;
+  unitPrice: number;
+  budgetQuantity: number;
+  previouslyRequested: number;
+  remainingQuota: number;
+  physicalStock: number;
+  reservedStock: number;
+  availableStock: number;
 }
 
 export interface Purchase {

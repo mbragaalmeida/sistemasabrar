@@ -86,10 +86,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         let valid = data.filter((p: Project) => ['Aprovado', 'Em execução', 'Orçamento finalizado', 'Orçamento gerado', 'Novo'].includes(p.status) || !p.status);
         if (valid.length === 0) valid = data;
 
-        // Se o usuário for Engenheiro, filtra estritamente para as obras sob sua responsabilidade técnica
+        // Se o usuário for Engenheiro, filtra estritamente para as obras sob sua responsabilidade técnica (Requisito 3)
         if (currentUser?.role === 'engenharia' && currentUser?.name) {
           const normUser = currentUser.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
           valid = valid.filter((p: Project) => {
+            if (p.assigned_engineer_ids && p.assigned_engineer_ids.includes(currentUser.id)) return true;
+            if (p.assigned_engineers && p.assigned_engineers.some(e => e.id === currentUser.id)) return true;
             if (!p.responsible_engineer) return false;
             const normProj = p.responsible_engineer.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
             return normProj.includes(normUser) || normUser.includes(normProj);
@@ -130,42 +132,60 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       setCustomQuantity('1');
       setCustomListFilter('');
       setCustomStockFilter('todos');
+      setQuotasMap({});
     }
   }, [isOpen, preselectedProjectId]);
 
-  // Quando o projeto selecionado muda, busca materiais orçados da obra
+  // Mapa de cotas e saldos disponíveis do orçamento (Requisito 4)
+  const [quotasMap, setQuotasMap] = useState<Record<number, any>>({});
+
+  // Quando o projeto selecionado muda, busca materiais orçados da obra e cotas disponíveis
   useEffect(() => {
     if (selectedProjectId) {
       setLoadingBudget(true);
-      api.getBudget(selectedProjectId)
-        .then((budgetData: any) => {
-          if (budgetData && budgetData.items && budgetData.items.length > 0) {
-            setBudgetItems(budgetData.items);
-            setRequestMode('batch');
-            const allIds = new Set<number>(budgetData.items.map((it: any) => it.id));
-            setSelectedItemIds(allIds);
+      Promise.all([
+        api.getBudget(selectedProjectId).catch(() => null),
+        api.getProjectMaterialQuotas(selectedProjectId).catch(() => null)
+      ]).then(([budgetData, quotasData]) => {
+        const qMap: Record<number, any> = {};
+        if (quotasData && quotasData.quotas) {
+          quotasData.quotas.forEach((q: any) => {
+            qMap[q.materialId] = q;
+          });
+          setQuotasMap(qMap);
+        } else {
+          setQuotasMap({});
+        }
 
-            const initialQtys: Record<number, number> = {};
-            budgetData.items.forEach((it: any) => {
-              initialQtys[it.id] = Number(it.quantity || it.ai_suggested_quantity || 1);
-            });
-            setItemQuantities(initialQtys);
-          } else {
-            setBudgetItems([]);
-            setRequestMode('custom');
-          }
-        })
-        .catch(() => {
+        if (budgetData && budgetData.items && budgetData.items.length > 0) {
+          setBudgetItems(budgetData.items);
+          setRequestMode('batch');
+          const allIds = new Set<number>(budgetData.items.map((it: any) => it.id));
+          setSelectedItemIds(allIds);
+
+          const initialQtys: Record<number, number> = {};
+          budgetData.items.forEach((it: any) => {
+            const q = qMap[it.material_id];
+            // Se houver cota remanescente, sugere o saldo; caso esgotado, sugere o previsto
+            const remaining = q ? q.remainingQuota : Number(it.quantity || 1);
+            initialQtys[it.id] = remaining > 0 ? remaining : Number(it.quantity || 1);
+          });
+          setItemQuantities(initialQtys);
+        } else {
           setBudgetItems([]);
           setRequestMode('custom');
-        })
-        .finally(() => {
-          setLoadingBudget(false);
-        });
+        }
+      }).catch(() => {
+        setBudgetItems([]);
+        setRequestMode('custom');
+      }).finally(() => {
+        setLoadingBudget(false);
+      });
     } else {
       setBudgetItems([]);
       setSelectedItemIds(new Set());
       setItemQuantities({});
+      setQuotasMap({});
     }
   }, [selectedProjectId]);
 
@@ -186,16 +206,29 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const deficit = Math.max(0, requestedQty - available);
       const isSelected = selectedItemIds.has(it.id);
 
+      const quota = quotasMap[it.material_id];
+      const budgetQuantity = quota ? Number(quota.budgetQuantity || 0) : Number(it.quantity || 0);
+      const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
+      const remainingQuota = quota ? Number(quota.remainingQuota || 0) : Math.max(0, budgetQuantity - previouslyRequested);
+
+      const isOverBudget = it.isExtra || requestedQty > remainingQuota;
+      const extraQuantity = it.isExtra ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+
       return {
         ...it,
         availableStock: available,
         currentRequestedQty: requestedQty,
         reservable,
         deficit,
-        isSelected
+        isSelected,
+        budgetQuantity,
+        previouslyRequested,
+        remainingQuota,
+        isOverBudget,
+        extraQuantity
       };
     });
-  }, [budgetItems, materials, itemQuantities, selectedItemIds]);
+  }, [budgetItems, materials, itemQuantities, selectedItemIds, quotasMap]);
 
   const filteredBatchItems = useMemo(() => {
     return batchItemsWithMetrics.filter(it => {
@@ -215,10 +248,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const selected = batchItemsWithMetrics.filter(it => it.isSelected);
     const fullyAvailable = selected.filter(it => it.deficit === 0).length;
     const withDeficit = selected.filter(it => it.deficit > 0).length;
+    const overBudgetCount = selected.filter(it => it.isOverBudget).length;
     return {
       totalSelected: selected.length,
       fullyAvailable,
-      withDeficit
+      withDeficit,
+      overBudgetCount,
+      requiresAdminApproval: overBudgetCount > 0
     };
   }, [batchItemsWithMetrics]);
 
@@ -325,16 +361,31 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const deficit = Math.max(0, requestedQty - available);
       const isSelected = selectedCustomIds.has(it.id);
 
+      const quota = quotasMap[it.material_id];
+      const isInBudget = Boolean(quota && quota.budgetQuantity > 0);
+      const budgetQuantity = quota ? Number(quota.budgetQuantity || 0) : 0;
+      const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
+      const remainingQuota = quota ? Number(quota.remainingQuota || 0) : 0;
+
+      const isOverBudget = !isInBudget || requestedQty > remainingQuota;
+      const extraQuantity = !isInBudget ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+
       return {
         ...it,
         availableStock: available,
         currentRequestedQty: requestedQty,
         reservable,
         deficit,
-        isSelected
+        isSelected,
+        isInBudget,
+        budgetQuantity,
+        previouslyRequested,
+        remainingQuota,
+        isOverBudget,
+        extraQuantity
       };
     });
-  }, [customItems, materials, customQuantities, selectedCustomIds]);
+  }, [customItems, materials, customQuantities, selectedCustomIds, quotasMap]);
 
   const filteredCustomItems = useMemo(() => {
     return customItemsWithMetrics.filter(it => {
@@ -354,10 +405,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const selected = customItemsWithMetrics.filter(it => it.isSelected);
     const fullyAvailable = selected.filter(it => it.deficit === 0).length;
     const withDeficit = selected.filter(it => it.deficit > 0).length;
+    const overBudgetCount = selected.filter(it => it.isOverBudget).length;
     return {
       totalSelected: selected.length,
       fullyAvailable,
-      withDeficit
+      withDeficit,
+      overBudgetCount,
+      requiresAdminApproval: overBudgetCount > 0
     };
   }, [customItemsWithMetrics]);
 
@@ -640,7 +694,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               ) : (
                 <div className="space-y-3">
                   {/* Resumo Dinâmico em Cards */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                     <div className="p-3 bg-dark-850 rounded-2xl border border-dark-700">
                       <div className="text-[10px] uppercase font-bold text-slate-400">Selecionados</div>
                       <div className="text-lg font-black text-white">{selectedBatchStats.totalSelected} de {budgetItems.length}</div>
@@ -656,6 +710,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                         <ShoppingCart className="w-3 h-3" /> Compras
                       </div>
                       <div className="text-lg font-black text-rose-300">{selectedBatchStats.withDeficit} com déficit</div>
+                    </div>
+                    <div className={`p-3 rounded-2xl border ${selectedBatchStats.requiresAdminApproval ? 'bg-amber-950/40 border-amber-600/50' : 'bg-emerald-950/30 border-emerald-600/30'}`}>
+                      <div className={`text-[10px] uppercase font-bold flex items-center justify-center gap-1 ${selectedBatchStats.requiresAdminApproval ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        <AlertTriangle className="w-3 h-3" /> Status Orçamento
+                      </div>
+                      <div className={`text-lg font-black ${selectedBatchStats.requiresAdminApproval ? 'text-amber-300' : 'text-emerald-300'}`}>
+                        {selectedBatchStats.requiresAdminApproval ? `${selectedBatchStats.overBudgetCount} item(s) extra` : '100% na Cota'}
+                      </div>
                     </div>
                   </div>
 
@@ -899,9 +961,21 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                                  <span>{it.material_code || 'S/ Código'}</span>
-                                  <span>• Previsto no Orçamento: <strong className="text-slate-200">{it.quantity} {it.unit}</strong></span>
+                                <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-1 flex-wrap">
+                                  <span className="font-mono text-slate-300">{it.material_code || 'S/ Código'}</span>
+                                  <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
+                                  <span>• Já Solicitado: <strong className="text-slate-300">{it.previouslyRequested} {it.unit}</strong></span>
+                                  <span>• Saldo Disponível: <strong className={it.remainingQuota > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold'}>{it.remainingQuota} {it.unit}</strong></span>
+                                  {it.isOverBudget ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                      Excede cota em +{it.extraQuantity} {it.unit} (Aprovação Admin)
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                                      ✓ Cota respeitada
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1070,7 +1144,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               ) : (
                 <div className="space-y-3">
                   {/* Resumo Dinâmico em Cards da Lista Avulsa */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                     <div className="p-3 bg-dark-850 rounded-2xl border border-dark-700">
                       <div className="text-[10px] uppercase font-bold text-slate-400">Selecionados</div>
                       <div className="text-lg font-black text-white">{selectedCustomStats.totalSelected} de {customItems.length}</div>
@@ -1086,6 +1160,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                         <ShoppingCart className="w-3 h-3" /> Compras
                       </div>
                       <div className="text-lg font-black text-rose-300">{selectedCustomStats.withDeficit} com déficit</div>
+                    </div>
+                    <div className={`p-3 rounded-2xl border ${selectedCustomStats.requiresAdminApproval ? 'bg-amber-950/40 border-amber-600/50' : 'bg-emerald-950/30 border-emerald-600/30'}`}>
+                      <div className={`text-[10px] uppercase font-bold flex items-center justify-center gap-1 ${selectedCustomStats.requiresAdminApproval ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        <AlertTriangle className="w-3 h-3" /> Status Orçamento
+                      </div>
+                      <div className={`text-lg font-black ${selectedCustomStats.requiresAdminApproval ? 'text-amber-300' : 'text-emerald-300'}`}>
+                        {selectedCustomStats.requiresAdminApproval ? `${selectedCustomStats.overBudgetCount} item(s) extra` : '100% na Cota'}
+                      </div>
                     </div>
                   </div>
 
@@ -1164,10 +1246,34 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             className="w-4 h-4 rounded mt-0.5 accent-sabrar-600 cursor-pointer"
                           />
                           <div className="min-w-0">
-                            <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
-                            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
+                              {!it.isInBudget ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 text-amber-400" /> Fora do Orçamento (Aprovação Admin)
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-1 flex-wrap font-mono">
                               <span>{it.material_code || 'S/ Código'}</span>
                               <span>• Unidade: <strong className="text-slate-200">{it.unit}</strong></span>
+                              {it.isInBudget ? (
+                                <>
+                                  <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
+                                  <span>• Já Solicitado: <strong className="text-slate-300">{it.previouslyRequested} {it.unit}</strong></span>
+                                  <span>• Saldo: <strong className={it.remainingQuota > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold'}>{it.remainingQuota} {it.unit}</strong></span>
+                                  {it.isOverBudget ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                      Excede cota em +{it.extraQuantity} {it.unit} (Aprovação Admin)
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                                      ✓ Cota respeitada
+                                    </span>
+                                  )}
+                                </>
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -1221,6 +1327,21 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </div>
           )}
 
+          {/* Banner de Aviso de Aprovação de Administrador */}
+          {((requestMode === 'batch' && selectedBatchStats.requiresAdminApproval) ||
+            (requestMode === 'custom' && selectedCustomStats.requiresAdminApproval)) && (
+            <div className="p-3.5 bg-amber-950/40 border border-amber-500/50 rounded-2xl flex items-start gap-3 text-amber-200 text-xs">
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-amber-300">Solicitação Contém Materiais Extras / Acima da Cota Orçada</div>
+                <p className="text-amber-200/80 text-[11px] mt-0.5">
+                  Esta solicitação ultrapassa as quantidades ou inclui itens fora do orçamento aprovado da obra.
+                  Conforme as diretrizes da Sabrar Engenharia, ela será encaminhada para <strong>análise e aprovação de um Administrador</strong> antes de liberar a separação e compras.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Prioridade e Observações */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
@@ -1262,24 +1383,37 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={
-                loading ||
-                (requestMode === 'batch' && selectedBatchStats.totalSelected === 0) ||
-                (requestMode === 'custom' && selectedCustomStats.totalSelected === 0)
-              }
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all disabled:opacity-50 active:scale-95"
-            >
-              <Send className="w-4 h-4" />
-              <span>
-                {loading
-                  ? 'Processando...'
-                  : requestMode === 'batch'
-                  ? `Emitir Solicitação (${selectedBatchStats.totalSelected} materiais)`
-                  : `Emitir Solicitação (${selectedCustomStats.totalSelected} materiais)`}
-              </span>
-            </button>
+            {(() => {
+              const isApprovalRequired =
+                (requestMode === 'batch' && selectedBatchStats.requiresAdminApproval) ||
+                (requestMode === 'custom' && selectedCustomStats.requiresAdminApproval);
+              const count = requestMode === 'batch' ? selectedBatchStats.totalSelected : selectedCustomStats.totalSelected;
+
+              return (
+                <button
+                  type="submit"
+                  disabled={
+                    loading ||
+                    (requestMode === 'batch' && selectedBatchStats.totalSelected === 0) ||
+                    (requestMode === 'custom' && selectedCustomStats.totalSelected === 0)
+                  }
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-all disabled:opacity-50 active:scale-95 ${
+                    isApprovalRequired
+                      ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
+                      : 'bg-sabrar-600 hover:bg-sabrar-500 shadow-sabrar-600/30'
+                  }`}
+                >
+                  {isApprovalRequired ? <AlertTriangle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                  <span>
+                    {loading
+                      ? 'Processando...'
+                      : isApprovalRequired
+                      ? `Enviar para Aprovação do Administrador (${count} materiais)`
+                      : `Emitir Solicitação (${count} materiais)`}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         </form>
       </div>

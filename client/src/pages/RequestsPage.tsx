@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Plus, Search, Filter, HardHat, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { ClipboardList, Plus, Search, Filter, HardHat, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Package, Printer, ShieldCheck, Check, X } from 'lucide-react';
 import { MaterialRequest } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { NewRequestModal } from '../components/modals/NewRequestModal';
+import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 
 export const RequestsPage: React.FC = () => {
+  const { currentUser } = useAuth();
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [loading, setLoading] = useState(true);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+  const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<MaterialRequest | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   // Conjunto de solicitações expandidas na lista (accordion retraível)
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
@@ -40,6 +45,38 @@ export const RequestsPage: React.FC = () => {
       console.error('Erro ao carregar solicitações:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveExtra = async (request: MaterialRequest) => {
+    const notes = window.prompt(`Aprovar materiais extras da solicitação #${request.code}?\n\n(Opcional) Digite alguma observação ou despacho da diretoria:`, 'Aprovado pelo administrador');
+    if (notes === null) return;
+    setActionLoadingId(request.id);
+    try {
+      await api.approveExtraRequest(request.id, currentUser?.id, notes);
+      await fetchRequests();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao aprovar solicitação extra');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRejectExtra = async (request: MaterialRequest) => {
+    const reason = window.prompt(`Recusar solicitação extra #${request.code}?\n\nInforme o motivo da recusa para a engenharia:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert('É obrigatório informar o motivo da recusa.');
+      return;
+    }
+    setActionLoadingId(request.id);
+    try {
+      await api.rejectExtraRequest(request.id, currentUser?.id, reason);
+      await fetchRequests();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao rejeitar solicitação extra');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -87,6 +124,7 @@ export const RequestsPage: React.FC = () => {
           className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
         >
           <option value="">Todos os Status</option>
+          <option value="Aguardando aprovação">Aguardando aprovação</option>
           <option value="Solicitado">Solicitado</option>
           <option value="Reservado">Reservado</option>
           <option value="Em separação">Em separação</option>
@@ -146,12 +184,84 @@ export const RequestsPage: React.FC = () => {
                     </span>
                     <StatusBadge status={r.priority} size="sm" />
                     <StatusBadge status={r.status} size="sm" />
+                    {r.requires_admin_approval && (
+                      r.admin_approval_status === 'Aprovado' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                          Extras Aprovados por {r.admin_approved_by_name || 'Administrador'}
+                        </span>
+                      ) : r.admin_approval_status === 'Rejeitado' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-950 text-rose-300 border border-rose-700">
+                          <X className="w-3.5 h-3.5 text-rose-400" />
+                          Extras Rejeitados
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-950 text-amber-300 border border-amber-600/50">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          Aguardando Aprovação de Administrador (Extras)
+                        </span>
+                      )
+                    )}
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Por: <span className="font-semibold text-slate-200">{r.requested_by_name}</span> •{' '}
-                    {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                  <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+                    <div className="text-xs text-slate-400 mr-1">
+                      Por: <span className="font-semibold text-slate-200">{r.requested_by_name}</span> •{' '}
+                      {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                    </div>
+
+                    {/* Botão Imprimir Romaneio de Materiais */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRequestForPrint(r)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-white text-xs font-bold border border-dark-700 hover:border-slate-500 transition-colors shadow-sm"
+                      title="Imprimir romaneio de separação da obra"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-sabrar-400" />
+                      <span>Imprimir Romaneio</span>
+                    </button>
+
+                    {/* Ações de Aprovação do Administrador */}
+                    {currentUser?.role === 'admin' && r.requires_admin_approval && r.admin_approval_status === 'Pendente' && (
+                      <div className="flex items-center gap-1.5 ml-1">
+                        <button
+                          type="button"
+                          disabled={actionLoadingId === r.id}
+                          onClick={() => handleApproveExtra(r)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 active:scale-95"
+                          title="Aprovar materiais extras desta obra"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{actionLoadingId === r.id ? 'Aprovando...' : 'Aprovar Extras'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={actionLoadingId === r.id}
+                          onClick={() => handleRejectExtra(r)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 disabled:opacity-50 active:scale-95"
+                          title="Rejeitar solicitação de materiais extras"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Rejeitar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Banner de Aviso quando aguarda aprovação */}
+                {r.requires_admin_approval && r.admin_approval_status === 'Pendente' && (
+                  <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl flex items-start gap-2.5 text-xs text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Solicitação pendente de aprovação:</span> Esta solicitação contém itens ou quantidades extras além do orçamento aprovado da obra.
+                      {currentUser?.role === 'admin' ? (
+                        <span className="ml-1 text-amber-200">Como administrador, você pode aprovar ou rejeitar os materiais extras pelos botões acima.</span>
+                      ) : (
+                        <span className="ml-1 text-amber-200">Aguardando análise e autorização de um administrador antes da separação no almoxarifado.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Itens Solicitados com Accordion Retraível */}
                 {(() => {
@@ -206,9 +316,19 @@ export const RequestsPage: React.FC = () => {
                         <div className="p-3 border-t border-dark-700 space-y-2 bg-dark-900/40 animate-fadeIn">
                           {items.map((it: any) => (
                             <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1 py-1 border-b border-dark-800 last:border-0">
-                              <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-bold text-white">{it.material_name}</span>
-                                <span className="text-[11px] text-slate-400 ml-2 font-mono">({it.material_code})</span>
+                                <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
+                                {it.is_extra && (
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
+                                    Extra Obra
+                                  </span>
+                                )}
+                                {it.extra_quantity != null && it.extra_quantity > 0 && (
+                                  <span className="text-[10px] text-amber-400 font-semibold">
+                                    (+{it.extra_quantity} acima da cota orçada de {it.budget_quantity})
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-2.5 flex-wrap">
                                 <span className="text-slate-300">
@@ -248,11 +368,17 @@ export const RequestsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modals */}
       <NewRequestModal
         isOpen={isNewRequestModalOpen}
         onClose={() => setIsNewRequestModalOpen(false)}
         onSuccess={() => fetchRequests()}
+      />
+
+      <PrintRequestModal
+        isOpen={!!selectedRequestForPrint}
+        onClose={() => setSelectedRequestForPrint(null)}
+        request={selectedRequestForPrint}
       />
     </div>
   );

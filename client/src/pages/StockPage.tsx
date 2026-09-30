@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Check, ArrowUpRight, ArrowDownRight, Clock, AlertTriangle, CheckCircle, Package, Play, CheckCircle2, Truck, ChevronRight, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Layers, Check, ArrowUpRight, ArrowDownRight, Clock, AlertTriangle, CheckCircle, Package, Play, CheckCircle2, Truck, ChevronRight, ChevronDown, ChevronUp, Filter, Printer } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando' | 'separacao' | 'separado' | 'entregue'>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'aguardando' | 'separacao' | 'separado' | 'entregue'>('todos');
   const [summary, setSummary] = useState<any>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
 
   // Conjunto de solicitações expandidas na lista (accordion retraível)
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
@@ -154,12 +156,14 @@ export const StockPage: React.FC = () => {
 
       {/* TAB 1: FILA DE SEPARAÇÃO & ENTREGA */}
       {!loading && activeTab === 'separacao' && (() => {
+        const awaitingApprovalCount = pendingRequests.filter(r => r.status === 'Aguardando aprovação').length;
         const waitingCount = pendingRequests.filter(r => ['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(r.status)).length;
         const inProgressCount = pendingRequests.filter(r => r.status === 'Em separação').length;
         const separatedCount = pendingRequests.filter(r => r.status === 'Separado').length;
         const deliveredCount = pendingRequests.filter(r => r.status === 'Entregue').length;
 
         const filteredRequests = pendingRequests.filter(req => {
+          if (statusFilter === 'aguardando_aprovacao') return req.status === 'Aguardando aprovação';
           if (statusFilter === 'aguardando') return ['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status);
           if (statusFilter === 'separacao') return req.status === 'Em separação';
           if (statusFilter === 'separado') return req.status === 'Separado';
@@ -178,6 +182,7 @@ export const StockPage: React.FC = () => {
 
               {[
                 { id: 'todos', label: 'Todos', count: pendingRequests.length },
+                { id: 'aguardando_aprovacao', label: 'Aguardando Aprovação Admin', count: awaitingApprovalCount },
                 { id: 'aguardando', label: 'Aguardando Separação', count: waitingCount },
                 { id: 'separacao', label: 'Em Separação', count: inProgressCount },
                 { id: 'separado', label: 'Separados / Prontos', count: separatedCount },
@@ -220,9 +225,26 @@ export const StockPage: React.FC = () => {
                       <span className="font-extrabold text-sm text-white">{req.project_name}</span>
                       <StatusBadge status={req.priority} size="sm" />
                       <StatusBadge status={req.status} size="sm" />
+                      {req.status === 'Aguardando aprovação' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-950 text-amber-300 border border-amber-600/50">
+                          <AlertTriangle className="w-3 h-3 text-amber-400" />
+                          Aguardando Aprovação Admin (Extras)
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      Solicitado por: <span className="font-semibold text-slate-200">{req.requested_by_name}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="text-[11px] text-slate-400">
+                        Solicitado por: <span className="font-semibold text-slate-200">{req.requested_by_name}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRequestForPrint(req)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-white text-xs font-bold border border-dark-700 hover:border-slate-500 transition-colors shadow-sm"
+                        title="Imprimir romaneio de separação de materiais para o almoxarifado"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-sabrar-400" />
+                        <span>Imprimir Romaneio</span>
+                      </button>
                     </div>
                   </div>
 
@@ -279,9 +301,14 @@ export const StockPage: React.FC = () => {
                           <div className="p-3 border-t border-dark-700 space-y-2 bg-dark-900/40 animate-fadeIn">
                             {items.map((it: any) => (
                               <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1 py-1 border-b border-dark-800 last:border-0">
-                                <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-bold text-white">{it.material_name}</span>
-                                  <span className="text-[11px] text-slate-400 ml-2 font-mono">({it.material_code})</span>
+                                  <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
+                                  {it.is_extra && (
+                                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
+                                      Extra Obra
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2.5 flex-wrap">
                                   <span className="text-slate-300">
@@ -309,108 +336,121 @@ export const StockPage: React.FC = () => {
                     );
                   })()}
 
-                  {/* Interactive Stepper Pipeline */}
-                  <div className="pt-2 border-t border-dark-750">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2 font-medium">
-                      <span>Etapa do Fluxo de Separação</span>
-                      <span className="text-slate-500">Clique nas etapas para alterar o status</span>
+                  {req.status === 'Aguardando aprovação' ? (
+                    <div className="pt-2 border-t border-dark-750">
+                      <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl flex items-start gap-2.5 text-xs text-amber-300">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold">Aguardando Aprovação de Administrador:</span> Esta solicitação contém materiais que excedem as cotas orçadas da obra. O fluxo de separação física e reservas de estoque só poderão ser executados após aprovação por um Administrador.
+                        </div>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
-                      {[
-                        { key: 'solicitado', label: '1. Solicitado / Reservado', statuses: ['Solicitado', 'Reservado', 'Parcialmente Atendido'], targetStatus: 'Reservado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
-                        { key: 'separacao', label: '2. Em Separação', statuses: ['Em separação'], targetStatus: 'Em separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
-                        { key: 'separado', label: '3. Separado', statuses: ['Separado'], targetStatus: 'Separado', color: 'border-teal-500/50 bg-teal-950/40 text-teal-300' },
-                        { key: 'entregue', label: '4. Entregue no Canteiro', statuses: ['Entregue'], targetStatus: 'Entregue', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
-                      ].map((step, idx) => {
-                        const isCurrent = step.statuses.includes(req.status);
-                        const isCompleted = (
-                          (step.key === 'solicitado' && ['Em separação', 'Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'separacao' && ['Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'separado' && req.status === 'Entregue')
-                        );
+                  ) : (
+                    <>
+                      {/* Interactive Stepper Pipeline */}
+                      <div className="pt-2 border-t border-dark-750">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2 font-medium">
+                          <span>Etapa do Fluxo de Separação</span>
+                          <span className="text-slate-500">Clique nas etapas para alterar o status</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+                          {[
+                            { key: 'solicitado', label: '1. Solicitado / Reservado', statuses: ['Solicitado', 'Reservado', 'Parcialmente Atendido'], targetStatus: 'Reservado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
+                            { key: 'separacao', label: '2. Em Separação', statuses: ['Em separação'], targetStatus: 'Em separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
+                            { key: 'separado', label: '3. Separado', statuses: ['Separado'], targetStatus: 'Separado', color: 'border-teal-500/50 bg-teal-950/40 text-teal-300' },
+                            { key: 'entregue', label: '4. Entregue no Canteiro', statuses: ['Entregue'], targetStatus: 'Entregue', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
+                          ].map((step, idx) => {
+                            const isCurrent = step.statuses.includes(req.status);
+                            const isCompleted = (
+                              (step.key === 'solicitado' && ['Em separação', 'Separado', 'Entregue'].includes(req.status)) ||
+                              (step.key === 'separacao' && ['Separado', 'Entregue'].includes(req.status)) ||
+                              (step.key === 'separado' && req.status === 'Entregue')
+                            );
 
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => handleUpdateStatus(req.id, step.targetStatus)}
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => handleUpdateStatus(req.id, step.targetStatus)}
+                                disabled={updatingId === req.id}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                  isCurrent
+                                    ? `${step.color} ring-2 ring-white/20 shadow-md`
+                                    : isCompleted
+                                    ? 'border-dark-700 bg-dark-850 text-slate-300 hover:border-slate-500'
+                                    : 'border-dark-800 bg-dark-900/40 text-slate-500 hover:border-dark-700'
+                                }`}
+                                title={`Mover para: ${step.label}`}
+                              >
+                                {isCompleted && <Check className="w-3 h-3 text-sabrar-400 shrink-0" />}
+                                <span className="truncate">{step.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Almoxarifado Step-Actions & Status Selector */}
+                      <div className="pt-2 border-t border-dark-750 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-400 font-semibold">Alterar status:</span>
+                          <select
+                            value={req.status}
                             disabled={updatingId === req.id}
-                            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                              isCurrent
-                                ? `${step.color} ring-2 ring-white/20 shadow-md`
-                                : isCompleted
-                                ? 'border-dark-700 bg-dark-850 text-slate-300 hover:border-slate-500'
-                                : 'border-dark-800 bg-dark-900/40 text-slate-500 hover:border-dark-700'
-                            }`}
-                            title={`Mover para: ${step.label}`}
+                            onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
+                            className="bg-dark-800 text-white text-xs border border-dark-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sabrar-500 font-semibold cursor-pointer disabled:opacity-50"
                           >
-                            {isCompleted && <Check className="w-3 h-3 text-sabrar-400 shrink-0" />}
-                            <span className="truncate">{step.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            <option value="Reservado">Reservado</option>
+                            <option value="Solicitado">Solicitado</option>
+                            <option value="Em separação">Em separação</option>
+                            <option value="Separado">Separado</option>
+                            <option value="Entregue">Entregue</option>
+                          </select>
+                        </div>
 
-                  {/* Almoxarifado Step-Actions & Status Selector */}
-                  <div className="pt-2 border-t border-dark-750 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-400 font-semibold">Alterar status:</span>
-                      <select
-                        value={req.status}
-                        disabled={updatingId === req.id}
-                        onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
-                        className="bg-dark-800 text-white text-xs border border-dark-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sabrar-500 font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        <option value="Reservado">Reservado</option>
-                        <option value="Solicitado">Solicitado</option>
-                        <option value="Em separação">Em separação</option>
-                        <option value="Separado">Separado</option>
-                        <option value="Entregue">Entregue</option>
-                      </select>
-                    </div>
+                        <div className="flex items-center gap-2">
+                          {['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status) && (
+                            <button
+                              onClick={() => handleUpdateStatus(req.id, 'Em separação')}
+                              disabled={updatingId === req.id}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-white" />
+                              <span>{updatingId === req.id ? 'Atualizando...' : 'Iniciar Separação'}</span>
+                            </button>
+                          )}
 
-                    <div className="flex items-center gap-2">
-                      {['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status) && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Em separação')}
-                          disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-white" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Iniciar Separação'}</span>
-                        </button>
-                      )}
+                          {req.status === 'Em separação' && (
+                            <button
+                              onClick={() => handleUpdateStatus(req.id, 'Separado')}
+                              disabled={updatingId === req.id}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
+                            </button>
+                          )}
 
-                      {req.status === 'Em separação' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Separado')}
-                          disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
-                        </button>
-                      )}
+                          {req.status === 'Separado' && (
+                            <button
+                              onClick={() => handleUpdateStatus(req.id, 'Entregue')}
+                              disabled={updatingId === req.id}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <Truck className="w-4 h-4" />
+                              <span>{updatingId === req.id ? 'Atualizando...' : 'Confirmar Entrega na Obra'}</span>
+                            </button>
+                          )}
 
-                      {req.status === 'Separado' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Entregue')}
-                          disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <Truck className="w-4 h-4" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Confirmar Entrega na Obra'}</span>
-                        </button>
-                      )}
-
-                      {req.status === 'Entregue' && (
-                        <span className="flex items-center gap-1 text-xs text-sabrar-300 font-bold bg-sabrar-950 px-3 py-1 rounded-xl border border-sabrar-500/40">
-                          <CheckCircle className="w-4 h-4 text-sabrar-400" />
-                          <span>Entregue no Canteiro</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                          {req.status === 'Entregue' && (
+                            <span className="flex items-center gap-1 text-xs text-sabrar-300 font-bold bg-sabrar-950 px-3 py-1 rounded-xl border border-sabrar-500/40">
+                              <CheckCircle className="w-4 h-4 text-sabrar-400" />
+                              <span>Entregue no Canteiro</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -517,6 +557,12 @@ export const StockPage: React.FC = () => {
         </div>
       )}
 
+      {/* Modal de Impressão do Romaneio */}
+      <PrintRequestModal
+        isOpen={!!selectedRequestForPrint}
+        onClose={() => setSelectedRequestForPrint(null)}
+        request={selectedRequestForPrint}
+      />
     </div>
   );
 };

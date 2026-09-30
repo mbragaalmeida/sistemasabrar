@@ -56,17 +56,27 @@ projectsRouter.get('/', async (req, res) => {
 
     const projects = await db.prepare(query).all(...params);
 
-    // Adiciona contagens rápidas de solicitações e arquivos
+    // Adiciona contagens rápidas de solicitações, arquivos e engenheiros designados
     const enriched = await Promise.all(projects.map(async p => {
       const fileCount = (await db.prepare('SELECT COUNT(*) as count FROM project_files WHERE project_id = ?').get(p.id))?.count || 0;
       const requestCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE project_id = ?').get(p.id))?.count || 0;
       const budget = await db.prepare('SELECT id, code, status, total_final FROM budgets WHERE project_id = ?').get(p.id);
 
+      const assignedEngineers = await db.prepare(`
+        SELECT u.id, u.name, u.email, u.phone, u.avatar
+        FROM project_engineers pe
+        JOIN users u ON pe.user_id = u.id
+        WHERE pe.project_id = ?
+        ORDER BY u.name ASC
+      `).all(p.id);
+
       return {
         ...p,
         fileCount,
         requestCount,
-        budget: budget || null
+        budget: budget || null,
+        assigned_engineers: assignedEngineers,
+        assigned_engineer_ids: assignedEngineers.map(e => e.id)
       };
     }));
 
@@ -82,6 +92,15 @@ projectsRouter.get('/:id', async (req, res) => {
     const projectId = req.params.id;
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
+
+    // Engenheiros designados
+    const assignedEngineers = await db.prepare(`
+      SELECT u.id, u.name, u.email, u.phone, u.avatar
+      FROM project_engineers pe
+      JOIN users u ON pe.user_id = u.id
+      WHERE pe.project_id = ?
+      ORDER BY u.name ASC
+    `).all(projectId);
 
     // Documentos anexados
     const files = await db.prepare('SELECT * FROM project_files WHERE project_id = ? ORDER BY id DESC').all(projectId);
@@ -228,7 +247,11 @@ projectsRouter.get('/:id', async (req, res) => {
     });
 
     res.json({
-      project,
+      project: {
+        ...project,
+        assigned_engineers: assignedEngineers,
+        assigned_engineer_ids: assignedEngineers.map(e => e.id)
+      },
       files,
       budget: budget ? { ...budget, items: budgetItems, services, equipment } : null,
       requests: enrichedRequests,
@@ -247,7 +270,8 @@ projectsRouter.post('/', async (req, res) => {
     const {
       name, client, client_email, client_phone, address, city, state,
       project_type, start_date, expected_end_date, responsible_engineer,
-      notes, initial_spec_text, uploadedDocuments, autoAnalyze
+      notes, initial_spec_text, uploadedDocuments, autoAnalyze,
+      engineerIds, engineer_ids
     } = req.body;
 
     if (!name || !client) {
@@ -256,6 +280,19 @@ projectsRouter.post('/', async (req, res) => {
 
     // Gera código automático único: PRJ-2026-00X
     const code = await generateUniqueProjectCode(db);
+
+    // Engenheiro(s) responsável(is) - opcional na elaboração do orçamento (Requisitos 1 e 3)
+    const selectedEngineerIds = engineerIds || engineer_ids || [];
+    let finalResponsible = responsible_engineer ? responsible_engineer.trim() : null;
+
+    if (Array.isArray(selectedEngineerIds) && selectedEngineerIds.length > 0) {
+      const users = await db.prepare(`
+        SELECT name FROM users WHERE id IN (${selectedEngineerIds.map(() => '?').join(',')})
+      `).all(...selectedEngineerIds);
+      if (users.length > 0) {
+        finalResponsible = users.map(u => u.name).join(', ');
+      }
+    }
 
     const insert = db.prepare(`
       INSERT INTO projects (
@@ -268,10 +305,17 @@ projectsRouter.post('/', async (req, res) => {
       code, name, client, client_email || null, client_phone || null,
       address || 'Endereço a definir', city || 'São Paulo', state || 'SP',
       project_type || 'Comercial', start_date || null, expected_end_date || null,
-      responsible_engineer || 'Eng. Rafael Santos', notes || null
+      finalResponsible, notes || null
     );
 
     const projectId = result.lastInsertRowid;
+
+    // Vincula engenheiros na tabela relacional project_engineers
+    if (Array.isArray(selectedEngineerIds) && selectedEngineerIds.length > 0) {
+      for (const eId of selectedEngineerIds) {
+        await db.prepare('INSERT INTO project_engineers (project_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING').run(projectId, eId);
+      }
+    }
 
     // Salva documentos técnicos anexados
     if (Array.isArray(uploadedDocuments) && uploadedDocuments.length > 0) {
@@ -511,6 +555,155 @@ projectsRouter.post('/:id/files', async (req, res) => {
 
     res.status(201).json({ id: result.lastInsertRowid, original_name, type, aiResult });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Atribui / atualiza engenheiros responsáveis da obra (Administrador - Requisitos 1 e 3)
+projectsRouter.patch('/:id/engineers', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { engineerIds = [], userId } = req.body;
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
+
+    // Remove atribuições anteriores
+    await db.prepare('DELETE FROM project_engineers WHERE project_id = ?').run(projectId);
+
+    // Insere novos engenheiros atribuídos
+    let engineerNames = [];
+    if (Array.isArray(engineerIds) && engineerIds.length > 0) {
+      for (const engId of engineerIds) {
+        await db.prepare('INSERT INTO project_engineers (project_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING').run(projectId, engId);
+      }
+      const users = await db.prepare(`
+        SELECT u.id, u.name, u.email 
+        FROM users u 
+        WHERE u.id IN (${engineerIds.map(() => '?').join(',')})
+      `).all(...engineerIds);
+
+      engineerNames = users.map(u => u.name);
+
+      // Notifica cada engenheiro designado
+      for (const u of users) {
+        await db.prepare(`
+          INSERT INTO notifications (user_id, role_target, title, message, type, link)
+          VALUES (?, 'engenharia', 'Designação como Responsável Técnico', ?, 'info', ?)
+        `).run(
+          u.id,
+          `Você foi atribuído como engenheiro responsável pela obra ${project.name} (${project.code}).`,
+          `/projetos/${projectId}`
+        );
+      }
+    }
+
+    const responsibleEngineerString = engineerNames.length > 0 ? engineerNames.join(', ') : null;
+
+    // Atualiza campo na tabela projects
+    await db.prepare(`
+      UPDATE projects 
+      SET responsible_engineer = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(responsibleEngineerString, projectId);
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
+      VALUES (?, 'ATRIBUIR_ENGENHEIROS', 'PROJETO', ?, ?, ?, ?, ?)
+    `).run(
+      userId || 1, projectId, projectId,
+      project.responsible_engineer || 'Nenhum',
+      responsibleEngineerString || 'Nenhum',
+      `Administrador atualizou os engenheiros responsáveis da obra ${project.name}: ${responsibleEngineerString || 'Nenhum atribuído'}`
+    );
+
+    const assignedEngineers = await db.prepare(`
+      SELECT u.id, u.name, u.email, u.phone, u.avatar
+      FROM project_engineers pe
+      JOIN users u ON pe.user_id = u.id
+      WHERE pe.project_id = ?
+      ORDER BY u.name ASC
+    `).all(projectId);
+
+    res.json({
+      success: true,
+      projectId,
+      responsible_engineer: responsibleEngineerString,
+      assigned_engineers: assignedEngineers,
+      assigned_engineer_ids: assignedEngineers.map(e => e.id)
+    });
+  } catch (err) {
+    console.error('[Assign Engineers Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Retorna cotas orçadas, acumulado solicitado e saldo disponível de cada material da obra (Requisitos 2 e 4)
+projectsRouter.get('/:id/material-quotas', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
+
+    const budget = await db.prepare('SELECT id, status FROM budgets WHERE project_id = ?').get(projectId);
+    let budgetItems = [];
+    if (budget) {
+      budgetItems = await db.prepare(`
+        SELECT bi.*, m.code as material_code, m.unit as material_unit, m.stock_physical, m.stock_reserved
+        FROM budget_items bi
+        LEFT JOIN materials m ON bi.material_id = m.id
+        WHERE bi.budget_id = ?
+        ORDER BY bi.id ASC
+      `).all(budget.id);
+    }
+
+    // Calcula acumulado solicitado de cada material para esta obra (excluindo solicitações canceladas)
+    const requestsItems = await db.prepare(`
+      SELECT mri.material_id, SUM(mri.quantity_requested) as total_requested
+      FROM material_request_items mri
+      JOIN material_requests mr ON mri.request_id = mr.id
+      WHERE mr.project_id = ? AND mr.status != 'Cancelado'
+      GROUP BY mri.material_id
+    `).all(projectId);
+
+    const requestedMap = new Map();
+    for (const r of requestsItems) {
+      requestedMap.set(r.material_id, Number(r.total_requested || 0));
+    }
+
+    const quotas = budgetItems.map(bi => {
+      const previouslyRequested = requestedMap.get(bi.material_id) || 0;
+      const budgetQuantity = Number(bi.quantity || 0);
+      const remainingQuota = Math.max(0, budgetQuantity - previouslyRequested);
+      const physical = Number(bi.stock_physical || 0);
+      const reserved = Number(bi.stock_reserved || 0);
+      const availableStock = Math.max(0, physical - reserved);
+
+      return {
+        budgetItemId: bi.id,
+        materialId: bi.material_id,
+        materialName: bi.material_name,
+        materialCode: bi.material_code,
+        unit: bi.unit || bi.material_unit,
+        unitPrice: bi.unit_price,
+        budgetQuantity,
+        previouslyRequested,
+        remainingQuota,
+        physicalStock: physical,
+        reservedStock: reserved,
+        availableStock
+      };
+    });
+
+    res.json({
+      projectId,
+      hasBudget: Boolean(budget),
+      budgetStatus: budget?.status,
+      quotas
+    });
+  } catch (err) {
+    console.error('[Material Quotas Error]', err);
     res.status(500).json({ error: err.message });
   }
 });

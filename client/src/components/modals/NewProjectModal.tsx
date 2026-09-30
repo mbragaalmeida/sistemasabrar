@@ -32,7 +32,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
-  const [responsibleEngineer, setResponsibleEngineer] = useState('Eng. Rafael Santos');
+  const [responsibleEngineer, setResponsibleEngineer] = useState('');
   const [estimatedArea, setEstimatedArea] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -226,15 +226,21 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Engenheiro Responsável
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Engenheiro Responsável <span className="text-[10px] text-amber-400/90 font-normal lowercase">(opcional no orçamento)</span>
+                </label>
+              </div>
               <input
                 type="text"
                 value={responsibleEngineer}
                 onChange={(e) => setResponsibleEngineer(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+                placeholder="Ex: A definir pelo administrador ou digite um nome..."
+                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500"
               />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Não é obrigatório na fase de orçamento. O administrador poderá designar um ou mais engenheiros após aprovação.
+              </p>
             </div>
           </div>
 

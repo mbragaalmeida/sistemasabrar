@@ -31,6 +31,7 @@ import { ClientProposalModal } from '../components/budget/ClientProposalModal';
 import { NewRequestModal } from '../components/modals/NewRequestModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { ImportSpreadsheetModal } from '../components/modals/ImportSpreadsheetModal';
+import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 
 interface ProjectDetailPageProps {
   projectId: number;
@@ -54,6 +55,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
   const [isNewReturnModalOpen, setIsNewReturnModalOpen] = useState(false);
   const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
+  const [isAssignEngineersModalOpen, setIsAssignEngineersModalOpen] = useState(false);
 
   // Estados locais para edição de orçamento
   const [editableMaterials, setEditableMaterials] = useState<any[]>([]);
@@ -196,6 +198,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     try {
       await api.approveBudget(budget.id, currentUser?.id, currentUser?.name);
       await fetchProjectData();
+      if (!project.responsible_engineer || (project.assigned_engineers && project.assigned_engineers.length === 0)) {
+        setIsAssignEngineersModalOpen(true);
+      }
     } catch (err) {
       console.error('Erro ao aprovar orçamento:', err);
     }
@@ -292,6 +297,18 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <span className="hidden sm:inline">Solicitar Material</span>
               </button>
             )}
+
+            {hasPermission(['admin']) && (
+              <button
+                onClick={() => setIsAssignEngineersModalOpen(true)}
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-dark-800 hover:bg-dark-750 text-amber-300 border border-amber-600/40 text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-xs"
+                title="Atribuir ou Gerenciar Engenheiros Responsáveis pela Obra"
+              >
+                <HardHat className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-amber-400" />
+                <span className="sm:hidden">Engenheiros</span>
+                <span className="hidden sm:inline">Engenheiros da Obra</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -383,11 +400,47 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       {activeTab === 'geral' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 animate-in fade-in">
           <div className="lg:col-span-2 space-y-4">
+            {/* Alerta de Obra Aprovada sem Engenheiro Atribuído (Requisitos 1 e 3) */}
+            {['Aprovado', 'Em execução'].includes(project.status) && !project.responsible_engineer && (
+              <div className="p-4 bg-amber-950/40 border border-amber-600/50 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 shadow-md">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-white text-sm">Obra Aprovada — Engenheiro Responsável Pendente</div>
+                    <p className="text-[11px] text-amber-300/80 mt-0.5">
+                      O orçamento desta obra já foi aprovado. Um administrador deverá atribuir um ou mais engenheiros responsáveis para liberar as atividades e solicitações de materiais.
+                    </p>
+                  </div>
+                </div>
+                {hasPermission(['admin']) && (
+                  <button
+                    onClick={() => setIsAssignEngineersModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shrink-0 transition-colors shadow-md flex items-center gap-1.5"
+                  >
+                    <HardHat className="w-4 h-4" />
+                    <span>Atribuir Engenheiro(s)</span>
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Informações Básicas */}
             <div className="bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-md space-y-4">
-              <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">
-                Dados Técnicos da Obra
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">
+                  Dados Técnicos da Obra
+                </h3>
+                {hasPermission(['admin']) && (
+                  <button
+                    onClick={() => setIsAssignEngineersModalOpen(true)}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 bg-dark-800 hover:bg-dark-750 px-2.5 py-1 rounded-xl border border-dark-700 transition-colors"
+                  >
+                    <HardHat className="w-3.5 h-3.5" />
+                    <span>{project.responsible_engineer ? 'Alterar Engenheiros' : 'Atribuir Engenheiros'}</span>
+                  </button>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-slate-400 block font-medium">Cliente:</span>
@@ -402,8 +455,37 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   <span className="font-bold text-sabrar-400">{project.project_type}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Responsável Técnico:</span>
-                  <span className="font-semibold text-slate-300">{project.responsible_engineer}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 block font-medium">Responsável Técnico / Engenheiro(s):</span>
+                  </div>
+                  <div className="mt-0.5">
+                    {project.responsible_engineer ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-slate-200">{project.responsible_engineer}</span>
+                          {project.assigned_engineers && project.assigned_engineers.length > 1 && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-950 border border-amber-800 text-amber-300 font-bold">
+                              {project.assigned_engineers.length} engenheiros
+                            </span>
+                          )}
+                        </div>
+                        {project.assigned_engineers && project.assigned_engineers.length > 0 && (
+                          <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                            {project.assigned_engineers.map(e => (
+                              <span key={e.id} className="text-[10px] bg-dark-800 px-2 py-0.5 rounded-lg border border-dark-700 text-slate-300 flex items-center gap-1">
+                                <HardHat className="w-3 h-3 text-amber-400" />
+                                {e.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-amber-400 italic text-[11px]">
+                        Pendente de atribuição pelo administrador
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1188,6 +1270,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         onClose={() => setIsSpreadsheetModalOpen(false)}
         projectId={project.id}
         projectName={project.name}
+        onSuccess={() => fetchProjectData()}
+      />
+
+      <AssignEngineersModal
+        isOpen={isAssignEngineersModalOpen}
+        onClose={() => setIsAssignEngineersModalOpen(false)}
+        projectId={project.id}
+        projectName={project.name}
+        projectCode={project.code}
+        currentEngineerIds={project.assigned_engineer_ids || []}
         onSuccess={() => fetchProjectData()}
       />
     </div>

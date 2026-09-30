@@ -83,6 +83,9 @@ export class StockService {
 
   /**
    * Processa uma lista de materiais de uma obra em lote (ou orçamento completo).
+   * - Controla cotas previstas no orçamento aprovado (Requisito 4)
+   * - Se houver itens extras ou quantidades que excedam a cota, exige aprovação de Administrador (Requisito 2)
+   * - Se dentro do orçamento: reserva estoque e gera déficit automaticamente
    */
   static async createBatchMaterialRequest(projectId, items, priority, userId, notes = '') {
     if (!Array.isArray(items) || items.length === 0) {
@@ -95,11 +98,84 @@ export class StockService {
     const nextReqCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests').get())?.count + 1 || 1;
     const reqCode = `SOL-2026-${String(nextReqCount).padStart(4, '0')}`;
 
-    // Cria a solicitação provisória
+    // 1. Busca orçamento da obra para controle de limites
+    const budget = await db.prepare('SELECT id, status FROM budgets WHERE project_id = ?').get(projectId);
+    let budgetItems = [];
+    if (budget) {
+      budgetItems = await db.prepare('SELECT * FROM budget_items WHERE budget_id = ?').all(budget.id);
+    }
+
+    // 2. Busca histórico de solicitações já realizadas para calcular saldo consumido de cada material
+    const prevRequests = await db.prepare(`
+      SELECT mri.material_id, SUM(mri.quantity_requested) as total_requested
+      FROM material_request_items mri
+      JOIN material_requests mr ON mri.request_id = mr.id
+      WHERE mr.project_id = ? AND mr.status != 'Cancelado'
+      GROUP BY mri.material_id
+    `).all(projectId);
+
+    const prevRequestedMap = new Map();
+    for (const pr of prevRequests) {
+      prevRequestedMap.set(pr.material_id, Number(pr.total_requested || 0));
+    }
+
+    // 3. Verifica se algum item da solicitação é extra ou ultrapassa o saldo do orçamento
+    let hasExtraItems = false;
+    const itemsQuotaAnalysis = [];
+
+    for (const item of items) {
+      const materialId = item.materialId || item.material_id;
+      const qty = Number(item.quantity || item.quantity_requested);
+      if (!materialId || qty <= 0) continue;
+
+      const budgetItem = budgetItems.find(b => b.material_id === materialId);
+      let isExtra = false;
+      let budgetQuantity = 0;
+      let previouslyRequested = prevRequestedMap.get(materialId) || 0;
+      let extraQuantity = 0;
+
+      if (!budgetItem) {
+        // Material não consta no orçamento da obra -> 100% Extra
+        isExtra = true;
+        budgetQuantity = 0;
+        extraQuantity = qty;
+        hasExtraItems = true;
+      } else {
+        budgetQuantity = Number(budgetItem.quantity || 0);
+        const remainingQuota = Math.max(0, budgetQuantity - previouslyRequested);
+        if (qty > remainingQuota) {
+          // Solicitação ultrapassa o saldo disponível do orçamento
+          isExtra = true;
+          extraQuantity = Number((qty - remainingQuota).toFixed(2));
+          hasExtraItems = true;
+        }
+      }
+
+      itemsQuotaAnalysis.push({
+        materialId,
+        quantity: qty,
+        isExtra,
+        budgetQuantity,
+        previouslyRequested,
+        extraQuantity
+      });
+    }
+
+    // Se houver itens extras ou acima do limite, a solicitação fica pendente de aprovação do administrador
+    const requiresAdminApproval = hasExtraItems;
+    const initialStatus = requiresAdminApproval ? 'Aguardando aprovação' : 'Processando';
+    const initialApprovalStatus = requiresAdminApproval ? 'Pendente' : 'Aprovado';
+
+    // Cria a solicitação no banco
     const reqResult = await db.prepare(`
-      INSERT INTO material_requests (code, project_id, requested_by, priority, status, notes)
-      VALUES (?, ?, ?, ?, 'Processando', ?)
-    `).run(reqCode, projectId, userId, priority || 'Média', notes);
+      INSERT INTO material_requests (
+        code, project_id, requested_by, priority, status, notes,
+        requires_admin_approval, admin_approval_status, has_extra_items
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      reqCode, projectId, userId, priority || 'Média', initialStatus, notes,
+      requiresAdminApproval, initialApprovalStatus, hasExtraItems
+    );
 
     const requestId = reqResult.lastInsertRowid;
 
@@ -108,22 +184,51 @@ export class StockService {
     const processedItems = [];
     const purchasesCreated = [];
 
-    for (const item of items) {
-      const materialId = item.materialId || item.material_id;
-      const qty = Number(item.quantity || item.quantity_requested);
-      if (!materialId || qty <= 0) continue;
-
-      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
+    for (const analysis of itemsQuotaAnalysis) {
+      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(analysis.materialId);
       if (!mat) continue;
 
+      // Se requer aprovação do administrador, NÃO reserva estoque nem cria compras até aprovação
+      if (requiresAdminApproval) {
+        await db.prepare(`
+          INSERT INTO material_request_items (
+            request_id, material_id, quantity_requested, quantity_reserved, quantity_delivered,
+            deficit, is_extra, budget_quantity, previously_requested, extra_quantity
+          ) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?)
+        `).run(
+          requestId, analysis.materialId, analysis.quantity,
+          analysis.isExtra, analysis.budgetQuantity, analysis.previouslyRequested, analysis.extraQuantity
+        );
+
+        processedItems.push({
+          materialId: analysis.materialId,
+          materialName: mat.name,
+          materialUnit: mat.unit,
+          requestedQuantity: analysis.quantity,
+          reservedQuantity: 0,
+          deficit: 0,
+          isExtra: analysis.isExtra,
+          extraQuantity: analysis.extraQuantity,
+          budgetQuantity: analysis.budgetQuantity,
+          previouslyRequested: analysis.previouslyRequested
+        });
+        continue;
+      }
+
+      // Fluxo normal (dentro do orçamento): Reserva e Déficit imediatos
       const available = Math.max(0, mat.stock_physical - mat.stock_reserved);
-      const deficit = Math.max(0, qty - available);
-      const reservable = Math.min(qty, available);
+      const deficit = Math.max(0, analysis.quantity - available);
+      const reservable = Math.min(analysis.quantity, available);
 
       const itemResult = await db.prepare(`
-        INSERT INTO material_request_items (request_id, material_id, quantity_requested, quantity_reserved, quantity_delivered, deficit)
-        VALUES (?, ?, ?, ?, 0, ?)
-      `).run(requestId, materialId, qty, reservable, deficit);
+        INSERT INTO material_request_items (
+          request_id, material_id, quantity_requested, quantity_reserved, quantity_delivered,
+          deficit, is_extra, budget_quantity, previously_requested, extra_quantity
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+      `).run(
+        requestId, analysis.materialId, analysis.quantity, reservable, deficit,
+        analysis.isExtra, analysis.budgetQuantity, analysis.previouslyRequested, analysis.extraQuantity
+      );
 
       const requestItemId = itemResult.lastInsertRowid;
 
@@ -132,13 +237,13 @@ export class StockService {
           UPDATE materials 
           SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
           WHERE id = ?
-        `).run(reservable, materialId);
+        `).run(reservable, analysis.materialId);
 
         await db.prepare(`
           INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
           VALUES (?, 'RESERVA', ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          materialId, reservable, mat.stock_physical, mat.stock_physical,
+          analysis.materialId, reservable, mat.stock_physical, mat.stock_physical,
           projectId, requestId, userId,
           `Reserva de ${reservable} ${mat.unit} para obra ${project.name} (${reqCode})`
         );
@@ -153,11 +258,11 @@ export class StockService {
           INSERT INTO purchases (code, project_id, request_item_id, material_id, quantity, supplier_id, unit_price, total_price, status, priority, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
         `).run(
-          purchaseCode, projectId, requestItemId, materialId, deficit,
+          purchaseCode, projectId, requestItemId, analysis.materialId, deficit,
           mat.supplier_id, mat.reference_price,
           Number((deficit * mat.reference_price).toFixed(2)),
           priority === 'Urgente' ? 'Alta' : priority,
-          `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${qty}, Disponível: ${available}, Comprar: ${deficit}.`
+          `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${analysis.quantity}, Disponível: ${available}, Comprar: ${deficit}.`
         );
 
         purchasesCreated.push({
@@ -170,16 +275,58 @@ export class StockService {
       }
 
       processedItems.push({
-        materialId,
+        materialId: analysis.materialId,
         materialName: mat.name,
         materialUnit: mat.unit,
-        requestedQuantity: qty,
+        requestedQuantity: analysis.quantity,
         reservedQuantity: reservable,
-        deficit
+        deficit,
+        isExtra: analysis.isExtra,
+        extraQuantity: analysis.extraQuantity,
+        budgetQuantity: analysis.budgetQuantity,
+        previouslyRequested: analysis.previouslyRequested
       });
     }
 
-    // Define status da solicitação
+    // Se requereu aprovação do administrador:
+    if (requiresAdminApproval) {
+      // Dispara notificação urgente para o perfil Administrador Geral
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('admin', 'Materiais Extras - Aprovação de Administrador Necessária', ?, 'urgent', '/solicitacoes')
+      `).run(`A obra ${project.name} (${reqCode}) teve uma solicitação contendo materiais adicionais ou acima do orçamento previsto. Aprovação de um administrador é necessária.`);
+
+      // Log de auditoria
+      await db.prepare(`
+        INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
+        VALUES (?, 'SOLICITACAO_EXTRA_PENDENTE', 'SOLICITACAO', ?, ?, null, 'Aguardando aprovação', ?)
+      `).run(
+        userId, requestId, projectId,
+        `Solicitação ${reqCode} com materiais adicionais / acima do orçamento gerada para a obra ${project.name}. Aguarda aprovação de um Administrador.`
+      );
+
+      const firstProcessed = processedItems[0] || {};
+      return {
+        requestId,
+        code: reqCode,
+        status: 'Aguardando aprovação',
+        requiresAdminApproval: true,
+        adminApprovalStatus: 'Pendente',
+        hasExtraItems: true,
+        totalItems: processedItems.length,
+        reservedItemsCount: 0,
+        deficitItemsCount: 0,
+        processedItems,
+        purchasesCreated: [],
+        materialName: firstProcessed.materialName,
+        requestedQuantity: firstProcessed.requestedQuantity,
+        reservedQuantity: 0,
+        deficit: 0,
+        message: 'Solicitação registrada. Por conter materiais extras ou acima da cota orçada, aguarda aprovação de um Administrador.'
+      };
+    }
+
+    // Define status final da solicitação (quando aprovada / dentro do orçamento)
     let requestStatus = 'Reservado';
     if (totalDeficitItems > 0 && totalReservedItems === 0) {
       requestStatus = 'Solicitado';
@@ -191,7 +338,7 @@ export class StockService {
 
     await db.prepare('UPDATE material_requests SET status = ? WHERE id = ?').run(requestStatus, requestId);
 
-    // Dispara notificações
+    // Dispara notificações normais para Almoxarifado e Compras
     if (totalReservedItems > 0) {
       await db.prepare(`
         INSERT INTO notifications (role_target, title, message, type, link)
@@ -212,7 +359,7 @@ export class StockService {
       VALUES (?, 'CRIAR_SOLICITACAO', 'SOLICITACAO', ?, ?, null, ?, ?)
     `).run(
       userId, requestId, projectId, requestStatus,
-      `Solicitação ${reqCode} criada com ${processedItems.length} materiais (${totalReservedItems} reservados no estoque, ${totalDeficitItems} em déficit enviados para compras).`
+      `Solicitação ${reqCode} criada dentro do orçamento com ${processedItems.length} materiais (${totalReservedItems} reservados no estoque, ${totalDeficitItems} em déficit enviados para compras).`
     );
 
     const firstProcessed = processedItems[0] || {};
@@ -220,6 +367,9 @@ export class StockService {
       requestId,
       code: reqCode,
       status: requestStatus,
+      requiresAdminApproval: false,
+      adminApprovalStatus: 'Aprovado',
+      hasExtraItems: false,
       totalItems: processedItems.length,
       reservedItemsCount: totalReservedItems,
       deficitItemsCount: totalDeficitItems,
@@ -230,6 +380,164 @@ export class StockService {
       reservedQuantity: firstProcessed.reservedQuantity,
       deficit: firstProcessed.deficit,
       purchaseDemand: purchasesCreated[0] || null
+    };
+  }
+
+  /**
+   * Aprovação de solicitação com materiais extras por um Administrador (Requisito 2 e 4).
+   * Libera a reserva no estoque físico e gera pedidos de compra para eventuais déficits.
+   */
+  static async approveExtraRequest(requestId, adminUserId, notes = '') {
+    const req = await db.prepare('SELECT * FROM material_requests WHERE id = ?').get(requestId);
+    if (!req) throw new Error('Solicitação não encontrada');
+
+    if (req.admin_approval_status === 'Aprovado' && req.status !== 'Aguardando aprovação') {
+      throw new Error('Esta solicitação já foi aprovada anteriormente');
+    }
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.project_id);
+    const items = await db.prepare('SELECT * FROM material_request_items WHERE request_id = ?').all(requestId);
+
+    let totalReserved = 0;
+    let totalDeficit = 0;
+    const purchasesCreated = [];
+
+    for (const it of items) {
+      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(it.material_id);
+      if (!mat) continue;
+
+      const qty = Number(it.quantity_requested);
+      const available = Math.max(0, mat.stock_physical - mat.stock_reserved);
+      const deficit = Math.max(0, qty - available);
+      const reservable = Math.min(qty, available);
+
+      await db.prepare(`
+        UPDATE material_request_items 
+        SET quantity_reserved = ?, deficit = ?
+        WHERE id = ?
+      `).run(reservable, deficit, it.id);
+
+      if (reservable > 0) {
+        await db.prepare(`
+          UPDATE materials 
+          SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `).run(reservable, mat.id);
+
+        await db.prepare(`
+          INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+          VALUES (?, 'RESERVA', ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          mat.id, reservable, mat.stock_physical, mat.stock_physical,
+          project.id, requestId, adminUserId,
+          `Reserva autorizada pelo Admin (${reservable} ${mat.unit}) para obra ${project.name} (${req.code})`
+        );
+        totalReserved++;
+      }
+
+      if (deficit > 0) {
+        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases').get())?.count + 1 || 1;
+        const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+
+        await db.prepare(`
+          INSERT INTO purchases (code, project_id, request_item_id, material_id, quantity, supplier_id, unit_price, total_price, status, priority, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
+        `).run(
+          purchaseCode, project.id, it.id, mat.id, deficit,
+          mat.supplier_id, mat.reference_price,
+          Number((deficit * mat.reference_price).toFixed(2)),
+          req.priority === 'Urgente' ? 'Alta' : req.priority,
+          `Compra automática por déficit em solicitação extra autorizada pelo Admin (${req.code}) para a obra ${project.name}.`
+        );
+
+        purchasesCreated.push({ code: purchaseCode, materialName: mat.name, deficitQuantity: deficit });
+        totalDeficit++;
+      }
+    }
+
+    let newStatus = 'Reservado';
+    if (totalDeficit > 0 && totalReserved === 0) {
+      newStatus = 'Solicitado';
+    } else if (totalDeficit > 0 && totalReserved > 0) {
+      newStatus = 'Parcialmente Atendido';
+    }
+
+    await db.prepare(`
+      UPDATE material_requests 
+      SET status = ?, admin_approval_status = 'Aprovado', admin_approved_by = ?,
+          admin_approved_at = CURRENT_TIMESTAMP, admin_approval_notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(newStatus, adminUserId, notes || 'Aprovado pelo Administrador', requestId);
+
+    // Notifica Almoxarifado que os materiais foram liberados para separação
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('Almoxarifado', 'Solicitação Extra Aprovada pelo Administrador', ?, 'info', '/estoque')
+    `).run(`Administrador aprovou a solicitação de materiais extras ${req.code} da obra ${project.name}. Itens liberados para separação.`);
+
+    // Notifica o Engenheiro que fez a solicitação
+    await db.prepare(`
+      INSERT INTO notifications (user_id, role_target, title, message, type, link)
+      VALUES (?, 'engenharia', 'Solicitação Extra Aprovada', ?, 'success', '/solicitacoes')
+    `).run(req.requested_by, `Sua solicitação de materiais extras ${req.code} da obra ${project.name} foi APROVADA pela administração.`);
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
+      VALUES (?, 'APROVAR_SOLICITACAO_EXTRA', 'SOLICITACAO', ?, ?, 'Aguardando aprovação', ?, ?)
+    `).run(
+      adminUserId, requestId, project.id, newStatus,
+      `Administrador aprovou a solicitação com materiais extras ${req.code} da obra ${project.name}. ${totalReserved} reservado(s), ${totalDeficit} em compras.`
+    );
+
+    return {
+      success: true,
+      requestId,
+      newStatus,
+      adminApprovalStatus: 'Aprovado',
+      purchasesCreated
+    };
+  }
+
+  /**
+   * Rejeição de solicitação com materiais extras por um Administrador.
+   */
+  static async rejectExtraRequest(requestId, adminUserId, reason = '') {
+    const req = await db.prepare('SELECT * FROM material_requests WHERE id = ?').get(requestId);
+    if (!req) throw new Error('Solicitação não encontrada');
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.project_id);
+
+    await db.prepare(`
+      UPDATE material_requests 
+      SET status = 'Cancelado', admin_approval_status = 'Rejeitado', admin_approved_by = ?,
+          admin_approved_at = CURRENT_TIMESTAMP, admin_approval_notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(adminUserId, reason || 'Rejeitado pelo Administrador', requestId);
+
+    // Notifica o Engenheiro
+    await db.prepare(`
+      INSERT INTO notifications (user_id, role_target, title, message, type, link)
+      VALUES (?, 'engenharia', 'Solicitação Extra Recusada', ?, 'warning', '/solicitacoes')
+    `).run(
+      req.requested_by,
+      `Sua solicitação com materiais extras ${req.code} da obra ${project.name} foi REJEITADA pelo administrador. Motivo: ${reason || 'Não aprovado pelo controle de custos'}`
+    );
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
+      VALUES (?, 'REJEITAR_SOLICITACAO_EXTRA', 'SOLICITACAO', ?, ?, 'Aguardando aprovação', 'Cancelado', ?)
+    `).run(
+      adminUserId, requestId, project.id,
+      `Administrador rejeitou a solicitação com materiais extras ${req.code} da obra ${project.name}. Motivo: ${reason || 'Não informado'}`
+    );
+
+    return {
+      success: true,
+      requestId,
+      status: 'Cancelado',
+      adminApprovalStatus: 'Rejeitado'
     };
   }
 
