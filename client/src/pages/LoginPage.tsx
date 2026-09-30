@@ -31,12 +31,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const fillDemoUser = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('sabrar123');
-    setError(null);
-  };
-
   return (
     <div className="min-h-screen w-full bg-slate-100 dark:bg-dark-950 flex items-center justify-center p-4 relative overflow-hidden transition-colors">
       {/* Floating Theme Toggle */}
@@ -142,43 +136,6 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Perfis de Demonstração */}
-          <div className="pt-4 border-t border-slate-200 dark:border-dark-750">
-            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-500 tracking-wider mb-2 text-center">
-              Acesso Rápido para Demonstração
-            </div>
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => fillDemoUser('orcamento@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
-                >
-                  <span className="font-bold text-sabrar-600 dark:text-sabrar-400">Orçamento</span> (Mariana)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillDemoUser('engenharia@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
-                >
-                  <span className="font-bold text-amber-600 dark:text-amber-400">Engenharia</span> (Rafael)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillDemoUser('almoxarifado@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
-                >
-                  <span className="font-bold text-teal-600 dark:text-teal-400">Almoxarifado</span> (Tiago)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillDemoUser('compras@sabrar.com.br')}
-                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-dark-850 dark:hover:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-xl text-left truncate text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors shadow-xs"
-                >
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">Compras</span> (Fernanda)
-                </button>
-              </div>
-            </div>
         </div>
 
         {/* Footer */}

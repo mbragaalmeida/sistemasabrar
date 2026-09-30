@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { CreateUserModal } from '../components/modals/CreateUserModal';
 
 export const UsersPage: React.FC = () => {
-  const { users, currentUser, isSimulating, switchUser, refreshUsers } = useAuth();
+  const { users, currentUser, refreshUsers } = useAuth();
   const [roles, setRoles] = useState<any[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -38,7 +38,7 @@ export const UsersPage: React.FC = () => {
   };
 
   // Bloqueio rigoroso: apenas Administrador Geral acessa a listagem e criação de perfis
-  if (currentUser?.role !== 'admin' && !isSimulating) {
+  if (currentUser?.role !== 'admin') {
     return (
       <div className="p-8 text-center bg-dark-900 rounded-3xl border border-dark-750 max-w-xl mx-auto mt-12 space-y-3">
         <Shield className="w-12 h-12 text-rose-500 mx-auto" />
@@ -142,22 +142,6 @@ export const UsersPage: React.FC = () => {
                     <p className="text-[11px] text-sabrar-400/80 mt-0.5">{u.department}</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-dark-750 flex items-center justify-between text-xs">
-                <span className="text-slate-500 text-[11px]">Teste administrativo:</span>
-                <button
-                  onClick={() => switchUser(u.id)}
-                  disabled={isCurrent}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-                    isCurrent
-                      ? 'bg-dark-800 text-slate-500 cursor-default border border-dark-700'
-                      : 'bg-dark-800 hover:bg-dark-750 text-amber-300 border border-amber-500/30'
-                  }`}
-                  title="Simular visualização deste usuário"
-                >
-                  {isCurrent ? 'Perfil Atual' : 'Simular Visão'}
-                </button>
               </div>
             </div>
           );

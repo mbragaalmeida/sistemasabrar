@@ -154,61 +154,6 @@ export const Header: React.FC<HeaderProps> = ({
                         </span>
                       </button>
                     )}
-
-                    {/* Ferramenta de Simulação para Testes de Telas */}
-                    <div className="bg-slate-50 dark:bg-[#181818] p-2.5 rounded-2xl border border-slate-200 dark:border-[#262626] space-y-1.5 shadow-xs">
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
-                        <Eye className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Simular Visão de Setor</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 text-[11px]">
-                        {(['orcamento', 'engenharia', 'almoxarifado', 'compras'] as UserRole[]).map((r) => {
-                          const labels: Record<string, string> = {
-                            orcamento: 'Orçamento',
-                            engenharia: 'Engenharia',
-                            almoxarifado: 'Almoxarifado',
-                            compras: 'Compras'
-                          };
-                          return (
-                            <button
-                              key={r}
-                              onClick={() => {
-                                setRoleDropdownOpen(false);
-                                simulateRole(r);
-                              }}
-                              className="px-2 py-1.5 bg-white hover:bg-amber-50 dark:bg-[#121212] dark:hover:bg-dark-800 border border-slate-200 dark:border-[#242424] rounded-lg text-left text-slate-700 dark:text-slate-300 hover:text-amber-800 dark:hover:text-amber-300 transition-colors font-medium truncate shadow-xs"
-                            >
-                              {labels[r]}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. Se estiver em Modo de Simulação: Botão de Retorno ao Admin */}
-                {isSimulating && (
-                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-[#222222]">
-                    <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-600/40 rounded-2xl text-[11px] text-amber-900 dark:text-amber-200 space-y-1.5">
-                      <div className="font-bold flex items-center gap-1.5">
-                        <Eye className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>Simulação Ativa ({currentUser?.role_label})</span>
-                      </div>
-                      <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80 leading-tight">
-                        Você está vendo o sistema como este setor. Clique abaixo para retornar à visão de Administrador Geral.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setRoleDropdownOpen(false);
-                          stopSimulation();
-                        }}
-                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl text-xs transition-colors shadow-sm"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Voltar para Administrador</span>
-                      </button>
-                    </div>
                   </div>
                 )}
 

@@ -110,13 +110,13 @@ export class LearningService {
     const historyItems = await db.prepare(`
       SELECT 
         h.*,
-        m.name as material_name,
-        m.code as material_code,
-        m.unit as material_unit,
+        COALESCE(m.name, h.material_name) as material_name,
+        COALESCE(m.code, h.material_code) as material_code,
+        COALESCE(m.unit, h.material_unit) as material_unit,
         p.name as project_name,
         p.code as project_code
       FROM historical_usage h
-      JOIN materials m ON h.material_id = m.id
+      LEFT JOIN materials m ON h.material_id = m.id
       JOIN projects p ON h.project_id = p.id
       ORDER BY h.id DESC
       LIMIT 20
@@ -155,19 +155,19 @@ export class LearningService {
 
     const topMaterialsCalibrated = await db.prepare(`
       SELECT 
-        m.id,
-        m.code,
-        m.name,
-        m.category,
-        m.unit,
+        COALESCE(m.id, hu.material_id) as id,
+        COALESCE(m.code, hu.material_code) as code,
+        COALESCE(m.name, hu.material_name) as name,
+        COALESCE(m.category, hu.material_category) as category,
+        COALESCE(m.unit, hu.material_unit) as unit,
         COUNT(hu.id) as occurrences,
         AVG(hu.learned_adjustment_factor) as avg_learned_factor,
         AVG(hu.variance_percent) as avg_variance_pct,
         SUM(hu.human_approved_qty) as total_budgeted_qty,
         SUM(hu.actual_consumed_qty) as total_actual_consumed_qty
       FROM historical_usage hu
-      JOIN materials m ON hu.material_id = m.id
-      GROUP BY m.id, m.code, m.name, m.category, m.unit
+      LEFT JOIN materials m ON hu.material_id = m.id
+      GROUP BY COALESCE(m.id, hu.material_id), COALESCE(m.code, hu.material_code), COALESCE(m.name, hu.material_name), COALESCE(m.category, hu.material_category), COALESCE(m.unit, hu.material_unit)
       ORDER BY occurrences DESC, total_actual_consumed_qty DESC
       LIMIT 15
     `).all();

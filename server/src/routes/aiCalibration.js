@@ -85,15 +85,15 @@ aiCalibrationRouter.get('/history', async (req, res) => {
     const rows = await db.prepare(`
       SELECT 
         h.*,
-        m.name as material_name,
-        m.code as material_code,
-        m.unit as material_unit,
-        m.category as material_category,
+        COALESCE(m.name, h.material_name) as material_name,
+        COALESCE(m.code, h.material_code) as material_code,
+        COALESCE(m.unit, h.material_unit) as material_unit,
+        COALESCE(m.category, h.material_category) as material_category,
         p.name as project_name,
         p.code as project_code,
         p.project_type
       FROM historical_usage h
-      JOIN materials m ON h.material_id = m.id
+      LEFT JOIN materials m ON h.material_id = m.id
       JOIN projects p ON h.project_id = p.id
       ORDER BY h.id DESC
       LIMIT 100
