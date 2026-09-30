@@ -227,6 +227,8 @@ export const api = {
   createMaterial: (data: any) => fetchJson<any>('/materials', { method: 'POST', body: JSON.stringify(data) }),
   updateMaterial: (id: number | string, data: any) =>
     fetchJson<any>(`/materials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateMaterialImage: (id: number | string, image_url: string) =>
+    fetchJson<any>(`/materials/${id}/image`, { method: 'PATCH', body: JSON.stringify({ image_url }) }),
   quickStockEntry: (materialId: number, quantity: number, notes?: string, userId?: number) =>
     fetchJson<any>('/materials/quick-entry', { method: 'POST', body: JSON.stringify({ materialId, quantity, notes, userId }) }),
 

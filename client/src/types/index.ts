@@ -88,6 +88,7 @@ export interface Material {
   brand?: string;
   reference_price: number;
   synonyms?: string;
+  image_url?: string;
   linear_weight?: number;
   linear_weight_unit?: string;
   package_content?: number;
@@ -161,6 +162,7 @@ export interface MaterialRequestItem {
   quantity_delivered: number;
   deficit: number;
   is_extra?: boolean;
+  image_url?: string;
   budget_quantity?: number;
   previously_requested?: number;
   extra_quantity?: number;

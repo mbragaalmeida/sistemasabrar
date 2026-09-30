@@ -362,8 +362,13 @@ export const StockPage: React.FC = () => {
                 {isExpanded && (
                   <div className="p-3 border-t border-dark-700 space-y-2 bg-dark-900/40 animate-fadeIn">
                     {items.map((it: any) => (
-                      <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1 py-1 border-b border-dark-800 last:border-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                      <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 py-1.5 border-b border-dark-800 last:border-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {it.image_url && (
+                            <div className="w-8 h-8 rounded-lg bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm" title={it.material_name}>
+                              <img src={it.image_url} alt="" className="w-full h-full object-contain" />
+                            </div>
+                          )}
                           <span className="font-bold text-white">{it.material_name}</span>
                           <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
                           {it.is_extra && (

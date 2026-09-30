@@ -974,6 +974,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           );
                         }
 
+                        const matObj = materials.find(m => m.id === it.material_id);
+
                         return (
                           <div
                             key={it.id}
@@ -986,8 +988,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 type="checkbox"
                                 checked={it.isSelected}
                                 onChange={() => handleToggleBudgetItem(it.id)}
-                                className="w-4 h-4 rounded mt-0.5 accent-sabrar-600 cursor-pointer"
+                                className="w-4 h-4 rounded mt-2 accent-sabrar-600 cursor-pointer"
                               />
+
+                              {matObj?.image_url && (
+                                <div className="w-10 h-10 rounded-xl bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm">
+                                  <img src={matObj.image_url} alt="" className="w-full h-full object-contain" />
+                                </div>
+                              )}
+
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
@@ -1277,23 +1286,33 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
                   {/* Tabela de Itens Avulsos */}
                   <div className="border border-dark-750 rounded-2xl overflow-hidden bg-dark-850 max-h-72 overflow-y-auto divide-y divide-dark-750">
-                    {filteredCustomItems.map((it) => (
-                      <div
-                        key={it.id}
-                        className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
-                          it.isSelected ? 'bg-dark-900/40 hover:bg-dark-800/60' : 'opacity-60 bg-dark-900/10'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={it.isSelected}
-                            onChange={() => handleToggleCustomItem(it.id)}
-                            className="w-4 h-4 rounded mt-0.5 accent-sabrar-600 cursor-pointer"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
+                    {filteredCustomItems.map((it) => {
+                      const customMatObj = materials.find(m => m.id === it.material_id);
+
+                      return (
+                        <div
+                          key={it.id}
+                          className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
+                            it.isSelected ? 'bg-dark-900/40 hover:bg-dark-800/60' : 'opacity-60 bg-dark-900/10'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={it.isSelected}
+                              onChange={() => handleToggleCustomItem(it.id)}
+                              className="w-4 h-4 rounded mt-2 accent-sabrar-600 cursor-pointer"
+                            />
+
+                            {customMatObj?.image_url && (
+                              <div className="w-10 h-10 rounded-xl bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm">
+                                <img src={customMatObj.image_url} alt="" className="w-full h-full object-contain" />
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
                               {!it.isInBudget ? (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1">
                                   <Sparkles className="w-3 h-3 text-amber-400" /> Fora do Orçamento (Aprovação Admin)
@@ -1366,7 +1385,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 </div>
               )}

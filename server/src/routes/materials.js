@@ -104,7 +104,7 @@ materialsRouter.post('/', async (req, res) => {
     const { 
       name, description, category, unit, brand, reference_price, supplier_id, 
       stock_physical, stock_minimum, status, userId,
-      synonyms, linear_weight, linear_weight_unit, package_content, converted_unit, converted_price, validation_status, pending_notes
+      synonyms, image_url, linear_weight, linear_weight_unit, package_content, converted_unit, converted_price, validation_status, pending_notes
     } = req.body;
 
     if (!name || !category || !unit) {
@@ -119,9 +119,9 @@ materialsRouter.post('/', async (req, res) => {
       INSERT INTO materials (
         code, name, description, category, unit, brand,
         reference_price, supplier_id, stock_physical, stock_reserved,
-        stock_minimum, status, synonyms, linear_weight, linear_weight_unit,
+        stock_minimum, status, synonyms, image_url, linear_weight, linear_weight_unit,
         package_content, converted_unit, converted_price, validation_status, pending_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = await insert.run(
@@ -129,7 +129,7 @@ materialsRouter.post('/', async (req, res) => {
       Number(reference_price) || 0, supplier_id || null,
       Number(stock_physical) || 0, Number(stock_minimum) || 10,
       status || 'Ativo',
-      synonyms || null, linear_weight || null, linear_weight_unit || null,
+      synonyms || null, image_url || null, linear_weight || null, linear_weight_unit || null,
       package_content || null, converted_unit || null, converted_price || null,
       validation_status || 'OK', pending_notes || null
     );
@@ -162,7 +162,7 @@ materialsRouter.put('/:id', async (req, res) => {
     const { 
       name, description, category, unit, brand, reference_price, supplier_id, 
       stock_minimum, status, userId,
-      synonyms, linear_weight, linear_weight_unit, package_content, converted_unit, converted_price, validation_status, pending_notes
+      synonyms, image_url, linear_weight, linear_weight_unit, package_content, converted_unit, converted_price, validation_status, pending_notes
     } = req.body;
     const materialId = req.params.id;
 
@@ -170,19 +170,35 @@ materialsRouter.put('/:id', async (req, res) => {
       UPDATE materials SET
         name = ?, description = ?, category = ?, unit = ?, brand = ?,
         reference_price = ?, supplier_id = ?, stock_minimum = ?,
-        status = ?, synonyms = ?, linear_weight = ?, linear_weight_unit = ?,
+        status = ?, synonyms = ?, image_url = COALESCE(?, image_url), linear_weight = ?, linear_weight_unit = ?,
         package_content = ?, converted_unit = ?, converted_price = ?,
         validation_status = ?, pending_notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       name, description, category, unit, brand,
       Number(reference_price), supplier_id, Number(stock_minimum),
-      status, synonyms || null, linear_weight || null, linear_weight_unit || null,
+      status, synonyms || null, image_url || null, linear_weight || null, linear_weight_unit || null,
       package_content || null, converted_unit || null, converted_price || null,
       validation_status || 'OK', pending_notes || null, materialId
     );
 
     res.json({ success: true, materialId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Atualiza foto do material diretamente
+materialsRouter.patch('/:id/image', async (req, res) => {
+  try {
+    const { image_url } = req.body;
+    const materialId = req.params.id;
+
+    await db.prepare(`
+      UPDATE materials SET image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(image_url, materialId);
+
+    res.json({ success: true, materialId, image_url });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -228,13 +228,24 @@ export const PrintRequestModal: React.FC<PrintRequestModalProps> = ({
                         </td>
 
                         {/* Descrição do Material */}
-                        <td className="py-3 px-3 border-r border-slate-300">
-                          <div className="font-bold text-slate-900">{it.material_name}</div>
-                          {it.is_extra && (
-                            <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                              Extra Obra
-                            </span>
-                          )}
+                        <td className="py-2.5 px-3 border-r border-slate-300">
+                          <div className="flex items-center gap-2">
+                            {it.image_url && (
+                              <img
+                                src={it.image_url}
+                                alt=""
+                                className="w-8 h-8 object-contain rounded border border-slate-300 shrink-0 bg-white print:w-7 print:h-7"
+                              />
+                            )}
+                            <div>
+                              <div className="font-bold text-slate-900">{it.material_name}</div>
+                              {it.is_extra && (
+                                <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                  Extra Obra
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
 
                         {/* Unidade */}

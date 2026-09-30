@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
 import { QuickEntryModal } from '../components/modals/QuickEntryModal';
 import { NewMaterialModal } from '../components/modals/NewMaterialModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
+import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
 
 export const MaterialsPage: React.FC = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -20,6 +21,8 @@ export const MaterialsPage: React.FC = () => {
   const [isNewMaterialModalOpen, setIsNewMaterialModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | undefined>(undefined);
+  const [selectedMaterialForPhoto, setSelectedMaterialForPhoto] = useState<Material | null>(null);
+  const [photoFilter, setPhotoFilter] = useState<'todos' | 'com_foto' | 'sem_foto'>('todos');
 
   const fetchCategories = async () => {
     try {
@@ -60,6 +63,15 @@ export const MaterialsPage: React.FC = () => {
     fetchMaterials();
   };
 
+  const countWithPhoto = materials.filter(m => Boolean(m.image_url)).length;
+  const countWithoutPhoto = materials.length - countWithPhoto;
+
+  const displayedMaterials = materials.filter(m => {
+    if (photoFilter === 'com_foto') return Boolean(m.image_url);
+    if (photoFilter === 'sem_foto') return !m.image_url;
+    return true;
+  });
+
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
       {/* Header com os dois botões: Cadastrar Novo Produto (Solicitação 2) + Entrada Rápida */}
@@ -74,7 +86,7 @@ export const MaterialsPage: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Cadastro mestre de materiais e controle de estoque simplificado
+            Catálogo mestre de materiais SABRAR com fotos, sinônimos e controle de estoque
           </p>
         </div>
 
@@ -129,7 +141,7 @@ export const MaterialsPage: React.FC = () => {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pesquisar por código (ex: SAB-0001), nome, marca ou categoria..."
+              placeholder="Pesquisar por nome, sinônimo/apelido, código (ex: MAT-0001) ou marca..."
               className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-dark-700 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white bg-dark-850 placeholder-slate-500"
             />
           </div>
@@ -141,46 +153,92 @@ export const MaterialsPage: React.FC = () => {
           </button>
         </form>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-          <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0">
-            <Filter className="w-3.5 h-3.5 text-sabrar-400" />
-            <span>Categorias:</span>
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          {/* Categorias */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+            <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0">
+              <Filter className="w-3.5 h-3.5 text-sabrar-400" />
+              <span>Categorias:</span>
+            </div>
 
-          <button
-            onClick={() => setSelectedCategory('')}
-            className={`px-3 py-1 rounded-xl font-medium whitespace-nowrap transition-colors ${
-              selectedCategory === ''
-                ? 'bg-sabrar-600 text-white font-bold shadow-md shadow-sabrar-600/30'
-                : 'bg-dark-800 text-slate-300 hover:bg-dark-750 border border-dark-700'
-            }`}
-          >
-            Todas
-          </button>
-
-          {categories.map((c) => (
             <button
-              key={c.category}
-              onClick={() => setSelectedCategory(c.category)}
+              onClick={() => setSelectedCategory('')}
               className={`px-3 py-1 rounded-xl font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === c.category
+                selectedCategory === ''
                   ? 'bg-sabrar-600 text-white font-bold shadow-md shadow-sabrar-600/30'
                   : 'bg-dark-800 text-slate-300 hover:bg-dark-750 border border-dark-700'
               }`}
             >
-              {c.category} <span className="text-[10px] opacity-70">({c.count})</span>
+              Todas
             </button>
-          ))}
 
-          <label className="flex items-center gap-1.5 ml-auto text-rose-400 font-bold shrink-0 cursor-pointer pl-3">
-            <input
-              type="checkbox"
-              checked={onlyBelowMin}
-              onChange={(e) => setOnlyBelowMin(e.target.checked)}
-              className="rounded bg-dark-800 border-dark-700 text-rose-500 focus:ring-rose-500"
-            />
-            <span>Apenas Estoque Baixo</span>
-          </label>
+            {categories.map((c) => (
+              <button
+                key={c.category}
+                onClick={() => setSelectedCategory(c.category)}
+                className={`px-3 py-1 rounded-xl font-medium whitespace-nowrap transition-colors ${
+                  selectedCategory === c.category
+                    ? 'bg-sabrar-600 text-white font-bold shadow-md shadow-sabrar-600/30'
+                    : 'bg-dark-800 text-slate-300 hover:bg-dark-750 border border-dark-700'
+                }`}
+              >
+                {c.category} <span className="text-[10px] opacity-70">({c.count})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Filtros Auxiliares: Fotos e Estoque Baixo */}
+          <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap sm:ml-auto">
+            {/* Filtro de Fotos */}
+            <div className="flex items-center bg-dark-850 p-1 rounded-2xl border border-dark-700 text-xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setPhotoFilter('todos')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition-all ${
+                  photoFilter === 'todos'
+                    ? 'bg-sabrar-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Todos ({materials.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhotoFilter('com_foto')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold transition-all ${
+                  photoFilter === 'com_foto'
+                    ? 'bg-sabrar-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Filtrar materiais que possuem foto cadastrada"
+              >
+                <ImageIcon className="w-3.5 h-3.5 text-teal-400" />
+                <span>Com Foto ({countWithPhoto})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhotoFilter('sem_foto')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold transition-all ${
+                  photoFilter === 'sem_foto'
+                    ? 'bg-sabrar-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Filtrar materiais sem foto cadastrada"
+              >
+                <span>Sem Foto ({countWithoutPhoto})</span>
+              </button>
+            </div>
+
+            <label className="flex items-center gap-1.5 text-rose-400 font-bold shrink-0 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyBelowMin}
+                onChange={(e) => setOnlyBelowMin(e.target.checked)}
+                className="rounded bg-dark-800 border-dark-700 text-rose-500 focus:ring-rose-500"
+              />
+              <span>Apenas Estoque Baixo</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -191,9 +249,17 @@ export const MaterialsPage: React.FC = () => {
       )}
 
       {/* Materials List / Cards (Mobile-First com estética escura negativa e verde Sabrar) */}
-      {!loading && (
+      {!loading && displayedMaterials.length === 0 && (
+        <div className="py-16 text-center text-sm text-slate-500 bg-dark-900 rounded-3xl border border-dark-750 p-8">
+          <Package className="w-10 h-10 mx-auto text-slate-600 mb-2 stroke-[1.5]" />
+          <p className="font-bold text-slate-300">Nenhum material encontrado</p>
+          <p className="text-xs text-slate-500 mt-1">Tente ajustar os termos de busca ou filtros de categoria e fotos.</p>
+        </div>
+      )}
+
+      {!loading && displayedMaterials.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {materials.map((m) => {
+          {displayedMaterials.map((m) => {
             const isBelow = m.stock_physical <= m.stock_minimum;
             const isZero = m.stock_physical === 0;
 
@@ -213,31 +279,66 @@ export const MaterialsPage: React.FC = () => {
                 className="bg-dark-900 rounded-3xl border border-dark-750 p-4 hover:border-sabrar-500/50 hover:shadow-xl hover:shadow-sabrar-950/20 transition-all flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-xs font-mono font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
-                      {m.code}
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                        isZero
-                          ? 'bg-rose-950/60 text-rose-400 border-rose-800/60'
-                          : isBelow
-                          ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
-                          : 'bg-sabrar-950/70 text-sabrar-400 border-sabrar-500/40'
-                      }`}
+                  {/* Topo do Card com Foto Thumbnail e Metadados */}
+                  <div className="flex gap-3 items-start mb-2.5">
+                    {/* Thumbnail da Foto */}
+                    <div 
+                      onClick={() => setSelectedMaterialForPhoto(m)}
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-dark-950 border border-dark-700 hover:border-sabrar-500/60 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer group relative shadow-md"
+                      title="Clique para visualizar em alta resolução ou editar sinônimos"
                     >
-                      {isZero ? 'Sem Estoque' : isBelow ? 'Estoque Baixo' : 'Estoque Normal'}
-                    </span>
+                      {m.image_url ? (
+                        <img
+                          src={m.image_url}
+                          alt={m.name}
+                          className="w-full h-full object-contain p-1 group-hover:scale-110 transition-transform duration-200"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-600 group-hover:text-sabrar-400 transition-colors p-1">
+                          <Camera className="w-5 h-5 stroke-[1.5]" />
+                          <span className="text-[8px] font-bold mt-0.5 opacity-80 uppercase">+ foto</span>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold">
+                        <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                      </div>
+                    </div>
+
+                    {/* Código, Status e Nome */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="text-xs font-mono font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
+                          {m.code}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            isZero
+                              ? 'bg-rose-950/60 text-rose-400 border-rose-800/60'
+                              : isBelow
+                              ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
+                              : 'bg-sabrar-950/70 text-sabrar-400 border-sabrar-500/40'
+                          }`}
+                        >
+                          {isZero ? 'Sem Estoque' : isBelow ? 'Estoque Baixo' : 'Normal'}
+                        </span>
+                      </div>
+
+                      <h3 
+                        onClick={() => setSelectedMaterialForPhoto(m)}
+                        className="font-extrabold text-sm text-white line-clamp-2 hover:text-sabrar-300 cursor-pointer transition-colors"
+                        title={m.name}
+                      >
+                        {m.name}
+                      </h3>
+                      <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                        {m.category} {m.brand ? `• ${m.brand}` : ''}
+                      </div>
+                    </div>
                   </div>
 
-                  <h3 className="font-extrabold text-sm text-white line-clamp-2">
-                    {m.name}
-                  </h3>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    {m.category} • Marca: <span className="font-medium text-slate-300">{m.brand || 'Padrão SABRAR'}</span>
-                  </div>
                   {m.description && (
-                    <div className="text-[11px] text-teal-400/90 font-medium mt-1.5 line-clamp-2 bg-dark-850/80 rounded-xl px-2.5 py-1 border border-dark-700/60">
+                    <div className="text-[11px] text-teal-400/90 font-medium mt-1 line-clamp-2 bg-dark-850/80 rounded-xl px-2.5 py-1 border border-dark-700/60">
                       {m.description}
                     </div>
                   )}
@@ -264,12 +365,18 @@ export const MaterialsPage: React.FC = () => {
                     <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px]">
                       <span className="text-slate-500 font-semibold">Sinônimos:</span>
                       {m.synonyms.split(',').slice(0, 3).map((syn, idx) => (
-                        <span key={idx} className="bg-dark-800 text-slate-300 px-1.5 py-0.5 rounded border border-dark-700/60 font-mono text-[9px]">
+                        <span key={idx} className="bg-dark-800 text-teal-300/90 px-1.5 py-0.5 rounded border border-dark-700 font-mono text-[9px]">
                           {syn.trim()}
                         </span>
                       ))}
                       {m.synonyms.split(',').length > 3 && (
-                        <span className="text-[9px] text-slate-500">+{m.synonyms.split(',').length - 3}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMaterialForPhoto(m)}
+                          className="text-[9px] text-sabrar-400 hover:underline font-bold"
+                        >
+                          +{m.synonyms.split(',').length - 3} mais
+                        </button>
                       )}
                     </div>
                   )}
@@ -322,6 +429,14 @@ export const MaterialsPage: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Modal de Foto e Sinônimos em Alta Resolução */}
+      <MaterialPhotoModal
+        isOpen={Boolean(selectedMaterialForPhoto)}
+        material={selectedMaterialForPhoto}
+        onClose={() => setSelectedMaterialForPhoto(null)}
+        onSuccess={() => fetchMaterials()}
+      />
 
       {/* Modal de Cadastro de Novo Produto (Solicitação 2) */}
       <NewMaterialModal

@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS materials (
   brand VARCHAR(100),
   reference_price NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
   synonyms TEXT,
+  image_url TEXT,
   linear_weight NUMERIC(10, 4),
   linear_weight_unit VARCHAR(20),
   package_content NUMERIC(14, 4),
