@@ -9,7 +9,7 @@ export const budgetsRouter = express.Router();
 budgetsRouter.get('/project/:projectId', async (req, res) => {
   try {
     const projectId = req.params.projectId;
-    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     if (!budget) return res.status(404).json({ error: 'Orçamento não encontrado' });
 
     const items = await db.prepare(`
@@ -73,7 +73,7 @@ budgetsRouter.post('/save', async (req, res) => {
     const totalServices = totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional;
 
     // Busca orçamento existente
-    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     
     // Calcula o total de equipamentos / faturamento direto
     let equipmentTotal = 0;

@@ -5,7 +5,7 @@
 
 export async function generateUniqueBudgetCode(db) {
   try {
-    const result = await db.prepare("SELECT code FROM budgets WHERE code LIKE 'ORC-2026-%'").all();
+    const result = await db.prepare("SELECT code FROM budgets WHERE code LIKE 'ORC-2026-%' AND (is_hidden IS FALSE OR is_hidden IS NULL)").all();
     let maxNum = 0;
     for (const row of (result || [])) {
       const match = row.code ? row.code.match(/ORC-2026-(\d+)/) : null;
@@ -32,7 +32,7 @@ export async function generateUniqueBudgetCode(db) {
 
 export async function generateUniqueProjectCode(db) {
   try {
-    const result = await db.prepare("SELECT code FROM projects WHERE code LIKE 'PRJ-2026-%'").all();
+    const result = await db.prepare("SELECT code FROM projects WHERE code LIKE 'PRJ-2026-%' AND (is_hidden IS FALSE OR is_hidden IS NULL)").all();
     let maxNum = 0;
     for (const row of (result || [])) {
       const match = row.code ? row.code.match(/PRJ-2026-(\d+)/) : null;

@@ -6,22 +6,22 @@ export const reportsRouter = express.Router();
 // Relatório por Projeto (Seção 34)
 reportsRouter.get('/projects', async (req, res) => {
   try {
-    const projects = await db.prepare('SELECT * FROM projects ORDER BY id DESC').all();
+    const projects = await db.prepare('SELECT * FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) ORDER BY id DESC').all();
 
     const report = await Promise.all(projects.map(async p => {
-      const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(p.id);
+      const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(p.id);
       
       const requestedTotal = await db.prepare(`
         SELECT SUM(mri.quantity_requested) as qty, COUNT(mr.id) as count
         FROM material_requests mr
         JOIN material_request_items mri ON mr.id = mri.request_id
-        WHERE mr.project_id = ?
+        WHERE mr.project_id = ? AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
       `).get(p.id);
 
       const withdrawnTotal = (await db.prepare(`
         SELECT SUM(quantity) as qty
         FROM stock_movements
-        WHERE project_id = ? AND type = 'SAIDA_OBRA'
+        WHERE project_id = ? AND type = 'SAIDA_OBRA' AND (is_hidden IS FALSE OR is_hidden IS NULL)
       `).get(p.id))?.qty || 0;
 
       const returnedTotal = (await db.prepare(`
@@ -124,6 +124,7 @@ reportsRouter.get('/purchases', async (req, res) => {
       JOIN materials m ON p.material_id = m.id
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       LEFT JOIN projects pr ON p.project_id = pr.id
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
       ORDER BY p.id DESC
     `).all();
 
@@ -131,7 +132,7 @@ reportsRouter.get('/purchases', async (req, res) => {
       SELECT s.name as supplier_name, COUNT(p.id) as total_orders, SUM(p.total_price) as total_spent
       FROM purchases p
       JOIN suppliers s ON p.supplier_id = s.id
-      WHERE p.status IN ('Comprado', 'Aguardando entrega', 'Recebido')
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL) AND p.status IN ('Comprado', 'Aguardando entrega', 'Recebido')
       GROUP BY s.id, s.name
     `).all();
 
@@ -153,6 +154,7 @@ reportsRouter.get('/stock', async (req, res) => {
         SUM(CASE WHEN type = 'SAIDA_OBRA' THEN quantity ELSE 0 END) as total_exits,
         SUM(CASE WHEN type = 'DEVOLUCAO' THEN quantity ELSE 0 END) as total_returns
       FROM stock_movements
+      WHERE (is_hidden IS FALSE OR is_hidden IS NULL)
     `).get();
 
     const lowStockMaterials = await db.prepare(`

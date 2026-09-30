@@ -6,12 +6,12 @@ export const dashboardRouter = express.Router();
 // 1. Dashboard Principal (Seção 30) - 100% com Dados Reais
 dashboardRouter.get('/overview', async (req, res) => {
   try {
-    const activeProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Novo', 'Em análise pela IA', 'Orçamento gerado', 'Em revisão', 'Enviado ao cliente', 'Aprovado', 'Em execução')").get())?.count || 0;
-    const inBudgetProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Em análise pela IA', 'Orçamento gerado', 'Em revisão')").get())?.count || 0;
-    const awaitingApproval = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get())?.count || 0;
-    const inExecution = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em execução'").get())?.count || 0;
-    const pendingRequests = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Solicitado', 'Reservado', 'Em separação')").get())?.count || 0;
-    const pendingPurchases = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Solicitado', 'Em cotação', 'Aguardando aprovação', 'Comprado', 'Aguardando entrega')").get())?.count || 0;
+    const activeProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Novo', 'Em análise pela IA', 'Orçamento gerado', 'Em revisão', 'Enviado ao cliente', 'Aprovado', 'Em execução')").get())?.count || 0;
+    const inBudgetProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Em análise pela IA', 'Orçamento gerado', 'Em revisão')").get())?.count || 0;
+    const awaitingApproval = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Enviado ao cliente'").get())?.count || 0;
+    const inExecution = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Em execução'").get())?.count || 0;
+    const pendingRequests = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Solicitado', 'Reservado', 'Em separação')").get())?.count || 0;
+    const pendingPurchases = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Solicitado', 'Em cotação', 'Aguardando aprovação', 'Comprado', 'Aguardando entrega')").get())?.count || 0;
     const belowMinStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get())?.count || 0;
 
     const materials = await db.prepare("SELECT stock_physical, reference_price FROM materials WHERE status = 'Ativo'").all();
@@ -21,7 +21,7 @@ dashboardRouter.get('/overview', async (req, res) => {
     const projects = await db.prepare(`
       SELECT p.id, p.code, p.name, p.client, p.project_type, p.status, p.total_budget_final, p.total_budget_materials
       FROM projects p
-      WHERE p.status IN ('Em execução', 'Finalizado')
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL) AND p.status IN ('Em execução', 'Finalizado')
       ORDER BY p.id DESC
     `).all();
 
@@ -42,7 +42,7 @@ dashboardRouter.get('/overview', async (req, res) => {
         FROM material_requests mr
         JOIN material_request_items mri ON mr.id = mri.request_id
         JOIN materials m ON mri.material_id = m.id
-        WHERE mr.project_id = ?
+        WHERE mr.project_id = ? AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
       `).get(p.id))?.cost;
 
       let requestedMaterialsCost = 0;
@@ -78,7 +78,7 @@ dashboardRouter.get('/overview', async (req, res) => {
                      ELSE 0 END) as cost
           FROM stock_movements sm
           JOIN materials m ON sm.material_id = m.id
-          WHERE sm.project_id = ?
+          WHERE sm.project_id = ? AND (sm.is_hidden IS FALSE OR sm.is_hidden IS NULL)
         `).get(p.id))?.cost;
 
         const retCost = (await db.prepare(`
@@ -191,7 +191,7 @@ dashboardRouter.get('/overview', async (req, res) => {
       const row = await db.prepare(`
         SELECT SUM(total_price) as val
         FROM purchases
-        WHERE status IN ('Comprado', 'Recebido') AND TO_CHAR(created_at, 'YYYY-MM') = ?
+        WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Comprado', 'Recebido') AND TO_CHAR(created_at, 'YYYY-MM') = ?
       `).get(m.monthStr);
       return {
         month: m.label,
@@ -245,16 +245,17 @@ dashboardRouter.get('/overview', async (req, res) => {
 // 2. Dashboard do Orçamento (Seção 31)
 dashboardRouter.get('/orcamento', async (req, res) => {
   try {
-    const newProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Novo'").get())?.count || 0;
-    const aiAnalyzed = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento gerado'").get())?.count || 0;
-    const awaitingRevision = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Em revisão'").get())?.count || 0;
-    const finalized = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Orçamento finalizado'").get())?.count || 0;
-    const sentToClient = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status = 'Enviado ao cliente'").get())?.count || 0;
-    const approved = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE status IN ('Aprovado', 'Em execução', 'Finalizado')").get())?.count || 0;
+    const newProjects = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Novo'").get())?.count || 0;
+    const aiAnalyzed = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Orçamento gerado'").get())?.count || 0;
+    const awaitingRevision = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Em revisão'").get())?.count || 0;
+    const finalized = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Orçamento finalizado'").get())?.count || 0;
+    const sentToClient = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Enviado ao cliente'").get())?.count || 0;
+    const approved = (await db.prepare("SELECT COUNT(*) as count FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Aprovado', 'Em execução', 'Finalizado')").get())?.count || 0;
 
     const recentProjects = await db.prepare(`
       SELECT p.id, p.code, p.name, p.client, p.status, p.total_budget_final, p.created_at
       FROM projects p
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
       ORDER BY p.id DESC
       LIMIT 8
     `).all();
@@ -278,10 +279,10 @@ dashboardRouter.get('/orcamento', async (req, res) => {
 // 3. Dashboard do Almoxarifado (Seção 32)
 dashboardRouter.get('/almoxarifado', async (req, res) => {
   try {
-    const pending = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Solicitado'").get())?.count || 0;
-    const toSeparate = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status IN ('Reservado', 'Em separação')").get())?.count || 0;
-    const separated = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Separado'").get())?.count || 0;
-    const delivered = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE status = 'Entregue'").get())?.count || 0;
+    const pending = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Solicitado'").get())?.count || 0;
+    const toSeparate = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Reservado', 'Em separação')").get())?.count || 0;
+    const separated = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Separado'").get())?.count || 0;
+    const delivered = (await db.prepare("SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Entregue'").get())?.count || 0;
     const recentReturns = (await db.prepare("SELECT COUNT(*) as count FROM returns WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'").get())?.count || 0;
     const lowStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'").get())?.count || 0;
 
@@ -289,8 +290,8 @@ dashboardRouter.get('/almoxarifado', async (req, res) => {
       SELECT mr.*, p.name as project_name, u.name as requested_by_name
       FROM material_requests mr
       JOIN projects p ON mr.project_id = p.id
-      JOIN users u ON mr.requested_by = u.id
-      WHERE mr.status IN ('Solicitado', 'Reservado', 'Em separação', 'Separado')
+      LEFT JOIN users u ON mr.requested_by = u.id
+      WHERE (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL) AND mr.status IN ('Solicitado', 'Reservado', 'Em separação', 'Separado')
       ORDER BY CASE mr.priority WHEN 'Urgente' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Média' THEN 3 ELSE 4 END, mr.id ASC
       LIMIT 8
     `).all();
@@ -323,12 +324,12 @@ dashboardRouter.get('/almoxarifado', async (req, res) => {
 // 4. Dashboard de Compras (Seção 33)
 dashboardRouter.get('/compras', async (req, res) => {
   try {
-    const newDemands = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Solicitado'").get())?.count || 0;
+    const newDemands = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Solicitado'").get())?.count || 0;
     const zeroStock = (await db.prepare("SELECT COUNT(*) as count FROM materials WHERE stock_physical = 0 AND status = 'Ativo'").get())?.count || 0;
-    const inQuotation = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Em cotação'").get())?.count || 0;
-    const purchased = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Comprado'").get())?.count || 0;
-    const awaitingDelivery = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status = 'Aguardando entrega'").get())?.count || 0;
-    const delayedDeliveries = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE status IN ('Comprado', 'Aguardando entrega') AND expected_delivery_date < CURRENT_DATE").get())?.count || 0;
+    const inQuotation = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Em cotação'").get())?.count || 0;
+    const purchased = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Comprado'").get())?.count || 0;
+    const awaitingDelivery = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status = 'Aguardando entrega'").get())?.count || 0;
+    const delayedDeliveries = (await db.prepare("SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL) AND status IN ('Comprado', 'Aguardando entrega') AND expected_delivery_date < CURRENT_DATE").get())?.count || 0;
 
     const urgentDemands = await db.prepare(`
       SELECT p.*, m.name as material_name, m.unit as material_unit, pr.name as project_name, s.name as supplier_name
@@ -336,7 +337,7 @@ dashboardRouter.get('/compras', async (req, res) => {
       JOIN materials m ON p.material_id = m.id
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN suppliers s ON p.supplier_id = s.id
-      WHERE p.status != 'Recebido'
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL) AND p.status != 'Recebido'
       ORDER BY CASE p.priority WHEN 'Alta' THEN 1 WHEN 'Média' THEN 2 ELSE 3 END, p.id DESC
       LIMIT 8
     `).all();

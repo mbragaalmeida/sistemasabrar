@@ -116,6 +116,53 @@ authRouter.post('/users', async (req, res) => {
   }
 });
 
+// Exclui um usuário do sistema (Apenas Administrador)
+authRouter.delete('/users/:id', async (req, res) => {
+  try {
+    const userRole = req.headers['x-user-role'];
+    const currentUserId = req.headers['x-user-id'];
+    const targetUserId = Number(req.params.id);
+
+    if (userRole && userRole !== 'admin') {
+      return res.status(403).json({ error: 'Apenas administradores podem excluir usuários do sistema.' });
+    }
+
+    if (currentUserId && Number(currentUserId) === targetUserId) {
+      return res.status(400).json({ error: 'Não é permitido excluir o usuário da sua própria sessão ativa.' });
+    }
+
+    const targetUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    // Limpa referências com segurança para não violar chaves estrangeiras
+    await db.prepare('DELETE FROM project_engineers WHERE user_id = ?').run(targetUserId);
+    await db.prepare('DELETE FROM notifications WHERE user_id = ?').run(targetUserId);
+    await db.prepare('UPDATE material_requests SET requested_by = NULL WHERE requested_by = ?').run(targetUserId);
+    await db.prepare('UPDATE material_requests SET admin_approved_by = NULL WHERE admin_approved_by = ?').run(targetUserId);
+    await db.prepare('UPDATE purchases SET buyer_id = NULL WHERE buyer_id = ?').run(targetUserId);
+    await db.prepare('UPDATE stock_movements SET user_id = NULL WHERE user_id = ?').run(targetUserId);
+    await db.prepare('UPDATE returns SET received_by = NULL WHERE received_by = ?').run(targetUserId);
+    await db.prepare('UPDATE budgets SET approved_by = NULL WHERE approved_by = ?').run(targetUserId);
+    await db.prepare('UPDATE project_files SET uploaded_by = NULL WHERE uploaded_by = ?').run(targetUserId);
+    await db.prepare('UPDATE audit_logs SET user_id = NULL WHERE user_id = ?').run(targetUserId);
+    await db.prepare('UPDATE ai_calibration_docs SET uploaded_by = NULL WHERE uploaded_by = ?').run(targetUserId);
+    await db.prepare('UPDATE duct_analyses SET created_by = NULL WHERE created_by = ?').run(targetUserId);
+
+    // Exclui o usuário
+    await db.prepare('DELETE FROM users WHERE id = ?').run(targetUserId);
+
+    res.json({
+      success: true,
+      message: `Usuário ${targetUser.name} (${targetUser.email}) excluído com sucesso.`
+    });
+  } catch (err) {
+    console.error('[Delete User Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Autenticação de Login com E-mail e Senha
 authRouter.post('/login', async (req, res) => {
   try {

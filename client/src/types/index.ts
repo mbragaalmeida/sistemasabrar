@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'orcamento' | 'engenharia' | 'almoxarifado' | 'compras';
+export type UserRole = 'admin' | 'orcamento' | 'engenharia' | 'almoxarifado' | 'compras' | 'orcamento_engenharia' | 'compras_solicitacoes';
 
 export interface Role {
   id: number;

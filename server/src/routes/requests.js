@@ -13,9 +13,10 @@ requestsRouter.get('/', async (req, res) => {
              u.name as requested_by_name, u_admin.name as admin_approved_by_name
       FROM material_requests mr
       JOIN projects p ON mr.project_id = p.id
-      JOIN users u ON mr.requested_by = u.id
+      LEFT JOIN users u ON mr.requested_by = u.id
       LEFT JOIN users u_admin ON mr.admin_approved_by = u_admin.id
-      WHERE 1=1
+      WHERE (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
+        AND (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
     `;
     const params = [];
 

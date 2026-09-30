@@ -36,7 +36,7 @@ export const projectsRouter = express.Router();
 projectsRouter.get('/', async (req, res) => {
   try {
     const { status, search, project_type } = req.query;
-    let query = 'SELECT * FROM projects WHERE 1=1';
+    let query = 'SELECT * FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL)';
     const params = [];
 
     if (status) {
@@ -59,8 +59,8 @@ projectsRouter.get('/', async (req, res) => {
     // Adiciona contagens rápidas de solicitações, arquivos e engenheiros designados
     const enriched = await Promise.all(projects.map(async p => {
       const fileCount = (await db.prepare('SELECT COUNT(*) as count FROM project_files WHERE project_id = ?').get(p.id))?.count || 0;
-      const requestCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE project_id = ?').get(p.id))?.count || 0;
-      const budget = await db.prepare('SELECT id, code, status, total_final FROM budgets WHERE project_id = ?').get(p.id);
+      const requestCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(p.id))?.count || 0;
+      const budget = await db.prepare('SELECT id, code, status, total_final FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(p.id);
 
       const assignedEngineers = await db.prepare(`
         SELECT u.id, u.name, u.email, u.phone, u.avatar
@@ -90,7 +90,7 @@ projectsRouter.get('/', async (req, res) => {
 projectsRouter.get('/:id', async (req, res) => {
   try {
     const projectId = req.params.id;
-    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
 
     // Engenheiros designados
@@ -106,7 +106,7 @@ projectsRouter.get('/:id', async (req, res) => {
     const files = await db.prepare('SELECT * FROM project_files WHERE project_id = ? ORDER BY id DESC').all(projectId);
 
     // Orçamento vinculado
-    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     let budgetItems = [];
     let services = [];
     let equipment = [];
@@ -133,8 +133,8 @@ projectsRouter.get('/:id', async (req, res) => {
     const requests = await db.prepare(`
       SELECT mr.*, u.name as requested_by_name
       FROM material_requests mr
-      JOIN users u ON mr.requested_by = u.id
-      WHERE mr.project_id = ?
+      LEFT JOIN users u ON mr.requested_by = u.id
+      WHERE mr.project_id = ? AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
       ORDER BY mr.id DESC
     `).all(projectId);
 
@@ -663,7 +663,7 @@ projectsRouter.get('/:id/material-quotas', async (req, res) => {
       SELECT mri.material_id, SUM(mri.quantity_requested) as total_requested
       FROM material_request_items mri
       JOIN material_requests mr ON mri.request_id = mr.id
-      WHERE mr.project_id = ? AND mr.status != 'Cancelado'
+      WHERE mr.project_id = ? AND mr.status != 'Cancelado' AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
       GROUP BY mri.material_id
     `).all(projectId);
 

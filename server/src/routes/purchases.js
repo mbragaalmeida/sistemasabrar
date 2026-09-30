@@ -17,7 +17,7 @@ purchasesRouter.get('/', async (req, res) => {
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN users u ON p.buyer_id = u.id
-      WHERE 1=1
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
     `;
     const params = [];
 
@@ -66,7 +66,7 @@ purchasesRouter.post('/', async (req, res) => {
     const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(material_id);
     if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
 
-    const nextPurchaseCount = ((await db.prepare('SELECT COUNT(*) as count FROM purchases').get())?.count || 0) + 1;
+    const nextPurchaseCount = ((await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count || 0) + 1;
     const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
 
     const price = (unit_price !== undefined && unit_price !== null && unit_price !== '') ? Number(unit_price) : mat.reference_price;

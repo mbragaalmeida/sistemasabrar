@@ -92,14 +92,14 @@ export class StockService {
       throw new Error('Lista de materiais solicitados não pode estar vazia');
     }
 
-    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
 
-    const nextReqCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests').get())?.count + 1 || 1;
+    const nextReqCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
     const reqCode = `SOL-2026-${String(nextReqCount).padStart(4, '0')}`;
 
     // 1. Busca orçamento da obra para controle de limites
-    const budget = await db.prepare('SELECT id, status FROM budgets WHERE project_id = ?').get(projectId);
+    const budget = await db.prepare('SELECT id, status FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     let budgetItems = [];
     if (budget) {
       budgetItems = await db.prepare('SELECT * FROM budget_items WHERE budget_id = ?').all(budget.id);
@@ -110,7 +110,7 @@ export class StockService {
       SELECT mri.material_id, SUM(mri.quantity_requested) as total_requested
       FROM material_request_items mri
       JOIN material_requests mr ON mri.request_id = mr.id
-      WHERE mr.project_id = ? AND mr.status != 'Cancelado'
+      WHERE mr.project_id = ? AND mr.status != 'Cancelado' AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
       GROUP BY mri.material_id
     `).all(projectId);
 
@@ -251,7 +251,7 @@ export class StockService {
       }
 
       if (deficit > 0) {
-        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases').get())?.count + 1 || 1;
+        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
         const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
 
         const purResult = await db.prepare(`
@@ -436,7 +436,7 @@ export class StockService {
       }
 
       if (deficit > 0) {
-        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases').get())?.count + 1 || 1;
+        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
         const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
 
         await db.prepare(`

@@ -56,6 +56,8 @@ export const api = {
   getRoles: () => fetchJson<any[]>('/auth/roles'),
   getUser: (id: number) => fetchJson<any>(`/auth/user/${id}`),
   createUser: (data: any) => fetchJson<any>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+  deleteUser: (id: number | string) =>
+    fetchJson<any>(`/auth/users/${id}`, { method: 'DELETE' }),
   changePassword: (data: { currentPassword?: string; newPassword: string; userId?: number }) =>
     fetchJson<{ success: boolean; message: string }>('/auth/change-password', {
       method: 'POST',

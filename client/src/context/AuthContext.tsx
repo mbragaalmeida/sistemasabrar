@@ -24,8 +24,10 @@ const ROLE_LABELS: Record<UserRole, { label: string; department: string }> = {
   admin: { label: 'Administrador Geral', department: 'Diretoria Executiva' },
   orcamento: { label: 'Setor de Orçamento', department: 'Engenharia de Custos' },
   engenharia: { label: 'Engenharia de Obras', department: 'Obras & Operações' },
+  orcamento_engenharia: { label: 'Orçamento e Engenharia', department: 'Engenharia & Custos' },
   almoxarifado: { label: 'Almoxarifado & Estoque', department: 'Logística & Almoxarifado' },
-  compras: { label: 'Compras & Suprimentos', department: 'Suprimentos & Compras' }
+  compras: { label: 'Compras & Suprimentos', department: 'Suprimentos & Compras' },
+  compras_solicitacoes: { label: 'Compras & Solicitações', department: 'Suprimentos & Compras' }
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

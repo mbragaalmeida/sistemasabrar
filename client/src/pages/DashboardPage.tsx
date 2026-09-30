@@ -51,9 +51,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Seleciona aba inicial com base no perfil ativo
   useEffect(() => {
-    if (activeRole === 'orcamento') setActiveTab('orcamento');
+    if (activeRole === 'orcamento' || activeRole === 'orcamento_engenharia') setActiveTab('orcamento');
     else if (activeRole === 'almoxarifado') setActiveTab('almoxarifado');
-    else if (activeRole === 'compras') setActiveTab('compras');
+    else if (activeRole === 'compras' || activeRole === 'compras_solicitacoes') setActiveTab('compras');
     else setActiveTab('geral');
   }, [activeRole]);
 
@@ -104,7 +104,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {/* Quick Action Buttons baseados no perfil */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          {['admin', 'orcamento', 'engenharia'].includes(activeRole) && (
+          {['admin', 'orcamento', 'engenharia', 'orcamento_engenharia'].includes(activeRole) && (
             <button
               onClick={onOpenNewProject}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-md shadow-sabrar-600/30 active:scale-95 whitespace-nowrap"
@@ -114,7 +114,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
           )}
 
-          {['admin', 'engenharia'].includes(activeRole) && (
+          {['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes'].includes(activeRole) && (
             <button
               onClick={onOpenNewRequest}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95 whitespace-nowrap"
@@ -124,7 +124,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
           )}
 
-          {['admin', 'almoxarifado', 'compras'].includes(activeRole) && (
+          {['admin', 'almoxarifado', 'compras', 'compras_solicitacoes'].includes(activeRole) && (
             <button
               onClick={onOpenQuickEntry}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95 whitespace-nowrap"
@@ -139,10 +139,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Dashboard Sub-Views Tabs (filtrado por perfil para foco e objetividade) */}
       {(() => {
         const availableTabs = [
-          { id: 'geral', label: 'Visão Geral Obras', roles: ['admin', 'engenharia'] },
-          { id: 'orcamento', label: 'Setor de Orçamento', roles: ['admin', 'orcamento'] },
+          { id: 'geral', label: 'Visão Geral Obras', roles: ['admin', 'engenharia', 'orcamento_engenharia'] },
+          { id: 'orcamento', label: 'Setor de Orçamento', roles: ['admin', 'orcamento', 'orcamento_engenharia'] },
           { id: 'almoxarifado', label: 'Almoxarifado & Estoque', roles: ['admin', 'almoxarifado'] },
-          { id: 'compras', label: 'Compras & Demandas', roles: ['admin', 'compras'] }
+          { id: 'compras', label: 'Compras & Demandas', roles: ['admin', 'compras', 'compras_solicitacoes'] }
         ].filter(tab => tab.roles.includes(activeRole));
 
         if (availableTabs.length <= 1) {
