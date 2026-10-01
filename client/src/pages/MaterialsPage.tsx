@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
@@ -15,6 +15,12 @@ export const MaterialsPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [onlyBelowMin, setOnlyBelowMin] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Autocomplete em tempo real
+  const [suggestions, setSuggestions] = useState<Material[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [isQuickEntryOpen, setIsQuickEntryOpen] = useState(false);
@@ -33,11 +39,12 @@ export const MaterialsPage: React.FC = () => {
     }
   };
 
-  const fetchMaterials = async () => {
+  const fetchMaterials = async (searchOverride?: string) => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
-      if (search) params.search = search;
+      const currentSearch = searchOverride !== undefined ? searchOverride : search;
+      if (currentSearch) params.search = currentSearch;
       if (selectedCategory) params.category = selectedCategory;
       if (onlyBelowMin) params.below_minimum = 'true';
 
@@ -58,9 +65,51 @@ export const MaterialsPage: React.FC = () => {
     fetchMaterials();
   }, [selectedCategory, onlyBelowMin]);
 
+  // Busca sugestões em tempo real com debounce
+  useEffect(() => {
+    if (!search || !search.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSuggestionLoading(true);
+      try {
+        const results = await api.autocompleteMaterials(search.trim());
+        setSuggestions(results);
+        setShowSuggestions(true);
+      } catch (err) {
+        console.error('Erro no autocomplete:', err);
+      } finally {
+        setSuggestionLoading(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggestions(false);
     fetchMaterials();
+  };
+
+  const handleSelectSuggestion = (item: Material) => {
+    setSearch(item.name);
+    setShowSuggestions(false);
+    fetchMaterials(item.name);
   };
 
   const countWithPhoto = materials.filter(m => Boolean(m.image_url)).length;
@@ -135,19 +184,101 @@ export const MaterialsPage: React.FC = () => {
       {/* Filters & Search */}
       <div className="bg-dark-900 p-3.5 sm:p-4 rounded-3xl border border-dark-750 shadow-md space-y-3">
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1" ref={searchContainerRef}>
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pesquisar por nome, sinônimo/apelido, código (ex: MAT-0001) ou marca..."
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => {
+                if (suggestions.length > 0) setShowSuggestions(true);
+              }}
+              placeholder="Pesquisar por nome, sinônimo/apelido, código (ex: SAB-0001)..."
               className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-dark-700 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white bg-dark-850 placeholder-slate-500"
             />
+
+            {/* Dropdown de Autocomplete em Tempo Real */}
+            {showSuggestions && search.trim().length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden max-h-96 overflow-y-auto">
+                <div className="p-2.5 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-[11px] font-bold text-slate-400">
+                  <span>
+                    {suggestionLoading ? 'Buscando opções...' : `${suggestions.length} material(is) encontrado(s)`}
+                  </span>
+                  <span className="text-slate-500 text-[10px]">Clique para selecionar ou aperte Enter</span>
+                </div>
+
+                {suggestions.length === 0 && !suggestionLoading && (
+                  <div className="p-4 text-center text-xs text-slate-400">
+                    Nenhum material encontrado com "{search}".
+                  </div>
+                )}
+
+                <div className="divide-y divide-dark-800">
+                  {suggestions.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectSuggestion(item)}
+                      className="p-3 hover:bg-dark-800 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Foto Thumbnail */}
+                        <div className="w-10 h-10 rounded-xl bg-dark-800 border border-dark-700 overflow-hidden flex items-center justify-center shrink-0">
+                          {item.image_url ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="w-full h-full object-contain p-0.5 group-hover:scale-105 transition-transform"
+                            />
+                          ) : (
+                            <Package className="w-5 h-5 text-slate-500" />
+                          )}
+                        </div>
+
+                        {/* Detalhes */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[11px] font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-1.5 py-0.2 rounded">
+                              {item.code}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-400 bg-dark-850 border border-dark-750 px-1.5 py-0.2 rounded">
+                              {item.category}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.2 rounded">
+                              {item.unit}
+                            </span>
+                          </div>
+                          <div className="text-xs font-bold text-white group-hover:text-sabrar-300 transition-colors truncate mt-0.5">
+                            {item.name}
+                          </div>
+                          {item.synonyms && (
+                            <div className="text-[10px] text-slate-400 italic truncate">
+                              Sinônimos: {item.synonyms}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Preço e Estoque */}
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-black text-sabrar-400">
+                          R$ {Number(item.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Estoque: {item.stock_available ?? item.stock_physical ?? 0} {item.unit}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <button
             type="submit"
-            className="px-4 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-colors shrink-0 shadow-sm"
+            className="px-4 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-colors shrink-0 shadow-sm active:scale-95"
           >
             Buscar
           </button>

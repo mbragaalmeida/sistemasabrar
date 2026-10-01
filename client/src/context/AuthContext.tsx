@@ -55,9 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadUsers = async () => {
     try {
       const user = currentUser;
-      // Se não há usuário logado ou se o usuário NÃO é admin (e não está simulando), não carrega lista geral
+      // Se não há usuário logado ou se o usuário NÃO é admin/orçamento_engenharia (e não está simulando), não carrega lista geral
       if (!user) return;
-      if (user.role !== 'admin' && !originalAdmin) {
+      if (user.role !== 'admin' && user.role !== 'orcamento_engenharia' && !originalAdmin) {
         setUsers([user]);
         return;
       }

@@ -20,7 +20,8 @@ import {
   Printer,
   UploadCloud,
   Calculator,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Package
 } from 'lucide-react';
 import { Project, Budget, BudgetItem, ServiceItem, ComparisonRow } from '../types';
 import { api } from '../services/api';
@@ -67,6 +68,63 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [commercialTerms, setCommercialTerms] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+
+  // Autocomplete em tempo real para materiais do orçamento
+  const [activeMaterialSearchIdx, setActiveMaterialSearchIdx] = useState<number | null>(null);
+  const [rowSuggestions, setRowSuggestions] = useState<any[]>([]);
+  const [rowSuggestionLoading, setRowSuggestionLoading] = useState(false);
+  const budgetTableRef = useRef<HTMLDivElement>(null);
+
+  // Fecha sugestões ao clicar fora da tabela de orçamento
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (budgetTableRef.current && !budgetTableRef.current.contains(e.target as Node)) {
+        setActiveMaterialSearchIdx(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleMaterialSearch = async (idx: number, query: string) => {
+    setActiveMaterialSearchIdx(idx);
+    if (!query || !query.trim()) {
+      setRowSuggestions([]);
+      return;
+    }
+    setRowSuggestionLoading(true);
+    try {
+      const results = await api.autocompleteMaterials(query.trim());
+      setRowSuggestions(results);
+    } catch (err) {
+      console.error('Erro no autocomplete de materiais para orçamento:', err);
+    } finally {
+      setRowSuggestionLoading(false);
+    }
+  };
+
+  const handleSelectMaterialSuggestion = (idx: number, material: any) => {
+    setEditableMaterials(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      // Mantém o preço unitário da planilha se já existir, senão usa o preço de referência do catálogo
+      const currentPrice = Number(item.unit_price !== undefined ? item.unit_price : item.unitPrice) || 0;
+      const price = currentPrice > 0 ? currentPrice : (Number(material.reference_price) || 0);
+      const qty = Number(item.quantity) || 1;
+      return {
+        ...item,
+        material_id: material.id,
+        materialId: material.id,
+        material_name: material.name,
+        material: material.name,
+        unit: item.unit && item.unit !== 'und' ? item.unit : (material.unit || 'und'),
+        unit_price: price,
+        unitPrice: price,
+        subtotal: Number((qty * price).toFixed(2))
+      };
+    }));
+    setActiveMaterialSearchIdx(null);
+    setRowSuggestions([]);
+  };
 
   const tabFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -214,17 +272,20 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   };
 
   const handleAddMaterialRow = () => {
+    const newIdx = editableMaterials.length;
     setEditableMaterials(prev => [
       ...prev,
       {
-        material_name: 'Novo Material',
-        quantity: 10,
-        unit: 'un',
-        unit_price: 25.0,
-        subtotal: 250.0,
+        material_name: '',
+        quantity: 1,
+        unit: 'und',
+        unit_price: 0,
+        subtotal: 0,
         human_notes: 'Adicionado manualmente pelo orçamentista'
       }
     ]);
+    setActiveMaterialSearchIdx(newIdx);
+    setRowSuggestions([]);
   };
 
   const handleAddServiceRow = () => {
@@ -277,7 +338,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     Pendente de designação
                   </span>
                 )}
-                {hasPermission(['admin']) && (
+                {hasPermission(['admin', 'orcamento_engenharia']) && (
                   <button
                     onClick={() => setIsAssignEngineersModalOpen(true)}
                     className="text-[11px] font-bold text-amber-600 dark:text-amber-300 hover:text-white bg-slate-100 dark:bg-dark-800 hover:bg-amber-600 dark:hover:bg-amber-600 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-dark-700 transition-all flex items-center gap-1 shadow-xs active:scale-95"
@@ -317,7 +378,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </button>
             )}
 
-            {project.status !== 'Cancelado' && hasPermission(['engenharia']) && (
+            {project.status !== 'Cancelado' && hasPermission(['engenharia', 'orcamento_engenharia', 'compras_solicitacoes']) && (
               <button
                 onClick={() => setIsNewRequestModalOpen(true)}
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
@@ -329,7 +390,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </button>
             )}
 
-            {hasPermission(['admin']) && (
+            {hasPermission(['admin', 'orcamento_engenharia']) && (
               <button
                 onClick={() => setIsAssignEngineersModalOpen(true)}
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-dark-800 hover:bg-dark-750 text-amber-300 border border-amber-600/40 text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-xs"
@@ -443,7 +504,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     </p>
                   </div>
                 </div>
-                {hasPermission(['admin']) && (
+                {hasPermission(['admin', 'orcamento_engenharia']) && (
                   <button
                     onClick={() => setIsAssignEngineersModalOpen(true)}
                     className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shrink-0 transition-colors shadow-md flex items-center gap-1.5"
@@ -461,7 +522,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">
                   Dados Técnicos da Obra
                 </h3>
-                {hasPermission(['admin']) && (
+                {hasPermission(['admin', 'orcamento_engenharia']) && (
                   <button
                     onClick={() => setIsAssignEngineersModalOpen(true)}
                     className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 bg-dark-800 hover:bg-dark-750 px-2.5 py-1 rounded-xl border border-dark-700 transition-colors"
@@ -738,13 +799,13 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           </div>
 
           {/* 1. Tabela de Materiais Editável */}
-          <div className="bg-dark-900 rounded-3xl border border-dark-750 overflow-hidden shadow-md">
+          <div ref={budgetTableRef} className="bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
             <div className="p-4 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-xs font-bold text-slate-200">
               <span>1. Materiais (Sugestão IA & Revisão Técnica)</span>
               <span className="text-sabrar-400">Subtotal Materiais: R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" style={{ minHeight: activeMaterialSearchIdx !== null ? '320px' : 'auto' }}>
               <table className="w-full text-left text-xs">
                 <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
                   <tr>
@@ -760,21 +821,127 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <tbody className="divide-y divide-dark-750">
                   {editableMaterials.map((m, idx) => {
                     const sub = Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0);
+                    const isSearchingThisRow = activeMaterialSearchIdx === idx;
+
                     return (
                       <tr key={idx} className="hover:bg-dark-850/60">
-                        <td className="p-3">
+                        <td className="p-3 relative">
                           <input
                             type="text"
-                            value={m.material_name || m.material}
+                            placeholder="Digite para pesquisar na base SABRAR..."
+                            value={m.material_name || m.material || ''}
+                            onFocus={() => {
+                              const currentVal = m.material_name || m.material || '';
+                              if (currentVal.trim().length > 0) {
+                                handleMaterialSearch(idx, currentVal);
+                              } else {
+                                setActiveMaterialSearchIdx(idx);
+                              }
+                            }}
                             onChange={(e) => {
                               const val = e.target.value;
                               setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, material_name: val, material: val } : item));
+                              handleMaterialSearch(idx, val);
                             }}
                             className="w-full font-bold text-white bg-transparent border-b border-transparent hover:border-dark-700 focus:border-sabrar-500 focus:bg-dark-850 px-1 py-0.5 rounded outline-none"
                           />
-                          {(m.ai_reasoning || m.reason) && (
-                            <div className="text-[10px] text-sabrar-400 mt-0.5 line-clamp-1 italic">
-                              IA: {m.ai_reasoning || m.reason}
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {!m.material_id ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMaterialSearchIdx(idx);
+                                  handleMaterialSearch(idx, m.material_name || m.material || '');
+                                }}
+                                className="text-[10px] font-bold text-amber-400 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/40 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1"
+                                title="Clique para pesquisar e vincular a um item oficial do catálogo SABRAR"
+                              >
+                                <span>🔗 Vincular ao catálogo oficial</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-emerald-400 bg-emerald-950/40 border border-emerald-600/30 px-1 py-0.2 rounded flex items-center gap-1">
+                                ✓ Catálogo SABRAR
+                              </span>
+                            )}
+                            {(m.ai_reasoning || m.reason) && (
+                              <span className="text-[10px] text-slate-400 line-clamp-1 italic">
+                                ({m.ai_reasoning || m.reason})
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Dropdown de sugestões da Base Central de Materiais */}
+                          {isSearchingThisRow && (
+                            <div className="absolute left-0 top-full mt-1 z-50 w-96 sm:w-[480px] bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
+                              <div className="p-2.5 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-[11px] font-bold text-slate-400">
+                                <span>
+                                  {rowSuggestionLoading ? 'Buscando na base de materiais...' : `${rowSuggestions.length} material(is) encontrado(s)`}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveMaterialSearchIdx(null)}
+                                  className="text-slate-500 hover:text-white text-[10px] px-1 py-0.5 rounded"
+                                >
+                                  Fechar ✕
+                                </button>
+                              </div>
+
+                              {rowSuggestions.length === 0 && !rowSuggestionLoading && (
+                                <div className="p-3 text-center text-xs text-slate-400">
+                                  Nenhum material encontrado. Continue digitando ou use como material avulso.
+                                </div>
+                              )}
+
+                              <div className="divide-y divide-dark-800">
+                                {rowSuggestions.map((sug) => (
+                                  <div
+                                    key={sug.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      handleSelectMaterialSuggestion(idx, sug);
+                                    }}
+                                    className="p-2.5 hover:bg-dark-800 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                      <div className="w-9 h-9 rounded-lg bg-dark-800 border border-dark-700 overflow-hidden flex items-center justify-center shrink-0">
+                                        {sug.image_url ? (
+                                          <img
+                                            src={sug.image_url}
+                                            alt={sug.name}
+                                            className="w-full h-full object-contain p-0.5 group-hover:scale-105 transition-transform"
+                                          />
+                                        ) : (
+                                          <Package className="w-4 h-4 text-slate-500" />
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-mono text-[10px] font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-1 py-0.2 rounded">
+                                            {sug.code}
+                                          </span>
+                                          <span className="text-[10px] font-semibold text-slate-400 bg-dark-850 border border-dark-750 px-1 py-0.2 rounded">
+                                            {sug.category}
+                                          </span>
+                                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1 py-0.2 rounded">
+                                            {sug.unit}
+                                          </span>
+                                        </div>
+                                        <div className="text-xs font-bold text-white group-hover:text-sabrar-300 transition-colors truncate mt-0.5">
+                                          {sug.name}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <div className="text-xs font-black text-sabrar-400">
+                                        R$ {Number(sug.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400">
+                                        /{sug.unit}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </td>
@@ -793,19 +960,27 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             className="w-20 text-center font-black text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
                           />
                         </td>
-                        <td className="p-3 text-center text-slate-400 font-medium">
-                          {m.unit}
+                        <td className="p-3 text-center">
+                          <input
+                            type="text"
+                            value={m.unit || 'und'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
+                            }}
+                            className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
+                          />
                         </td>
                         <td className="p-3 text-right">
                           <input
                             type="number"
-                            step="0.1"
+                            step="0.01"
                             value={m.unit_price || m.unitPrice}
                             onChange={(e) => {
                               const val = Number(e.target.value);
                               setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, unit_price: val, unitPrice: val } : item));
                             }}
-                            className="w-20 text-right font-bold text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
+                            className="w-24 text-right font-bold text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
                           />
                         </td>
                         <td className="p-3 text-right font-black text-white">

@@ -3,14 +3,14 @@ import { db } from '../db/connection.js';
 
 export const authRouter = express.Router();
 
-// Lista usuários (Restrito: Administrador vê todos; outros perfis recebem apenas a si mesmos)
+// Lista usuários (Restrito: Administrador e Orçamento/Engenharia vêem todos para atribuição de engenheiros; outros perfis recebem apenas a si mesmos)
 authRouter.get('/users', async (req, res) => {
   try {
     const userRole = req.headers['x-user-role'];
     const userId = req.headers['x-user-id'];
 
-    if (userRole && userRole !== 'admin') {
-      // Se não for admin, retorna apenas o próprio perfil do usuário solicitante
+    if (userRole && userRole !== 'admin' && userRole !== 'orcamento_engenharia') {
+      // Se não for admin nem orçamento/engenharia, retorna apenas o próprio perfil do usuário solicitante
       if (!userId) return res.json([]);
       const self = await db.prepare(`
         SELECT u.id, u.name, u.email, u.department, u.phone, u.avatar, r.name as role, r.label as role_label

@@ -224,6 +224,8 @@ export const api = {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return fetchJson<any[]>(`/materials${qs}`);
   },
+  autocompleteMaterials: (q: string) =>
+    fetchJson<any[]>(`/materials/autocomplete?q=${encodeURIComponent(q)}`),
   getMaterialCategories: () => fetchJson<{ category: string; count: number }[]>('/materials/categories'),
   getMaterial: (id: number | string) => fetchJson<any>(`/materials/${id}`),
   createMaterial: (data: any) => fetchJson<any>('/materials', { method: 'POST', body: JSON.stringify(data) }),

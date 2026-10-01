@@ -28,7 +28,8 @@ export class SpreadsheetService {
 
   /**
    * Processa a planilha de levantamento real enviada pelo usuário,
-   * atualiza o orçamento com as quantidades/valores reais e calibra a IA.
+   * atualiza o orçamento com as quantidades/valores reais (Materiais, Mão de Obra e Faturamento Direto)
+   * e calibra o motor de IA.
    */
   static async processRealSurveySpreadsheet(projectId, filePath, originalName, userId = 1) {
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
@@ -36,6 +37,13 @@ export class SpreadsheetService {
 
     const workbook = XLSX.readFile(filePath);
     if (!workbook.SheetNames.length) throw new Error('A planilha está vazia ou ilegível');
+
+    // 1. Identificar abas ocultas e padrões de abas auxiliares que NÃO devem ser lidas
+    const sheetProps = workbook.Workbook?.Sheets || [];
+    const isHiddenSheet = (idx) => {
+      const prop = sheetProps[idx];
+      return prop && (prop.Hidden === 1 || prop.Hidden === 2);
+    };
 
     const ignoreSheetPatterns = [
       /^resumo$/i,
@@ -45,13 +53,25 @@ export class SpreadsheetService {
       /^dashboard$/i,
       /fornecedor/i,
       /custos?\s*adm/i,
-      /conv/i,
+      /^dutos?\s*-/i,
+      /^dutos?/i,
+      /^d\.\s*redondos/i,
+      /^conv/i,
       /convers[aã]o/i,
       /^fechamento/i,
-      /^modelo/i
+      /^modelo/i,
+      /^estimativa/i,
+      /^lev\.\s*(difus|rede|cobre)/i,
+      /pre[cç]o.*materiais/i,
+      /carga.*g[aá]s/i,
+      /base.*pre[cç]o/i,
+      /base.*isolamento/i,
+      /pvcu/i,
+      /poliur/i
     ];
 
-    const isSummaryOrAuxSheet = (name, totalSheets) => {
+    const isSummaryOrAuxSheet = (name, idx, totalSheets) => {
+      if (isHiddenSheet(idx)) return true;
       if (totalSheets <= 1) return false;
       return ignoreSheetPatterns.some(p => p.test(name.trim()));
     };
@@ -66,116 +86,126 @@ export class SpreadsheetService {
       return 'Climatização';
     };
 
-    const detectColumns = (rows) => {
-      for (let r = 0; r < Math.min(25, rows.length); r++) {
-        const row = rows[r];
-        if (!Array.isArray(row)) continue;
+    // Identifica quais abas devem ser processadas (ignora ocultas e auxiliares)
+    const candidateSheets = workbook.SheetNames.filter((name, idx) => !isSummaryOrAuxSheet(name, idx, workbook.SheetNames.length));
+    const sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames.filter((_, idx) => !isHiddenSheet(idx));
 
-        let colDesc = -1;
-        let colQty = -1;
-        let colUnit = -1;
-        let colUnitPrice = -1;
-        let colTotalPrice = -1;
-        let colMatCost = -1;
-        let colCode = -1;
-
-        for (let c = 0; c < row.length; c++) {
-          const cell = String(row[c] || '').trim().toLowerCase();
-          if (!cell) continue;
-
-          // Descrição
-          if (/^(descri[cç][aã]o|especifica[cç][aã]o|discrimina[cç][aã]o|produto)$/i.test(cell) || (cell.includes('descri') && !cell.includes('código'))) {
-            if (colDesc === -1) colDesc = c;
-          } else if (/^(item|nome)$/i.test(cell) && colDesc === -1) {
-            colDesc = c;
-          } else if (/^material\s*$/i.test(cell)) {
-            colMatCost = c;
-          }
-
-          // Quantidade
-          if (/^(quant(idade)?|qtd|qtde|qnt\.?|volume|consumo)$/i.test(cell) || cell.includes('quant') || cell.includes('qtd') || cell.includes('qnt')) {
-            if (colQty === -1) colQty = c;
-          }
-
-          // Unidade
-          if (/^(unidade|unid\.?|un|tipo|medida)$/i.test(cell)) {
-            if (colUnit === -1) colUnit = c;
-          }
-
-          // Preço Unitário
-          if (/^(pre[cç]o unit[aá]rio|valor unit[aá]rio|pu|p\.u\.|custo unit[aá]rio)$/i.test(cell) || (cell.includes('unit') && (cell.includes('pre') || cell.includes('val') || cell.includes('custo')))) {
-            if (colUnitPrice === -1) colUnitPrice = c;
-          }
-
-          // Preço Total
-          if (/^(pre[cç]o total|valor total|subtotal|total)$/i.test(cell) || (cell.includes('total') && (cell.includes('pre') || cell.includes('val')))) {
-            if (colTotalPrice === -1) colTotalPrice = c;
-          }
-
-          // Código / Tag
-          if (/^(c[oó]digo|cod|c[oó]d\.?|tag)$/i.test(cell)) {
-            if (colCode === -1) colCode = c;
-          }
-        }
-
-        if (colDesc === -1 && colMatCost !== -1) {
-          colDesc = colMatCost;
-          colMatCost = -1;
-        }
-
-        if (colDesc !== -1 && colQty !== -1) {
-          return {
-            headerRow: r,
-            colDesc,
-            colQty,
-            colUnit,
-            colUnitPrice,
-            colTotalPrice,
-            colMatCost,
-            colCode
-          };
-        }
-      }
-      return null;
-    };
-
-    // Identifica quais abas devem ser processadas
-    const candidateSheets = workbook.SheetNames.filter(name => !isSummaryOrAuxSheet(name, workbook.SheetNames.length));
-    const sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames;
-
-    // Busca catálogo atual da SABRAR e id máximo para códigos únicos
+    // Busca catálogo oficial da SABRAR
     const catalog = await db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
-    const maxMatId = (await db.prepare("SELECT MAX(id) as max_id FROM materials").get())?.max_id || 0;
-    let newMatCounter = 0;
 
-    const parsedItems = [];
+    const normalizeStr = (s) => String(s || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    const parsedMaterials = [];
+    const parsedServices = [];
+    const parsedEquipment = [];
+
     let grandTotalMaterials = 0;
+    let grandTotalServices = 0;
+    let grandTotalEquipment = 0;
+
     const processedSheets = [];
-    const learningTotals = new Map(); // materialId -> totalQuantity para calibração da IA
+    const learningTotals = new Map(); // materialId -> totalQuantity
 
     for (const sName of sheetsToProcess) {
       const sheet = workbook.Sheets[sName];
       if (!sheet) continue;
       const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      if (!rawRows || rawRows.length < 2) continue;
+      if (!rawRows || rawRows.length < 5) continue;
 
-      const cols = detectColumns(rawRows);
-      if (!cols) continue;
+      // Detecta colunas
+      let headerRow = -1;
+      let colDesc = 1, colUnit = 2, colQty = 3, colPUnit = 5, colPTot = 6, colMat = -1, colMO = -1, colFat = -1, colCode = -1;
 
-      let sheetItemCount = 0;
-      for (let r = cols.headerRow + 1; r < rawRows.length; r++) {
+      for (let r = 0; r < Math.min(25, rawRows.length); r++) {
+        const row = rawRows[r] || [];
+        for (let c = 0; c < row.length; c++) {
+          const cell = String(row[c] || '').trim().toLowerCase();
+          if (!cell) continue;
+
+          if (cell.includes('descri') && !cell.includes('código')) colDesc = c;
+          else if (/^(item|produto)$/i.test(cell) && colDesc === 1) colDesc = c;
+
+          if (/^(tipo|unidade|unid\.?|un|medida)$/i.test(cell)) colUnit = c;
+          if (/^(quant(idade)?|qtd|qtde|qnt\.?)$/i.test(cell) || (cell.includes('quant') && !cell.includes('total'))) colQty = c;
+          if (cell.includes('preço unit') || cell.includes('valor unit') || cell === 'pu' || cell === 'p.u.') colPUnit = c;
+          if (cell.includes('preço tot') || cell.includes('valor tot') || cell === 'subtotal') colPTot = c;
+
+          if (/^material\s*$/i.test(cell)) colMat = c;
+          if (cell.includes('mão de obra') || cell.includes('mao de obra')) colMO = c;
+          if (cell.includes('faturamento')) colFat = c;
+          if (/^(c[oó]digo|cod|c[oó]d\.?|tag)$/i.test(cell)) colCode = c;
+        }
+
+        if (row.some(c => String(c || '').toLowerCase().includes('descri'))) {
+          headerRow = r;
+          break;
+        }
+      }
+
+      if (headerRow === -1) headerRow = 4;
+
+      // Detecta linhas de resumo no rodapé
+      let summaryRow = rawRows.length;
+      let sheetExpectedTot = 0, sheetExpectedMat = 0, sheetExpectedMO = 0, sheetExpectedFat = 0;
+
+      for (let r = headerRow + 1; r < rawRows.length; r++) {
+        const row = rawRows[r] || [];
+        const line = row.filter(c => c !== undefined && c !== null).map(c => String(c).trim()).join(' ').toLowerCase();
+
+        if (line.includes('valor total material') || line.includes('valor total  material')) {
+          summaryRow = Math.min(summaryRow, r);
+          if (colMat !== -1) sheetExpectedMat = Number(row[colMat]) || 0;
+        }
+        if (line.includes('valor total mão de obra') || line.includes('valor total  mão de obra')) {
+          summaryRow = Math.min(summaryRow, r);
+          if (colMO !== -1) sheetExpectedMO = Number(row[colMO]) || 0;
+        }
+        if (line.includes('valor total faturamento') || line.includes('valor total  faturamento')) {
+          summaryRow = Math.min(summaryRow, r);
+          if (colFat !== -1) sheetExpectedFat = Number(row[colFat]) || 0;
+        }
+        if (line.includes('valor total - obra') || line.includes('valor total  - obra')) {
+          summaryRow = Math.min(summaryRow, r);
+          if (colMat !== -1) sheetExpectedTot = Number(row[colMat]) || 0;
+        }
+      }
+
+      // Se a aba tem caixas de resumo zeradas/vazias em tudo, pula a aba
+      const hasSummaryDefined = (sheetExpectedTot > 0 || sheetExpectedMat > 0 || sheetExpectedMO > 0 || sheetExpectedFat > 0);
+      if (summaryRow < rawRows.length && !hasSummaryDefined) {
+        // Verifica se há qualquer valor não zero no miolo
+        let hasAnyValue = false;
+        for (let r = headerRow + 1; r < summaryRow; r++) {
+          const row = rawRows[r];
+          if (!row) continue;
+          if ((colMat !== -1 && Number(row[colMat]) > 0) ||
+              (colMO !== -1 && Number(row[colMO]) > 0) ||
+              (colFat !== -1 && Number(row[colFat]) > 0)) {
+            hasAnyValue = true;
+            break;
+          }
+        }
+        if (!hasAnyValue) continue;
+      }
+
+      let lastCategory = '';
+      let sheetMatCount = 0;
+      const isSabrarOPFormat = (colMat !== -1 || colMO !== -1 || colFat !== -1);
+
+      for (let r = headerRow + 1; r < summaryRow; r++) {
         const row = rawRows[r];
         if (!row || !Array.isArray(row)) continue;
 
-        const rawMatName = String(row[cols.colDesc] || '').trim();
-        if (!rawMatName || rawMatName.length < 2) continue;
+        let rawDesc = String(row[colDesc] || '').trim();
+        let unit = colUnit !== -1 && row[colUnit] ? String(row[colUnit]).trim() : 'und';
+        const rawQty = colQty !== -1 ? row[colQty] : 1;
 
-        // Ignora linhas de totalização ou cabeçalhos de seção disfarçados
-        if (/^(total|subtotal|soma|faturamento|preço total|resumo|equipamentos|outros|preços por tabela)/i.test(rawMatName)) {
-          continue;
-        }
-
-        const rawQty = row[cols.colQty];
         let qty = 0;
         if (typeof rawQty === 'number') {
           qty = rawQty;
@@ -183,122 +213,194 @@ export class SpreadsheetService {
           qty = Number(String(rawQty).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0;
         }
 
-        if (qty <= 0 || isNaN(qty)) continue;
+        const parseVal = (val) => {
+          if (typeof val === 'number') return val;
+          if (!val) return 0;
+          return Number(String(val).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0;
+        };
 
-        // Trata unidade
-        const unit = cols.colUnit !== -1 && row[cols.colUnit] ? String(row[cols.colUnit]).trim() : 'un';
+        const valMat = colMat !== -1 ? parseVal(row[colMat]) : 0;
+        const valMO = colMO !== -1 ? parseVal(row[colMO]) : 0;
+        const valFat = colFat !== -1 ? parseVal(row[colFat]) : 0;
 
-        // Trata preço
-        let price = 0;
-        if (cols.colUnitPrice !== -1 && row[cols.colUnitPrice] !== undefined) {
-          const rawPrice = row[cols.colUnitPrice];
-          if (typeof rawPrice === 'number') {
-            price = rawPrice;
-          } else {
-            price = Number(String(rawPrice).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0;
+        // Cabeçalho de subseção
+        if (rawDesc && qty === 0 && valMat === 0 && valMO === 0 && valFat === 0) {
+          lastCategory = rawDesc;
+          continue;
+        }
+
+        if (!rawDesc && (valMat > 0 || valMO > 0 || valFat > 0)) {
+          rawDesc = lastCategory || `Item Linha ${r + 1}`;
+        }
+
+        if (!rawDesc || rawDesc.length < 2) continue;
+
+        // Ignora linhas de totalização intermediária
+        if (/^(total|subtotal|soma|faturamento|preço total|resumo|preços por tabela)/i.test(rawDesc)) {
+          continue;
+        }
+
+        if (isSabrarOPFormat) {
+          // 1. MATERIAL (Coluna H - Amarelo)
+          if (valMat > 0) {
+            const finalQty = qty > 0 ? qty : 1;
+            const subtotal = Number(valMat.toFixed(2));
+            const unitPrice = Number((subtotal / finalQty).toFixed(2));
+
+            // Cruzamento com catálogo oficial
+            const normName = normalizeStr(rawDesc);
+            let matchedMat = null;
+
+            if (colCode !== -1 && row[colCode]) {
+              const codeVal = String(row[colCode]).trim().toLowerCase();
+              matchedMat = catalog.find(m => m.code.toLowerCase() === codeVal);
+            }
+            if (!matchedMat) {
+              matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
+            }
+            if (!matchedMat) {
+              matchedMat = catalog.find(m => {
+                if (!m.synonyms) return false;
+                const syns = m.synonyms.split(/[,;\n/]+/).map(s => normalizeStr(s));
+                return syns.some(s => s && s === normName);
+              });
+            }
+            if (!matchedMat) {
+              const tokens = normName.split(' ').filter(t => t.length > 2);
+              if (tokens.length >= 2) {
+                let bestScore = 0;
+                for (const m of catalog) {
+                  const targetStr = normalizeStr(m.name + ' ' + (m.synonyms || ''));
+                  let matches = 0;
+                  for (const t of tokens) {
+                    if (targetStr.includes(t)) matches++;
+                  }
+                  const score = matches / tokens.length;
+                  if (score > bestScore && score >= 0.75) {
+                    bestScore = score;
+                    matchedMat = m;
+                  }
+                }
+              }
+            }
+
+            const materialId = matchedMat ? matchedMat.id : null;
+            const finalUnit = (!unit || unit === '-' || unit === '0') ? (matchedMat?.unit || 'und') : unit;
+
+            parsedMaterials.push({
+              sheet: sName,
+              materialId,
+              materialName: rawDesc,
+              quantity: finalQty,
+              unit: finalUnit,
+              unitPrice,
+              subtotal
+            });
+
+            grandTotalMaterials += subtotal;
+            sheetMatCount++;
+
+            if (materialId) {
+              learningTotals.set(materialId, (learningTotals.get(materialId) || 0) + finalQty);
+            }
+          }
+
+          // 2. MÃO DE OBRA / SERVIÇOS (Coluna I - Azul Claro com BDI + 40%)
+          if (valMO > 0) {
+            const finalQty = qty > 0 ? qty : 1;
+            const subtotal = Number(valMO.toFixed(2));
+            const unitPrice = Number((subtotal / finalQty).toFixed(2));
+
+            parsedServices.push({
+              category: 'MÃO DE OBRA',
+              description: rawDesc,
+              quantity: finalQty,
+              unit: unit || 'vb',
+              unitPrice,
+              subtotal,
+              notes: `Mão de obra e serviços técnicos da planilha [${sName}] (inclui BDI)`
+            });
+
+            grandTotalServices += subtotal;
+          }
+
+          // 3. FATURAMENTO DIRETO / EQUIPAMENTOS (Coluna J - Verde Claro)
+          if (valFat > 0) {
+            const finalQty = qty > 0 ? qty : 1;
+            const subtotal = Number(valFat.toFixed(2));
+            const unitPrice = Number((subtotal / finalQty).toFixed(2));
+
+            parsedEquipment.push({
+              category: getCategoryFromSheet(sName),
+              description: rawDesc,
+              brand: '',
+              model: '',
+              quantity: finalQty,
+              unit: unit || 'unid',
+              unitPrice,
+              subtotal,
+              notes: `Faturamento Direto / Equipamento da planilha [${sName}]`
+            });
+
+            grandTotalEquipment += subtotal;
+          }
+        } else {
+          // Formato genérico de planilha sem colunas H/I/J
+          if (qty > 0) {
+            let price = colPUnit !== -1 ? parseVal(row[colPUnit]) : 0;
+            if (price <= 0 && colPTot !== -1) {
+              const tot = parseVal(row[colPTot]);
+              if (tot > 0) price = Number((tot / qty).toFixed(2));
+            }
+
+            const normName = normalizeStr(rawDesc);
+            const matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
+            const materialId = matchedMat ? matchedMat.id : null;
+            const finalPrice = price > 0 ? price : (Number(matchedMat?.reference_price) || 10.0);
+            const subtotal = Number((qty * finalPrice).toFixed(2));
+
+            parsedMaterials.push({
+              sheet: sName,
+              materialId,
+              materialName: rawDesc,
+              quantity: qty,
+              unit: unit || matchedMat?.unit || 'und',
+              unitPrice: finalPrice,
+              subtotal
+            });
+
+            grandTotalMaterials += subtotal;
+            sheetMatCount++;
+            if (materialId) {
+              learningTotals.set(materialId, (learningTotals.get(materialId) || 0) + qty);
+            }
           }
         }
-
-        if (price <= 0 && cols.colTotalPrice !== -1 && row[cols.colTotalPrice] !== undefined) {
-          const t = row[cols.colTotalPrice];
-          const tot = typeof t === 'number' ? t : (Number(String(t).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0);
-          if (tot > 0 && qty > 0) price = Number((tot / qty).toFixed(2));
-        }
-
-        if (price <= 0 && cols.colMatCost !== -1 && row[cols.colMatCost] !== undefined) {
-          const m = row[cols.colMatCost];
-          const matTot = typeof m === 'number' ? m : (Number(String(m).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0);
-          if (matTot > 0 && qty > 0) price = Number((matTot / qty).toFixed(2));
-        }
-
-        // Tenta cruzar com material do catálogo
-        const rawLower = rawMatName.toLowerCase();
-        let matchedMat = null;
-
-        if (cols.colCode !== -1 && row[cols.colCode]) {
-          const codeVal = String(row[cols.colCode]).trim().toLowerCase();
-          matchedMat = catalog.find(m => m.code.toLowerCase() === codeVal);
-        }
-
-        if (!matchedMat) {
-          // Busca exata ou por similaridade de tokens
-          matchedMat = catalog.find(m => m.name.toLowerCase() === rawLower) ||
-            catalog.find(m => {
-              const mTokens = m.name.toLowerCase().split(/\s+/).filter(t => t.length > 3);
-              return mTokens.filter(t => rawLower.includes(t)).length >= 2;
-            });
-        }
-
-        let materialId = null;
-        let finalPrice = price;
-
-        if (matchedMat) {
-          materialId = matchedMat.id;
-          if (finalPrice <= 0) finalPrice = matchedMat.reference_price || 10.0;
-        } else {
-          // Cadastra dinamicamente o novo material no catálogo e adiciona à memória para reutilização
-          newMatCounter++;
-          const newCode = `MAT-EXP-${String(maxMatId + newMatCounter).padStart(5, '0')}`;
-          if (finalPrice <= 0) finalPrice = 50.0;
-          const category = getCategoryFromSheet(sName);
-
-          const resNewMat = await db.prepare(`
-            INSERT INTO materials (code, name, description, category, unit, reference_price, stock_physical, stock_reserved, stock_minimum, status)
-            VALUES (?, ?, ?, ?, ?, ?, 100, 0, 20, 'Ativo')
-          `).run(
-            newCode,
-            rawMatName,
-            `Material importado da planilha de levantamento: ${originalName} (${sName})`,
-            category,
-            unit,
-            finalPrice
-          );
-
-          materialId = resNewMat.lastInsertRowid;
-          catalog.push({
-            id: materialId,
-            code: newCode,
-            name: rawMatName,
-            category,
-            unit,
-            reference_price: finalPrice
-          });
-        }
-
-        const subtotal = Number((qty * finalPrice).toFixed(2));
-        grandTotalMaterials += subtotal;
-
-        parsedItems.push({
-          sheet: sName,
-          materialId,
-          materialName: rawMatName,
-          quantity: qty,
-          unit,
-          unitPrice: finalPrice,
-          subtotal
-        });
-
-        learningTotals.set(materialId, (learningTotals.get(materialId) || 0) + qty);
-        sheetItemCount++;
       }
 
-      if (sheetItemCount > 0) {
-        processedSheets.push({ sheet: sName, itemsCount: sheetItemCount });
+      if (sheetMatCount > 0) {
+        processedSheets.push({ sheet: sName, itemsCount: sheetMatCount });
       }
     }
 
-    if (parsedItems.length === 0) {
-      throw new Error('Nenhum item válido com descrição e quantidade foi encontrado na planilha. Verifique se as colunas possuem cabeçalhos como Descrição/Material e Quantidade.');
+    if (parsedMaterials.length === 0 && parsedServices.length === 0 && parsedEquipment.length === 0) {
+      throw new Error('Nenhum item válido com valores positivos foi encontrado nas abas ativas da planilha.');
     }
 
-    console.log(`[Spreadsheet Parser] Sucesso: ${parsedItems.length} materiais processados de ${processedSheets.length} aba(s):`, processedSheets.map(s => s.sheet).join(', '));
+    grandTotalMaterials = Number(grandTotalMaterials.toFixed(2));
+    grandTotalServices = Number(grandTotalServices.toFixed(2));
+    grandTotalEquipment = Number(grandTotalEquipment.toFixed(2));
+    const grandTotalFinal = Number((grandTotalMaterials + grandTotalServices + grandTotalEquipment).toFixed(2));
+
+    console.log(`[Spreadsheet Parser] Processamento concluído com sucesso:`);
+    console.log(`- Materiais: ${parsedMaterials.length} itens (R$ ${grandTotalMaterials.toFixed(2)})`);
+    console.log(`- Serviços/Mão de Obra: ${parsedServices.length} itens (R$ ${grandTotalServices.toFixed(2)})`);
+    console.log(`- Faturamento Direto/Máquinas: ${parsedEquipment.length} itens (R$ ${grandTotalEquipment.toFixed(2)})`);
+    console.log(`- Total Obra: R$ ${grandTotalFinal.toFixed(2)}`);
 
     // 2. Busca ou cria o orçamento oficial
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetId;
-
-    const defaultServicesCost = 24140.00; // Serviços de montagem, comissionamento e balanceamento
-    const totalFinal = grandTotalMaterials + defaultServicesCost;
 
     if (!budget) {
       const budgetCode = await generateUniqueBudgetCode(db);
@@ -308,10 +410,10 @@ export class SpreadsheetService {
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
           total_additional, total_final, validity_days, commercial_terms
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, 0, 0, 0, 0, ?, 15, ?)
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?)
       `).run(
-        projectId, budgetCode, grandTotalMaterials, defaultServicesCost,
-        defaultServicesCost, totalFinal,
+        projectId, budgetCode, grandTotalMaterials, grandTotalServices,
+        grandTotalServices, grandTotalEquipment, grandTotalFinal,
         'Orçamento atualizado via importação de planilha de levantamento executivo real.'
       );
       budgetId = resB.lastInsertRowid;
@@ -319,12 +421,15 @@ export class SpreadsheetService {
       budgetId = budget.id;
       await db.prepare(`
         UPDATE budgets SET
-          total_materials = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
+          total_materials = ?, total_services = ?, total_labor = ?,
+          total_equipment = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(grandTotalMaterials, grandTotalMaterials + (budget.total_services || defaultServicesCost), budgetId);
+      `).run(grandTotalMaterials, grandTotalServices, grandTotalServices, grandTotalEquipment, grandTotalFinal, budgetId);
 
-      // Limpa itens antigos para substituir pelos reais
+      // Limpa dados antigos para substituir pelos dados reais da planilha
       await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
     }
 
     // 3. Insere os itens na tabela `budget_items`
@@ -335,7 +440,7 @@ export class SpreadsheetService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Busca sugestões anteriores da IA para calcular desvio de aprendizado
+    // Sugestões anteriores da IA
     const previousSuggestions = await db.prepare(`
       SELECT material_id, suggested_quantity 
       FROM ai_suggestions 
@@ -347,9 +452,9 @@ export class SpreadsheetService {
       suggestionMap.set(s.material_id, s.suggested_quantity);
     }
 
-    for (const item of parsedItems) {
+    for (const item of parsedMaterials) {
       const aiSuggestedQty = suggestionMap.get(item.materialId) || Math.round(item.quantity * 0.9);
-      
+
       await insertItem.run(
         budgetId,
         item.materialId,
@@ -364,8 +469,59 @@ export class SpreadsheetService {
       );
     }
 
-    // 4. MOTOR DE APRENDIZADO CONTÍNUO (Regras 24, 25, 26, 29)
-    // Alimenta o histórico agregado por material para calibrar futuras obras
+    // 4. Insere Serviços / Mão de Obra
+    if (parsedServices.length > 0) {
+      const insertService = db.prepare(`
+        INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const s of parsedServices) {
+        await insertService.run(
+          budgetId,
+          s.category,
+          s.description,
+          s.quantity,
+          s.unit,
+          s.unitPrice,
+          s.subtotal,
+          s.notes
+        );
+      }
+    } else {
+      // Serviços padrão mínimos se a planilha não continha coluna de mão de obra
+      const insertService = db.prepare(`
+        INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      await insertService.run(budgetId, 'MÃO DE OBRA', 'Montagem mecânica e tubulação frigorígena', 1, 'vb', 18000.0, 18000.0, 'Padrão executivo SABRAR');
+      await insertService.run(budgetId, 'ENGENHARIA', 'Comissionamento, balanceamento TAB e start-up final', 1, 'gl', 6140.0, 6140.0, 'Emissão de ART/RRT');
+    }
+
+    // 5. Insere Máquinas & Equipamentos (Faturamento Direto)
+    if (parsedEquipment.length > 0) {
+      const insertEquipment = db.prepare(`
+        INSERT INTO budget_equipment (
+          budget_id, category, description, brand, model,
+          quantity, unit, unit_price, subtotal, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const eq of parsedEquipment) {
+        await insertEquipment.run(
+          budgetId,
+          eq.category,
+          eq.description,
+          eq.brand || '',
+          eq.model || '',
+          eq.quantity,
+          eq.unit,
+          eq.unitPrice,
+          eq.subtotal,
+          eq.notes
+        );
+      }
+    }
+
+    // 6. MOTOR DE APRENDIZADO CONTÍNUO (Regras 24, 25, 26, 29)
     let calibratedCount = 0;
     for (const [matId, totalQty] of learningTotals.entries()) {
       const aiSuggestedQty = suggestionMap.get(matId) || Math.round(totalQty * 0.9);
@@ -375,10 +531,10 @@ export class SpreadsheetService {
           matId,
           project.project_type || 'Infraestrutura',
           aiSuggestedQty,
-          totalQty, // aprovado/real
-          totalQty, // solicitado
-          totalQty, // retirado
-          0 // devolvido
+          totalQty,
+          totalQty,
+          totalQty,
+          0
         );
         calibratedCount++;
       } catch (learnErr) {
@@ -386,49 +542,42 @@ export class SpreadsheetService {
       }
     }
 
-    // 5. Se não havia serviços cadastrados, insere serviços padrão
-    const existingServices = (await db.prepare('SELECT COUNT(*) as count FROM services WHERE budget_id = ?').get(budgetId))?.count || 0;
-    if (existingServices === 0) {
-      const insertService = db.prepare(`
-        INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      await insertService.run(budgetId, 'MÃO DE OBRA', 'Montagem mecânica de dutos MPU e difusores de ar', 120, 'h', 85.0, 10200.0, 'Padrão SMACNA');
-      await insertService.run(budgetId, 'MÃO DE OBRA', 'Instalação de tubulação frigorígena e brasagem VRF', 80, 'h', 95.0, 7600.0, 'Técnicos certificados');
-      await insertService.run(budgetId, 'SERVIÇOS TÉCNICOS', 'Pressurização N2 (450 PSI) e ensaio de estanqueidade', 1, 'gl', 3500.0, 3500.0, 'Protocolo de estanqueidade');
-      await insertService.run(budgetId, 'ENGENHARIA', 'Balanceamento TAB, automação BMS e start-up final', 1, 'gl', 2840.0, 2840.0, 'Emissão de ART/RRT');
-    }
-
-    // 6. Atualiza totais na tabela `projects`
+    // 7. Atualiza totais na tabela `projects`
+    const updatedStatus = (project.status === 'Novo' || !project.status) ? 'Orçamento gerado' : project.status;
     await db.prepare(`
       UPDATE projects SET
-        status = 'Orçamento gerado',
+        status = ?,
         total_budget_materials = ?,
+        total_budget_services = ?,
         total_budget_final = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(grandTotalMaterials, totalFinal, projectId);
+    `).run(updatedStatus, grandTotalMaterials, grandTotalServices, grandTotalFinal, projectId);
 
-    // 7. Registra auditoria
+    // 8. Registra auditoria
     await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
       VALUES (?, 'IMPORTACAO_PLANILHA_REAL', 'ORCAMENTO', ?, ?, ?)
     `).run(
       userId, budgetId, projectId,
-      `Planilha ${originalName} importada com sucesso: ${parsedItems.length} materiais reais processados e calibrados no motor de IA da SABRAR.`
+      `Planilha ${originalName} importada com sucesso: ${parsedMaterials.length} materiais (R$ ${grandTotalMaterials.toLocaleString('pt-BR')}), ${parsedServices.length} serviços (R$ ${grandTotalServices.toLocaleString('pt-BR')}) e ${parsedEquipment.length} equipamentos (R$ ${grandTotalEquipment.toLocaleString('pt-BR')}) processados com valores reais.`
     );
 
     return {
       success: true,
       projectId,
       budgetId,
-      itemsCount: parsedItems.length,
+      itemsCount: parsedMaterials.length,
+      servicesCount: parsedServices.length,
+      equipmentCount: parsedEquipment.length,
       calibratedCount,
       totalMaterials: grandTotalMaterials,
-      totalFinal,
+      totalServices: grandTotalServices,
+      totalEquipment: grandTotalEquipment,
+      totalFinal: grandTotalFinal,
       sheetsCount: processedSheets.length,
       sheetsNames: processedSheets.map(s => s.sheet),
-      items: parsedItems
+      items: parsedMaterials
     };
   }
 }

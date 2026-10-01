@@ -193,7 +193,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                           </span>
                         )}
                       </div>
-                      {currentUser?.role === 'admin' && (
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento_engenharia') && (
                         <button
                           type="button"
                           onClick={(e) => {

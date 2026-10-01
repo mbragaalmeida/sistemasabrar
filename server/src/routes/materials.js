@@ -20,9 +20,12 @@ materialsRouter.get('/', async (req, res) => {
       query += ' AND m.category = ?';
       params.push(category);
     }
-    if (search) {
-      query += ' AND (m.name LIKE ? OR m.code LIKE ? OR m.brand LIKE ? OR m.description LIKE ? OR m.synonyms LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    if (search && search.trim()) {
+      const words = search.trim().split(/\s+/).filter(w => w.length > 0);
+      for (const w of words) {
+        query += ` AND (unaccent(m.name) ILIKE unaccent(?) OR unaccent(coalesce(m.code, '')) ILIKE unaccent(?) OR unaccent(coalesce(m.brand, '')) ILIKE unaccent(?) OR unaccent(coalesce(m.description, '')) ILIKE unaccent(?) OR unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?))`;
+        params.push(`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`);
+      }
     }
     if (below_minimum === 'true') {
       query += ' AND m.stock_physical <= m.stock_minimum';
@@ -73,6 +76,55 @@ materialsRouter.get('/categories', async (req, res) => {
     `).all();
 
     res.json(categories);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Autocomplete de materiais em tempo real (para orçamentos e busca central)
+materialsRouter.get('/autocomplete', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json([]);
+
+    const words = q.split(/\s+/).filter(w => w.length > 0);
+    const whereClauses = [];
+    const params = [];
+
+    for (const w of words) {
+      whereClauses.push(`(unaccent(name) ILIKE unaccent(?) OR unaccent(coalesce(code, '')) ILIKE unaccent(?) OR unaccent(coalesce(synonyms, '')) ILIKE unaccent(?) OR unaccent(coalesce(brand, '')) ILIKE unaccent(?))`);
+      params.push(`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`);
+    }
+
+    const orderParams = [`${q}%`, `${q}%`, `${q}%`];
+
+    const query = `
+      SELECT id, code, name, category, unit, reference_price, synonyms, image_url, stock_physical, stock_reserved, stock_minimum
+      FROM materials
+      WHERE ${whereClauses.join(' AND ')}
+      ORDER BY 
+        CASE 
+          WHEN unaccent(name) ILIKE unaccent(?) THEN 1 
+          WHEN unaccent(coalesce(synonyms, '')) ILIKE unaccent(?) THEN 2 
+          WHEN unaccent(coalesce(code, '')) ILIKE unaccent(?) THEN 3 
+          ELSE 4 
+        END,
+        name ASC
+      LIMIT 30
+    `;
+
+    const materials = await db.prepare(query).all(...params, ...orderParams);
+
+    const enriched = materials.map(m => ({
+      ...m,
+      reference_price: Number(m.reference_price) || 0,
+      stock_physical: Number(m.stock_physical || 0),
+      stock_reserved: Number(m.stock_reserved || 0),
+      stock_minimum: Number(m.stock_minimum || 0),
+      stock_available: Math.max(0, Number(m.stock_physical || 0) - Number(m.stock_reserved || 0))
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -47,6 +47,9 @@ export function translateSql(sql) {
     }
   }
 
+  // Converte LIKE para ILIKE no PostgreSQL para garantir busca sem distinção de maiúsculas/minúsculas
+  result = result.replace(/\bLIKE\b/g, 'ILIKE');
+
   // Traduz funções de data específicas do SQLite para PostgreSQL
   result = result.replace(/strftime\s*\(\s*'%Y-%m'\s*,\s*([^)]+)\)/gi, "TO_CHAR($1, 'YYYY-MM')");
   result = result.replace(/strftime\s*\(\s*'%Y-%m-%d'\s*,\s*([^)]+)\)/gi, "TO_CHAR($1, 'YYYY-MM-DD')");
