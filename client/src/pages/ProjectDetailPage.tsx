@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   Sparkles,
@@ -21,7 +22,8 @@ import {
   UploadCloud,
   Calculator,
   FileSpreadsheet,
-  Package
+  Package,
+  Search
 } from 'lucide-react';
 import { Project, Budget, BudgetItem, ServiceItem, ComparisonRow } from '../types';
 import { api } from '../services/api';
@@ -69,37 +71,119 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [savingBudget, setSavingBudget] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
-  // Autocomplete em tempo real para materiais do orçamento
+  // Autocomplete flutuante em tempo real para materiais do orçamento
   const [activeMaterialSearchIdx, setActiveMaterialSearchIdx] = useState<number | null>(null);
   const [rowSuggestions, setRowSuggestions] = useState<any[]>([]);
   const [rowSuggestionLoading, setRowSuggestionLoading] = useState(false);
+  const [searchAnchorRect, setSearchAnchorRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const budgetTableRef = useRef<HTMLDivElement>(null);
+  const dropdownPortalRef = useRef<HTMLDivElement>(null);
+  const searchDebounceRef = useRef<any>(null);
+  const searchCallCountRef = useRef(0);
 
-  // Fecha sugestões ao clicar fora da tabela de orçamento
+  // Calcula posição para renderizar o dropdown flutuante via React Portal
+  const updateAnchorPos = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const dropdownWidth = Math.max(rect.width, 480);
+    let left = rect.left;
+    if (left + dropdownWidth > window.innerWidth - 16) {
+      left = Math.max(16, window.innerWidth - dropdownWidth - 16);
+    }
+    const top = rect.bottom + 4;
+    setSearchAnchorRect({ top, left, width: dropdownWidth });
+  };
+
+  // Fecha sugestões ao clicar fora
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (budgetTableRef.current && !budgetTableRef.current.contains(e.target as Node)) {
-        setActiveMaterialSearchIdx(null);
+      const target = e.target as Node;
+      if (dropdownPortalRef.current && dropdownPortalRef.current.contains(target)) {
+        return;
       }
+      if ((target as HTMLElement)?.closest?.('.material-search-input-container')) {
+        return;
+      }
+      setActiveMaterialSearchIdx(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleMaterialSearch = async (idx: number, query: string) => {
+  // Trata rolagem ou redimensionamento da janela
+  useEffect(() => {
+    const handleScrollOrResize = (e: Event) => {
+      if (dropdownPortalRef.current && dropdownPortalRef.current.contains(e.target as Node)) {
+        return;
+      }
+      if (activeMaterialSearchIdx !== null) {
+        setActiveMaterialSearchIdx(null);
+      }
+    };
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [activeMaterialSearchIdx]);
+
+  const triggerMaterialSearch = (idx: number, query: string, targetEl?: HTMLElement) => {
     setActiveMaterialSearchIdx(idx);
+    if (targetEl) {
+      updateAnchorPos(targetEl);
+    }
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
     if (!query || !query.trim()) {
       setRowSuggestions([]);
+      setRowSuggestionLoading(false);
       return;
     }
+
     setRowSuggestionLoading(true);
-    try {
-      const results = await api.autocompleteMaterials(query.trim());
-      setRowSuggestions(results);
-    } catch (err) {
-      console.error('Erro no autocomplete de materiais para orçamento:', err);
-    } finally {
-      setRowSuggestionLoading(false);
+    const callId = ++searchCallCountRef.current;
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await api.autocompleteMaterials(query.trim());
+        if (callId === searchCallCountRef.current) {
+          setRowSuggestions(results || []);
+        }
+      } catch (err) {
+        console.error('Erro no autocomplete de materiais para orçamento:', err);
+      } finally {
+        if (callId === searchCallCountRef.current) {
+          setRowSuggestionLoading(false);
+        }
+      }
+    }, 150);
+  };
+
+  const handleInputKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (rowSuggestions.length > 0) {
+        handleSelectMaterialSuggestion(idx, rowSuggestions[0]);
+        return;
+      }
+      const currentVal = editableMaterials[idx]?.material_name || editableMaterials[idx]?.material || '';
+      if (currentVal.trim()) {
+        setRowSuggestionLoading(true);
+        try {
+          const results = await api.autocompleteMaterials(currentVal.trim());
+          setRowSuggestions(results || []);
+          if (results && results.length > 0) {
+            handleSelectMaterialSuggestion(idx, results[0]);
+          }
+        } catch (err) {
+          console.error('Erro na busca de material:', err);
+        } finally {
+          setRowSuggestionLoading(false);
+        }
+      }
+    } else if (e.key === 'Escape') {
+      setActiveMaterialSearchIdx(null);
     }
   };
 
@@ -825,35 +909,47 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
 
                     return (
                       <tr key={idx} className="hover:bg-dark-850/60">
-                        <td className="p-3 relative">
-                          <input
-                            type="text"
-                            placeholder="Digite para pesquisar na base SABRAR..."
-                            value={m.material_name || m.material || ''}
-                            onFocus={() => {
-                              const currentVal = m.material_name || m.material || '';
-                              if (currentVal.trim().length > 0) {
-                                handleMaterialSearch(idx, currentVal);
-                              } else {
-                                setActiveMaterialSearchIdx(idx);
-                              }
-                            }}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, material_name: val, material: val } : item));
-                              handleMaterialSearch(idx, val);
-                            }}
-                            className="w-full font-bold text-white bg-transparent border-b border-transparent hover:border-dark-700 focus:border-sabrar-500 focus:bg-dark-850 px-1 py-0.5 rounded outline-none"
-                          />
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <td className="p-3">
+                          <div className="relative flex items-center material-search-input-container">
+                            <input
+                              type="text"
+                              placeholder="Digite para pesquisar na base SABRAR (ou Enter)..."
+                              value={m.material_name || m.material || ''}
+                              onFocus={(e) => {
+                                const val = m.material_name || m.material || '';
+                                triggerMaterialSearch(idx, val, e.currentTarget);
+                              }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, material_name: val, material: val } : item));
+                                triggerMaterialSearch(idx, val, e.currentTarget);
+                              }}
+                              onKeyDown={(e) => handleInputKeyDown(e, idx)}
+                              className="w-full font-bold text-white bg-transparent border-b border-dark-700 hover:border-slate-500 focus:border-sabrar-500 focus:bg-dark-850 pl-2 pr-7 py-1 rounded outline-none transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                const container = e.currentTarget.closest('.material-search-input-container');
+                                const inputEl = container?.querySelector('input') as HTMLElement;
+                                triggerMaterialSearch(idx, m.material_name || m.material || '', inputEl || e.currentTarget);
+                              }}
+                              className="absolute right-1 text-slate-400 hover:text-sabrar-400 p-1"
+                              title="Buscar na base de materiais (Enter)"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             {!m.material_id ? (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setActiveMaterialSearchIdx(idx);
-                                  handleMaterialSearch(idx, m.material_name || m.material || '');
+                                onClick={(e) => {
+                                  const tr = e.currentTarget.closest('tr');
+                                  const inputEl = tr?.querySelector('input[type="text"]') as HTMLElement;
+                                  triggerMaterialSearch(idx, m.material_name || m.material || '', inputEl || e.currentTarget);
                                 }}
-                                className="text-[10px] font-bold text-amber-400 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/40 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1"
+                                className="text-[10px] font-bold text-amber-400 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/40 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 active:scale-95"
                                 title="Clique para pesquisar e vincular a um item oficial do catálogo SABRAR"
                               >
                                 <span>🔗 Vincular ao catálogo oficial</span>
@@ -869,81 +965,6 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               </span>
                             )}
                           </div>
-
-                          {/* Dropdown de sugestões da Base Central de Materiais */}
-                          {isSearchingThisRow && (
-                            <div className="absolute left-0 top-full mt-1 z-50 w-96 sm:w-[480px] bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
-                              <div className="p-2.5 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-[11px] font-bold text-slate-400">
-                                <span>
-                                  {rowSuggestionLoading ? 'Buscando na base de materiais...' : `${rowSuggestions.length} material(is) encontrado(s)`}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveMaterialSearchIdx(null)}
-                                  className="text-slate-500 hover:text-white text-[10px] px-1 py-0.5 rounded"
-                                >
-                                  Fechar ✕
-                                </button>
-                              </div>
-
-                              {rowSuggestions.length === 0 && !rowSuggestionLoading && (
-                                <div className="p-3 text-center text-xs text-slate-400">
-                                  Nenhum material encontrado. Continue digitando ou use como material avulso.
-                                </div>
-                              )}
-
-                              <div className="divide-y divide-dark-800">
-                                {rowSuggestions.map((sug) => (
-                                  <div
-                                    key={sug.id}
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      handleSelectMaterialSuggestion(idx, sug);
-                                    }}
-                                    className="p-2.5 hover:bg-dark-800 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
-                                  >
-                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                      <div className="w-9 h-9 rounded-lg bg-dark-800 border border-dark-700 overflow-hidden flex items-center justify-center shrink-0">
-                                        {sug.image_url ? (
-                                          <img
-                                            src={sug.image_url}
-                                            alt={sug.name}
-                                            className="w-full h-full object-contain p-0.5 group-hover:scale-105 transition-transform"
-                                          />
-                                        ) : (
-                                          <Package className="w-4 h-4 text-slate-500" />
-                                        )}
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="font-mono text-[10px] font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-1 py-0.2 rounded">
-                                            {sug.code}
-                                          </span>
-                                          <span className="text-[10px] font-semibold text-slate-400 bg-dark-850 border border-dark-750 px-1 py-0.2 rounded">
-                                            {sug.category}
-                                          </span>
-                                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1 py-0.2 rounded">
-                                            {sug.unit}
-                                          </span>
-                                        </div>
-                                        <div className="text-xs font-bold text-white group-hover:text-sabrar-300 transition-colors truncate mt-0.5">
-                                          {sug.name}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <div className="text-xs font-black text-sabrar-400">
-                                        R$ {Number(sug.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      </div>
-                                      <div className="text-[10px] text-slate-400">
-                                        /{sug.unit}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </td>
                         <td className="p-3 text-center font-mono text-slate-400">
                           {m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity}
@@ -1578,6 +1599,98 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         onClose={() => setSelectedRequestForPrint(null)}
         request={selectedRequestForPrint}
       />
+
+      {/* Dropdown Flutuante de Autocomplete via Portal (100% imune a overflow de tabelas) */}
+      {activeMaterialSearchIdx !== null && searchAnchorRect && createPortal(
+        <div
+          ref={dropdownPortalRef}
+          style={{
+            position: 'fixed',
+            top: `${searchAnchorRect.top}px`,
+            left: `${searchAnchorRect.left}px`,
+            width: `${searchAnchorRect.width}px`,
+            zIndex: 999999
+          }}
+          className="bg-dark-900 border-2 border-sabrar-500/80 rounded-2xl shadow-2xl overflow-hidden max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-100"
+        >
+          <div className="p-2.5 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-[11px] font-bold text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5 text-sabrar-400" />
+              {rowSuggestionLoading ? 'Buscando no catálogo SABRAR...' : `${rowSuggestions.length} material(is) encontrado(s)`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveMaterialSearchIdx(null)}
+              className="text-slate-400 hover:text-white text-[11px] px-1.5 py-0.5 rounded bg-dark-800 hover:bg-dark-700 transition-colors"
+            >
+              Fechar ✕
+            </button>
+          </div>
+
+          {rowSuggestions.length === 0 && !rowSuggestionLoading && (
+            <div className="p-4 text-center text-xs text-slate-400">
+              Nenhum material encontrado no catálogo com esse termo. Você pode continuar usando como material avulso ou pressionar Enter.
+            </div>
+          )}
+
+          <div className="divide-y divide-dark-800">
+            {rowSuggestions.map((sug) => (
+              <div
+                key={sug.id}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelectMaterialSuggestion(activeMaterialSearchIdx, sug);
+                }}
+                className="p-2.5 hover:bg-dark-800 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-10 h-10 rounded-xl bg-dark-800 border border-dark-700 overflow-hidden flex items-center justify-center shrink-0">
+                    {sug.image_url ? (
+                      <img
+                        src={sug.image_url}
+                        alt={sug.name}
+                        className="w-full h-full object-contain p-0.5 group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <Package className="w-5 h-5 text-slate-500" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[10px] font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-1 py-0.2 rounded">
+                        {sug.code}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-400 bg-dark-850 border border-dark-750 px-1 py-0.2 rounded">
+                        {sug.category}
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1 py-0.2 rounded">
+                        {sug.unit}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-white group-hover:text-sabrar-300 transition-colors truncate mt-0.5">
+                      {sug.name}
+                    </div>
+                    {sug.synonyms && (
+                      <div className="text-[10px] text-slate-400 italic truncate">
+                        Sinônimos: {sug.synonyms}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs font-black text-sabrar-400">
+                    R$ {Number(sug.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    /{sug.unit}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

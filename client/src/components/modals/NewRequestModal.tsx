@@ -88,12 +88,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Carrega projetos
+      // Carrega projetos (todas as obras cadastradas, exceto canceladas)
       api.getProjects().then(data => {
-        let valid = data.filter((p: Project) => ['Aprovado', 'Em execução', 'Orçamento finalizado', 'Orçamento gerado', 'Novo'].includes(p.status) || !p.status);
+        let valid = data.filter((p: Project) => p.status !== 'Cancelado');
         if (valid.length === 0) valid = data;
 
-        // Se o usuário for Engenheiro, filtra estritamente para as obras sob sua responsabilidade técnica (Requisito 3)
+        // Se o usuário for Engenheiro de campo, filtra estritamente para as obras sob sua responsabilidade técnica
         if (currentUser?.role === 'engenharia' && currentUser?.name) {
           const normUser = currentUser.name.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
           valid = valid.filter((p: Project) => {
