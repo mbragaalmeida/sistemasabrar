@@ -39,7 +39,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<number | string>('');
   const [priority, setPriority] = useState<'Baixa' | 'Média' | 'Alta' | 'Urgente'>('Média');
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -47,7 +47,24 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
+  // Verificação de permissão exclusiva para Emily Bueno (e Admin) solicitar materiais fora da base
+  const isEmilyOrAdmin = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.email === 'emily@sabrar.com.br' ||
+    (currentUser?.name && /emily/i.test(currentUser.name))
+  );
+
   const selectedProject = useMemo(() => {
+    if (selectedProjectId === 'internal') {
+      return {
+        id: 'internal',
+        name: 'Solicitações Internas - SABRAR',
+        code: 'SAB-INTERNO',
+        client: 'SABRAR Engenharia (Uso Interno)',
+        status: 'Em execução',
+        responsible_engineer: 'Uso Interno Administrativo / Almoxarifado'
+      } as any;
+    }
     return projects.find(p => p.id === Number(selectedProjectId));
   }, [projects, selectedProjectId]);
 
@@ -68,6 +85,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [extraSearch, setExtraSearch] = useState('');
   const [extraMaterialId, setExtraMaterialId] = useState<number | ''>('');
   const [extraQuantity, setExtraQuantity] = useState<string>('1');
+  const [extraCustomUnit, setExtraCustomUnit] = useState<string>('un');
 
   // Substituição de Item no Orçamento
   const [replacingItemId, setReplacingItemId] = useState<number | null>(null);
@@ -83,15 +101,25 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [customMaterialSearch, setCustomMaterialSearch] = useState('');
   const [customMaterialId, setCustomMaterialId] = useState<number | ''>('');
   const [customQuantity, setCustomQuantity] = useState<string>('1');
+  const [customUncatalogedUnit, setCustomUncatalogedUnit] = useState<string>('un');
   const [customListFilter, setCustomListFilter] = useState('');
   const [customStockFilter, setCustomStockFilter] = useState<'todos' | 'com_estoque' | 'deficit'>('todos');
 
   useEffect(() => {
     if (isOpen) {
-      // Carrega projetos (todas as obras cadastradas, exceto canceladas)
+      // Carrega projetos: apenas obras com orçamento Aprovado ou Em Execução
       api.getProjects().then(data => {
-        let valid = data.filter((p: Project) => p.status !== 'Cancelado');
-        if (valid.length === 0) valid = data;
+        let valid = data.filter((p: Project) => {
+          if (p.code === 'SAB-INTERNO') return false; // Exibe como opção própria no dropdown
+          if (p.status === 'Cancelado') return false;
+          // Requisito 4: Só liberar solicitação após aprovação do orçamento e início da obra
+          const isApprovedOrExecuting = 
+            p.status === 'Em execução' || 
+            p.status === 'Aprovado' || 
+            p.budget?.status === 'Aprovado' ||
+            (p as any).budget_status === 'Aprovado';
+          return isApprovedOrExecuting;
+        });
 
         // Se o usuário for Engenheiro de campo, filtra estritamente para as obras sob sua responsabilidade técnica
         if (currentUser?.role === 'engenharia' && currentUser?.name) {
@@ -126,6 +154,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       setExtraSearch('');
       setExtraMaterialId('');
       setExtraQuantity('1');
+      setExtraCustomUnit('un');
 
       setReplacingItemId(null);
       setReplaceSearch('');
@@ -137,6 +166,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       setCustomMaterialSearch('');
       setCustomMaterialId('');
       setCustomQuantity('1');
+      setCustomUncatalogedUnit('un');
       setCustomListFilter('');
       setCustomStockFilter('todos');
       setQuotasMap({});
@@ -149,6 +179,17 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   // Quando o projeto selecionado muda, busca materiais orçados da obra e cotas disponíveis
   useEffect(() => {
     if (selectedProjectId) {
+      if (selectedProjectId === 'internal') {
+        // Solicitação interna não tem orçamento de cliente
+        setBudgetItems([]);
+        setSelectedItemIds(new Set());
+        setItemQuantities({});
+        setQuotasMap({});
+        setRequestMode('custom');
+        setLoadingBudget(false);
+        return;
+      }
+
       setLoadingBudget(true);
       Promise.all([
         api.getBudget(selectedProjectId).catch(() => null),
@@ -206,9 +247,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   // ==========================================
   const batchItemsWithMetrics = useMemo(() => {
     return budgetItems.map((it) => {
-      const mat = materials.find(m => m.id === it.material_id) || {
+      const mat = it.material_id ? (materials.find(m => m.id === it.material_id) || {
         stock_physical: it.stock_physical || 0,
         stock_reserved: it.stock_reserved || 0
+      }) : {
+        stock_physical: 0,
+        stock_reserved: 0
       };
       const physical = Number(mat.stock_physical ?? it.stock_physical ?? 0);
       const reserved = Number(mat.stock_reserved ?? it.stock_reserved ?? 0);
@@ -218,13 +262,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const deficit = Math.max(0, requestedQty - available);
       const isSelected = selectedItemIds.has(it.id);
 
-      const quota = quotasMap[it.material_id];
-      const budgetQuantity = quota ? Number(quota.budgetQuantity || 0) : Number(it.quantity || 0);
+      const quota = it.material_id ? quotasMap[it.material_id] : null;
+      const budgetQuantity = quota ? Number(quota.budgetQuantity || 0) : (it.isCustom ? 0 : Number(it.quantity || 0));
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : Math.max(0, budgetQuantity - previouslyRequested);
 
-      const isOverBudget = it.isExtra || requestedQty > remainingQuota;
-      const extraQuantity = it.isExtra ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = it.isExtra || it.isCustom || requestedQty > remainingQuota;
+      const extraQuantity = (it.isExtra || it.isCustom) ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
 
       return {
         ...it,
@@ -337,6 +381,31 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setIsAddingExtra(false);
   };
 
+  // Adição de Item Fora da Base (Exclusivo Emily / Compras)
+  const handleAddCustomUncatalogedExtra = (name: string, qty: number, unit = 'un') => {
+    if (!name.trim() || qty <= 0) return;
+    const newId = Date.now() + Math.floor(Math.random() * 1000);
+    const newItem = {
+      id: newId,
+      material_id: null,
+      material_name: name.trim().toUpperCase(),
+      material_code: 'FORA-BASE',
+      unit: unit || 'un',
+      quantity: qty,
+      isExtra: true,
+      isCustom: true,
+      customName: name.trim().toUpperCase()
+    };
+    setBudgetItems(prev => [newItem, ...prev]);
+    setSelectedItemIds(prev => new Set(prev).add(newId));
+    setItemQuantities(prev => ({ ...prev, [newId]: qty }));
+    setExtraSearch('');
+    setExtraMaterialId('');
+    setExtraQuantity('1');
+    setExtraCustomUnit('un');
+    setIsAddingExtra(false);
+  };
+
   const handleConfirmReplace = (itemId: number) => {
     if (!replaceWithMaterialId) return;
     const newMat = materials.find(m => m.id === Number(replaceWithMaterialId));
@@ -365,7 +434,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   // ==========================================
   const customItemsWithMetrics = useMemo(() => {
     return customItems.map((it) => {
-      const mat = materials.find(m => m.id === it.material_id) || {
+      const mat = it.material_id ? (materials.find(m => m.id === it.material_id) || {
+        stock_physical: 0,
+        stock_reserved: 0
+      }) : {
         stock_physical: 0,
         stock_reserved: 0
       };
@@ -377,14 +449,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const deficit = Math.max(0, requestedQty - available);
       const isSelected = selectedCustomIds.has(it.id);
 
-      const quota = quotasMap[it.material_id];
+      const quota = it.material_id ? quotasMap[it.material_id] : null;
       const isInBudget = Boolean(quota && quota.budgetQuantity > 0);
       const budgetQuantity = quota ? Number(quota.budgetQuantity || 0) : 0;
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : 0;
 
-      const isOverBudget = !isInBudget || requestedQty > remainingQuota;
-      const extraQuantity = !isInBudget ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = !isInBudget || requestedQty > remainingQuota || it.isCustom;
+      const extraQuantity = (!isInBudget || it.isCustom) ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
 
       return {
         ...it,
@@ -462,6 +534,30 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setCustomMaterialSearch('');
   };
 
+  // Inclusão de material avulso fora da base (Exclusivo Emily / Compras)
+  const handleAddUncatalogedCustomItem = (name: string, qty: number, unit = 'un') => {
+    if (!name.trim() || qty <= 0) return;
+    const newId = Date.now() + Math.floor(Math.random() * 1000);
+    const newItem = {
+      id: newId,
+      material_id: null,
+      material_name: name.trim().toUpperCase(),
+      material_code: 'FORA-BASE',
+      unit: unit || 'un',
+      quantity: qty,
+      isExtra: true,
+      isCustom: true,
+      customName: name.trim().toUpperCase()
+    };
+    setCustomItems(prev => [newItem, ...prev]);
+    setSelectedCustomIds(prev => new Set(prev).add(newId));
+    setCustomQuantities(prev => ({ ...prev, [newId]: qty }));
+    setCustomMaterialSearch('');
+    setCustomMaterialId('');
+    setCustomQuantity('1');
+    setCustomUncatalogedUnit('un');
+  };
+
   const handleRemoveCustomItem = (id: number) => {
     setCustomItems(prev => prev.filter(it => it.id !== id));
     setSelectedCustomIds(prev => {
@@ -499,7 +595,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   };
 
   // ==========================================
-  // FILTRAGEM DO CATÁLOGO DE MATERIAIS (757 ITENS)
+  // FILTRAGEM DO CATÁLOGO DE MATERIAIS
   // ==========================================
   const filteredCatalogForExtra = useMemo(() => {
     if (!extraSearch.trim()) return materials.slice(0, 100);
@@ -533,7 +629,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setError(null);
 
     if (!selectedProjectId) {
-      setError('Por favor selecione a obra destino.');
+      setError('Por favor selecione a obra destino ou Solicitações Internas.');
       return;
     }
 
@@ -541,10 +637,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     try {
       if (requestMode === 'batch') {
         const itemsToSubmit = batchItemsWithMetrics
-          .filter(it => it.isSelected && it.currentRequestedQty > 0 && it.material_id)
+          .filter(it => it.isSelected && it.currentRequestedQty > 0 && (it.material_id || it.isCustom))
           .map(it => ({
-            materialId: it.material_id,
-            quantity: it.currentRequestedQty
+            materialId: it.material_id || null,
+            quantity: it.currentRequestedQty,
+            isCustom: Boolean(it.isCustom),
+            customName: it.customName || it.material_name,
+            unit: it.unit || 'un'
           }));
 
         if (itemsToSubmit.length === 0) {
@@ -554,7 +653,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         }
 
         await api.createRequest({
-          projectId: Number(selectedProjectId),
+          projectId: selectedProjectId === 'internal' ? 'internal' : Number(selectedProjectId),
           items: itemsToSubmit,
           priority,
           notes,
@@ -562,10 +661,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         });
       } else {
         const itemsToSubmit = customItemsWithMetrics
-          .filter(it => it.isSelected && it.currentRequestedQty > 0 && it.material_id)
+          .filter(it => it.isSelected && it.currentRequestedQty > 0 && (it.material_id || it.isCustom))
           .map(it => ({
-            materialId: it.material_id,
-            quantity: it.currentRequestedQty
+            materialId: it.material_id || null,
+            quantity: it.currentRequestedQty,
+            isCustom: Boolean(it.isCustom),
+            customName: it.customName || it.material_name,
+            unit: it.unit || 'un'
           }));
 
         if (itemsToSubmit.length === 0) {
@@ -575,7 +677,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         }
 
         await api.createRequest({
-          projectId: Number(selectedProjectId),
+          projectId: selectedProjectId === 'internal' ? 'internal' : Number(selectedProjectId),
           items: itemsToSubmit,
           priority,
           notes,
@@ -636,11 +738,23 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </div>
             <select
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'internal') {
+                  setSelectedProjectId('internal');
+                } else if (val) {
+                  setSelectedProjectId(Number(val));
+                } else {
+                  setSelectedProjectId('');
+                }
+              }}
               className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-semibold"
               required
             >
-              <option value="">Selecione a obra...</option>
+              <option value="">Selecione a obra aprovada...</option>
+              <option value="internal" className="font-bold text-amber-400 bg-dark-800">
+                🏢 Solicitações Internas (Uso Interno SABRAR)
+              </option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} — {p.name} ({p.client}) {p.responsible_engineer ? `[${p.responsible_engineer}]` : ''}
@@ -649,24 +763,34 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </select>
             {currentUser?.role === 'engenharia' && projects.length === 0 && (
               <p className="text-[11px] text-amber-400/90 mt-1">
-                Nenhuma obra com status ativo está atribuída ao seu perfil de engenheiro ({currentUser?.name}).
+                Nenhuma obra externa com orçamento aprovado e status "Em execução" está atribuída ao seu perfil no momento. Para demandas internas, selecione <strong>"Solicitações Internas (Uso Interno SABRAR)"</strong> acima.
               </p>
             )}
 
             {selectedProject && (
               <div className="mt-2.5 p-3 rounded-2xl bg-dark-800/80 border border-dark-700/80 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-amber-950/80 border border-amber-600/40 flex items-center justify-center text-amber-400 shrink-0">
-                    <HardHat className="w-4 h-4" />
+                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
+                    selectedProjectId === 'internal' 
+                      ? 'bg-purple-950/80 border border-purple-600/40 text-purple-400' 
+                      : 'bg-amber-950/80 border border-amber-600/40 text-amber-400'
+                  }`}>
+                    {selectedProjectId === 'internal' ? <ClipboardList className="w-4 h-4" /> : <HardHat className="w-4 h-4" />}
                   </div>
                   <div className="text-xs">
-                    <span className="text-slate-400 font-medium">Engenheiro(s) da Obra: </span>
-                    <strong className={selectedProject.responsible_engineer ? "text-amber-300 font-bold" : "text-rose-400 font-bold"}>
-                      {selectedProject.responsible_engineer || 'Pendente de atribuição'}
+                    <span className="text-slate-400 font-medium">
+                      {selectedProjectId === 'internal' ? 'Finalidade: ' : 'Engenheiro(s) da Obra: '}
+                    </span>
+                    <strong className={
+                      selectedProjectId === 'internal'
+                        ? "text-purple-300 font-bold"
+                        : selectedProject.responsible_engineer ? "text-amber-300 font-bold" : "text-rose-400 font-bold"
+                    }>
+                      {selectedProjectId === 'internal' ? 'Uso Interno Administrativo / Almoxarifado SABRAR' : (selectedProject.responsible_engineer || 'Pendente de atribuição')}
                     </strong>
                   </div>
                 </div>
-                {currentUser?.role === 'admin' && (
+                {selectedProjectId !== 'internal' && currentUser?.role === 'admin' && (
                   <button
                     type="button"
                     onClick={() => setIsAssignModalOpen(true)}
@@ -845,7 +969,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           <Sparkles className="w-4 h-4 text-emerald-400" />
                           <span>Adicionar Material Extra (Não Previsto no Orçamento Inicial)</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-normal">Base de 757 Materiais SABRAR</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Base de {materials.length} Materiais SABRAR</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
@@ -901,6 +1025,53 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* Notificação / Ação quando busca não encontra na base */}
+                      {filteredCatalogForExtra.length === 0 && extraSearch.trim().length > 0 && (
+                        isEmilyOrAdmin ? (
+                          <div className="p-3 bg-purple-950/70 border border-purple-500/50 rounded-xl space-y-2 text-xs">
+                            <div className="flex items-center gap-2 text-purple-300 font-bold">
+                              <Sparkles className="w-4 h-4 text-purple-400" />
+                              <span>Material não cadastrado na base</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300">
+                              Como usuário autorizado de Compras ({currentUser?.name || 'Emily Bueno'}), você pode solicitar <strong>"{extraSearch}"</strong> como material avulso fora da base:
+                            </p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-slate-400">Unidade:</span>
+                                <input
+                                  type="text"
+                                  value={extraCustomUnit}
+                                  onChange={(e) => setExtraCustomUnit(e.target.value)}
+                                  placeholder="un, m, kg..."
+                                  className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddCustomUncatalogedExtra(extraSearch, Number(extraQuantity) || 1, extraCustomUnit || 'un')}
+                                disabled={Number(extraQuantity) <= 0}
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Adicionar "{extraSearch.toUpperCase()}" Fora da Base</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs space-y-1">
+                            <div className="flex items-center gap-2 text-amber-300 font-bold">
+                              <AlertTriangle className="w-4 h-4 text-amber-400" />
+                              <span>Nenhum material encontrado com "{extraSearch}"</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                              A Engenharia pode solicitar apenas materiais cadastrados no catálogo.
+                              A inclusão de itens fora da base é restrita exclusivamente ao setor de Compras (Emily Bueno).
+                            </p>
+                          </div>
+                        )
+                      )}
 
                       {selectedExtraMat && (
                         <div className="text-[11px] text-slate-300 flex items-center gap-3 px-1">
@@ -1112,7 +1283,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     <Plus className="w-4 h-4 text-sabrar-400" />
                     Selecionar Material da Base para a Lista Avulsa
                   </span>
-                  <span className="text-[10px] text-slate-400">757 materiais cadastrados</span>
+                  <span className="text-[10px] text-slate-400">{materials.length} materiais cadastrados</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
@@ -1168,6 +1339,53 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Notificação / Ação quando busca não encontra na base */}
+                {filteredCatalogForCustom.length === 0 && customMaterialSearch.trim().length > 0 && (
+                  isEmilyOrAdmin ? (
+                    <div className="p-3 bg-purple-950/70 border border-purple-500/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center gap-2 text-purple-300 font-bold">
+                        <Sparkles className="w-4 h-4 text-purple-400" />
+                        <span>Material não cadastrado no catálogo</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300">
+                        Como usuário autorizado de Compras ({currentUser?.name || 'Emily Bueno'}), você pode solicitar <strong>"{customMaterialSearch}"</strong> como material avulso fora da base:
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-slate-400">Unidade:</span>
+                          <input
+                            type="text"
+                            value={customUncatalogedUnit}
+                            onChange={(e) => setCustomUncatalogedUnit(e.target.value)}
+                            placeholder="un, m, kg..."
+                            className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddUncatalogedCustomItem(customMaterialSearch, Number(customQuantity) || 1, customUncatalogedUnit || 'un')}
+                          disabled={Number(customQuantity) <= 0}
+                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Adicionar "{customMaterialSearch.toUpperCase()}" Fora da Base</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs space-y-1">
+                      <div className="flex items-center gap-2 text-amber-300 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <span>Nenhum material encontrado com "{customMaterialSearch}"</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        A Engenharia pode solicitar apenas materiais previamente cadastrados no catálogo da Sabrar.
+                        A solicitação de materiais fora da base é restrita exclusivamente ao setor de Compras (Emily Bueno).
+                      </p>
+                    </div>
+                  )
+                )}
 
                 {selectedCustomMat && (
                   <div className="grid grid-cols-3 gap-2 p-2.5 bg-dark-900 rounded-xl border border-dark-750 text-center text-xs">

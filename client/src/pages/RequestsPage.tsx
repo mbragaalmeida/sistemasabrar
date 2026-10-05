@@ -20,6 +20,13 @@ export const RequestsPage: React.FC = () => {
   // Conjunto de solicitações expandidas na lista (accordion retraível)
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
 
+  const canApproveExtra = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.email === 'sabrina@sabrar.com.br' ||
+    currentUser?.email === 'emily@sabrar.com.br' ||
+    (currentUser?.name && /sabrina|emily/i.test(currentUser.name))
+  );
+
   const toggleRequestExpanded = (id: number) => {
     setExpandedRequests(prev => {
       const next = new Set(prev);
@@ -49,7 +56,8 @@ export const RequestsPage: React.FC = () => {
   };
 
   const handleApproveExtra = async (request: MaterialRequest) => {
-    const notes = window.prompt(`Aprovar materiais extras da solicitação #${request.code}?\n\n(Opcional) Digite alguma observação ou despacho da diretoria:`, 'Aprovado pelo administrador');
+    const approverLabel = currentUser?.name || 'Administrador / Gestor';
+    const notes = window.prompt(`Aprovar materiais extras da solicitação #${request.code}?\n\n(Opcional) Digite alguma observação ou despacho da diretoria:`, `Aprovado por ${approverLabel}`);
     if (notes === null) return;
     setActionLoadingId(request.id);
     try {
@@ -98,7 +106,7 @@ export const RequestsPage: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Módulo da Engenharia: solicitações de obra, reservas automáticas e cálculo de déficit
+            Módulo da Engenharia & Compras: solicitações de obra, uso interno, reservas automáticas e cálculo de déficit
           </p>
         </div>
 
@@ -179,16 +187,22 @@ export const RequestsPage: React.FC = () => {
                     <span className="font-mono font-bold text-xs bg-dark-800 border border-dark-700 px-2 py-0.5 rounded text-sabrar-400">
                       {r.code}
                     </span>
-                    <span className="font-extrabold text-sm sm:text-base text-white">
-                      {r.project_name || 'Obra não especificada'}
-                    </span>
+                    {(r.project_code === 'SAB-INTERNO' || !r.project_id) ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-950/80 text-purple-300 border border-purple-600/50">
+                        🏢 Solicitação Interna (SABRAR)
+                      </span>
+                    ) : (
+                      <span className="font-extrabold text-sm sm:text-base text-white">
+                        {r.project_name || 'Obra não especificada'}
+                      </span>
+                    )}
                     <StatusBadge status={r.priority} size="sm" />
                     <StatusBadge status={r.status} size="sm" />
                     {r.requires_admin_approval && (
                       r.admin_approval_status === 'Aprovado' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          Extras Aprovados por {r.admin_approved_by_name || 'Administrador'}
+                          Extras Aprovados por {r.admin_approved_by_name || 'Diretoria'}
                         </span>
                       ) : r.admin_approval_status === 'Rejeitado' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-950 text-rose-300 border border-rose-700">
@@ -198,7 +212,7 @@ export const RequestsPage: React.FC = () => {
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-950 text-amber-300 border border-amber-600/50">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                          Aguardando Aprovação de Administrador (Extras)
+                          Aguardando Aprovação de Gestor (Extras)
                         </span>
                       )
                     )}
@@ -220,8 +234,8 @@ export const RequestsPage: React.FC = () => {
                       <span>Imprimir Romaneio</span>
                     </button>
 
-                    {/* Ações de Aprovação do Administrador */}
-                    {currentUser?.role === 'admin' && r.requires_admin_approval && r.admin_approval_status === 'Pendente' && (
+                    {/* Ações de Aprovação da Gestão (Admin, Sabrina ou Emily) */}
+                    {canApproveExtra && r.requires_admin_approval && r.admin_approval_status === 'Pendente' && (
                       <div className="flex items-center gap-1.5 ml-1">
                         <button
                           type="button"
@@ -254,10 +268,10 @@ export const RequestsPage: React.FC = () => {
                     <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold">Solicitação pendente de aprovação:</span> Esta solicitação contém itens ou quantidades extras além do orçamento aprovado da obra.
-                      {currentUser?.role === 'admin' ? (
-                        <span className="ml-1 text-amber-200">Como administrador, você pode aprovar ou rejeitar os materiais extras pelos botões acima.</span>
+                      {canApproveExtra ? (
+                        <span className="ml-1 text-amber-200">Como gestor autorizado (Admin/Sabrina/Emily), você pode aprovar ou rejeitar os materiais extras pelos botões acima.</span>
                       ) : (
-                        <span className="ml-1 text-amber-200">Aguardando análise e autorização de um administrador antes da separação no almoxarifado.</span>
+                        <span className="ml-1 text-amber-200">Aguardando análise e autorização da diretoria (Admin, Sabrina ou Emily) antes da separação no almoxarifado.</span>
                       )}
                     </div>
                   </div>

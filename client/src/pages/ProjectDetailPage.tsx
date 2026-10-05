@@ -69,6 +69,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [validityDays, setValidityDays] = useState(15);
   const [commercialTerms, setCommercialTerms] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
+  const [approvingBudget, setApprovingBudget] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
   // Autocomplete flutuante em tempo real para materiais do orçamento
@@ -334,8 +335,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     }
   };
 
+  const isObraLiberada = Boolean(
+    project?.status === 'Em execução' ||
+    project?.status === 'Aprovado' ||
+    budget?.status === 'Aprovado'
+  );
+
   const handleApproveBudget = async () => {
-    if (!budget) return;
+    if (!budget || approvingBudget) return;
 
     if (!project.responsible_engineer || (project.assigned_engineers && project.assigned_engineers.length === 0)) {
       alert('Para iniciar a obra e liberar as solicitações de materiais, é necessário designar ao menos um Engenheiro Responsável. O assistente de designação será aberto agora.');
@@ -346,12 +353,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     if (!window.confirm('Confirma a aprovação deste orçamento? A obra mudará para o status "Em execução" e as solicitações de materiais da Engenharia serão liberadas.')) {
       return;
     }
+
+    setApprovingBudget(true);
     try {
       await api.approveBudget(budget.id, currentUser?.id, currentUser?.name);
       await fetchProjectData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao aprovar orçamento:', err);
-      alert('Erro ao aprovar orçamento');
+      alert(err.message || 'Erro ao aprovar orçamento');
+    } finally {
+      setApprovingBudget(false);
     }
   };
 
@@ -463,15 +474,26 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             )}
 
             {project.status !== 'Cancelado' && hasPermission(['engenharia', 'orcamento_engenharia', 'compras_solicitacoes']) && (
-              <button
-                onClick={() => setIsNewRequestModalOpen(true)}
-                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
-                title="Solicitar Material da Obra"
-              >
-                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span className="sm:hidden">Solicitar</span>
-                <span className="hidden sm:inline">Solicitar Material</span>
-              </button>
+              isObraLiberada ? (
+                <button
+                  onClick={() => setIsNewRequestModalOpen(true)}
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold active:scale-95 transition-all whitespace-nowrap shadow-md shadow-sabrar-600/30"
+                  title="Solicitar Material da Obra"
+                >
+                  <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="sm:hidden">Solicitar</span>
+                  <span className="hidden sm:inline">Solicitar Material</span>
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-dark-800 text-slate-500 border border-dark-700 text-xs font-semibold whitespace-nowrap cursor-not-allowed opacity-60"
+                  title="A solicitação de materiais só é liberada após a aprovação do orçamento e início da obra"
+                >
+                  <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-slate-600" />
+                  <span className="hidden sm:inline">Solicitar Material (Bloqueado)</span>
+                </button>
+              )
             )}
 
             {hasPermission(['admin', 'orcamento_engenharia']) && (
@@ -785,15 +807,33 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <span>Ver / Editar Orçamento Completo ({editableMaterials.length})</span>
               </button>
 
-              {budget && budget.status !== 'Aprovado' && (
+              {isObraLiberada ? (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span>Orçamento Aprovado & Obra em Execução</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    O orçamento foi aprovado e a obra está liberada para solicitações de materiais.
+                  </p>
+                  <button
+                    onClick={() => setIsNewRequestModalOpen(true)}
+                    className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Solicitar Materiais desta Obra</span>
+                  </button>
+                </div>
+              ) : budget ? (
                 <button
                   onClick={handleApproveBudget}
-                  className="w-full py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-sabrar-600/30 active:scale-95"
+                  disabled={approvingBudget}
+                  className="w-full py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-sabrar-600/30 active:scale-95 disabled:opacity-50"
                 >
                   <CheckCircle className="w-4 h-4" />
-                  <span>Aprovar Orçamento e Iniciar Obra</span>
+                  <span>{approvingBudget ? 'Aprovando Obra...' : 'Aprovar Orçamento e Iniciar Obra'}</span>
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -1284,18 +1324,41 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       {/* TAB 3: SOLICITAÇÕES DE MATERIAIS */}
       {activeTab === 'solicitacoes' && (
         <div className="space-y-4 animate-in fade-in">
+          {!isObraLiberada && (
+            <div className="p-4 bg-amber-950/50 border border-amber-600/50 rounded-2xl flex items-center gap-3 text-amber-200 text-xs">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <div className="font-bold text-amber-300">Solicitação de Materiais Bloqueada</div>
+                <p className="text-[11px] text-amber-200/80 mt-0.5">
+                  Conforme os procedimentos da SABRAR, solicitações de materiais só são liberadas após a aprovação do orçamento na aba "Orçamento & Revisão" e o início formal da obra.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-dark-900 p-4 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div>
               <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">Solicitações de Materiais da Obra</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">Módulo operacional da Engenharia com verificação de estoque</p>
             </div>
-            <button
-              onClick={() => setIsNewRequestModalOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 active:scale-95 transition-all shrink-0 w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nova Solicitação</span>
-            </button>
+            {isObraLiberada ? (
+              <button
+                onClick={() => setIsNewRequestModalOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 active:scale-95 transition-all shrink-0 w-full sm:w-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Solicitação</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-dark-800 text-slate-500 border border-dark-700 text-xs font-semibold shrink-0 cursor-not-allowed opacity-60 w-full sm:w-auto"
+                title="Liberação após aprovação do orçamento"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Solicitação (Bloqueado)</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">

@@ -9,20 +9,27 @@ requestsRouter.get('/', async (req, res) => {
   try {
     const { project_id, status, priority } = req.query;
     let query = `
-      SELECT mr.*, p.name as project_name, p.code as project_code, p.responsible_engineer,
+      SELECT mr.*, 
+             COALESCE(p.name, 'Solicitações Internas - SABRAR') as project_name, 
+             COALESCE(p.code, 'SAB-INTERNO') as project_code, 
+             p.responsible_engineer,
              u.name as requested_by_name, u_admin.name as admin_approved_by_name
       FROM material_requests mr
-      JOIN projects p ON mr.project_id = p.id
+      LEFT JOIN projects p ON mr.project_id = p.id
       LEFT JOIN users u ON mr.requested_by = u.id
       LEFT JOIN users u_admin ON mr.admin_approved_by = u_admin.id
       WHERE (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
-        AND (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
+        AND (p.id IS NULL OR p.is_hidden IS FALSE OR p.is_hidden IS NULL)
     `;
     const params = [];
 
     if (project_id) {
-      query += ' AND mr.project_id = ?';
-      params.push(project_id);
+      if (project_id === 'internal') {
+        query += " AND (p.code = 'SAB-INTERNO' OR mr.project_id IS NULL)";
+      } else {
+        query += ' AND mr.project_id = ?';
+        params.push(project_id);
+      }
     }
     if (status) {
       query += ' AND mr.status = ?';
@@ -56,17 +63,27 @@ requestsRouter.get('/', async (req, res) => {
   }
 });
 
-// Cria solicitação de material (Engenharia - individual ou em lote)
+// Cria solicitação de material (Engenharia / Compras - individual ou em lote)
 requestsRouter.post('/', async (req, res) => {
   try {
-    const { projectId, materialId, quantity, items, priority, notes, userId } = req.body;
+    let { projectId, materialId, quantity, items, priority, notes, userId } = req.body;
+
+    if (projectId === 'internal' || !projectId) {
+      const internalProj = await db.prepare("SELECT id FROM projects WHERE code = 'SAB-INTERNO' LIMIT 1").get();
+      if (internalProj) {
+        projectId = internalProj.id;
+      }
+    }
 
     if (!projectId) {
       return res.status(400).json({ error: 'Projeto de destino é obrigatório' });
     }
 
-    // Validação de responsabilidade técnica do engenheiro (Requisito 1 e 3)
-    if (userId) {
+    const project = await db.prepare('SELECT id, name, code, responsible_engineer FROM projects WHERE id = ?').get(projectId);
+    const isInternal = project?.code === 'SAB-INTERNO';
+
+    // Validação de responsabilidade técnica do engenheiro (apenas para obras externas)
+    if (userId && !isInternal) {
       const user = await db.prepare(`
         SELECT u.*, r.name as role_name 
         FROM users u 
@@ -75,7 +92,6 @@ requestsRouter.post('/', async (req, res) => {
       `).get(userId);
 
       if (user && user.role_name === 'engenharia') {
-        const project = await db.prepare('SELECT id, name, responsible_engineer FROM projects WHERE id = ?').get(projectId);
         if (project) {
           // Verifica se o usuário está associado em project_engineers
           const isAssigned = await db.prepare('SELECT 1 FROM project_engineers WHERE project_id = ? AND user_id = ?').get(projectId, userId);
@@ -125,11 +141,34 @@ requestsRouter.post('/', async (req, res) => {
   }
 });
 
-// Aprovação de solicitação com materiais extras por um Administrador (Requisito 2 e 4)
+// Aprovação de solicitação com materiais extras por Administrador, Sabrina ou Emily
 requestsRouter.post('/:id/approve-extra', async (req, res) => {
   try {
     const requestId = req.params.id;
     const { userId, notes } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name 
+        FROM users u 
+        JOIN roles r ON u.role_id = r.id 
+        WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para aprovar materiais extras.'
+        });
+      }
+    }
+
     const result = await StockService.approveExtraRequest(requestId, userId || 1, notes);
     res.json(result);
   } catch (err) {
@@ -137,11 +176,34 @@ requestsRouter.post('/:id/approve-extra', async (req, res) => {
   }
 });
 
-// Rejeição de solicitação com materiais extras por um Administrador (Requisito 2 e 4)
+// Rejeição de solicitação com materiais extras por Administrador, Sabrina ou Emily
 requestsRouter.post('/:id/reject-extra', async (req, res) => {
   try {
     const requestId = req.params.id;
     const { userId, reason } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name 
+        FROM users u 
+        JOIN roles r ON u.role_id = r.id 
+        WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para reprovar materiais extras.'
+        });
+      }
+    }
+
     const result = await StockService.rejectExtraRequest(requestId, userId || 1, reason);
     res.json(result);
   } catch (err) {

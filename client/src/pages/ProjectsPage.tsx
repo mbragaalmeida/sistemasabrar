@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,37 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   const [selectedType, setSelectedType] = useState('');
   const [loading, setLoading] = useState(true);
   const [assigningProject, setAssigningProject] = useState<Project | null>(null);
+
+  // Aba de estágio operacional: Todas vs Em Execução (Aprovadas) vs Em Orçamento vs Finalizadas
+  const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas'>('todas');
+
+  const execucaoCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado')).length;
+  }, [projects]);
+
+  const orcamentoCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
+  }, [projects]);
+
+  const finalizadasCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && p.status === 'Finalizado').length;
+  }, [projects]);
+
+  const displayedProjects = useMemo(() => {
+    return projects.filter(p => {
+      if (p.code === 'SAB-INTERNO') return false;
+      if (workflowTab === 'execucao') {
+        return p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado';
+      }
+      if (workflowTab === 'orcamento') {
+        return !['Em execução', 'Aprovado', 'Finalizado', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado';
+      }
+      if (workflowTab === 'finalizadas') {
+        return p.status === 'Finalizado';
+      }
+      return true;
+    });
+  }, [projects, workflowTab]);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -70,6 +101,71 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
         >
           <Plus className="w-4 h-4" />
           <span>Cadastrar Projeto</span>
+        </button>
+      </div>
+
+      {/* Segmented Tabs: Visão Operacional por Estágio de Obra */}
+      <div className="flex items-center gap-2 overflow-x-auto p-1.5 bg-dark-900 rounded-2xl border border-dark-750 text-xs no-scrollbar">
+        <button
+          type="button"
+          onClick={() => setWorkflowTab('todas')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${
+            workflowTab === 'todas'
+              ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-dark-800'
+          }`}
+        >
+          <span>Todas as Obras</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-800 text-slate-300 font-mono">
+            {projects.filter(p => p.code !== 'SAB-INTERNO').length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setWorkflowTab('execucao')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${
+            workflowTab === 'execucao'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-dark-800'
+          }`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+          <span>Obras Aprovadas & Em Execução</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-mono">
+            {execucaoCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setWorkflowTab('orcamento')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${
+            workflowTab === 'orcamento'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-dark-800'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-amber-300" />
+          <span>Em Levantamento & Orçamento</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-950 text-amber-300 border border-amber-500/40 font-mono">
+            {orcamentoCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setWorkflowTab('finalizadas')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${
+            workflowTab === 'finalizadas'
+              ? 'bg-slate-700 text-white shadow-md'
+              : 'text-slate-400 hover:text-white hover:bg-dark-800'
+          }`}
+        >
+          <span>Obras Finalizadas</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-800 text-slate-300 font-mono">
+            {finalizadasCount}
+          </span>
         </button>
       </div>
 
@@ -152,15 +248,22 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
 
       {/* Projects Cards View (Mobile First) */}
       {!loading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {projects.map((p) => {
-            const hasBudget = p.budget && p.budget.total_final > 0;
-            return (
-              <div
-                key={p.id}
-                onClick={() => onNavigate('project-detail', p.id)}
-                className="bg-dark-900 rounded-3xl border border-dark-750 p-4 sm:p-5 hover:border-sabrar-500/60 hover:shadow-xl hover:shadow-sabrar-950/20 transition-all cursor-pointer flex flex-col justify-between group"
-              >
+        displayedProjects.length === 0 ? (
+          <div className="py-16 text-center bg-dark-900 rounded-3xl border border-dark-750 text-xs text-slate-500 space-y-1">
+            <FolderKanban className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+            <div className="font-bold text-slate-300">Nenhuma obra encontrada para esta visualização.</div>
+            <p className="text-[11px] text-slate-500">Tente alternar para outra aba ou limpar os filtros de busca.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {displayedProjects.map((p) => {
+              const hasBudget = p.budget && p.budget.total_final > 0;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => onNavigate('project-detail', p.id)}
+                  className="bg-dark-900 rounded-3xl border border-dark-750 p-4 sm:p-5 hover:border-sabrar-500/60 hover:shadow-xl hover:shadow-sabrar-950/20 transition-all cursor-pointer flex flex-col justify-between group"
+                >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="font-mono text-xs font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
@@ -230,6 +333,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
             );
           })}
         </div>
+        )
       )}
 
       {/* Modal para Atribuição de Engenheiros da Obra */}

@@ -221,8 +221,11 @@ budgetsRouter.post('/save', async (req, res) => {
       );
     }
 
-    // Atualiza status do projeto para 'Orçamento finalizado'
-    await db.prepare("UPDATE projects SET status = 'Orçamento finalizado', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+    // Atualiza status do projeto para 'Orçamento finalizado' apenas se ainda não tiver sido aprovado ou iniciado
+    const currentProj = await db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
+    if (currentProj && currentProj.status !== 'Em execução' && currentProj.status !== 'Aprovado') {
+      await db.prepare("UPDATE projects SET status = 'Orçamento finalizado', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+    }
 
     res.json({
       success: true,

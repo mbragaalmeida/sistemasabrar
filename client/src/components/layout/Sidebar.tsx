@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
-        { id: 'budgets', label: 'Orçamentos', icon: Calculator },
+        { id: 'budgets', label: 'Orçamentos Aprovados', icon: Calculator },
         { id: 'ducts', label: 'Dutos', icon: Wind },
         { id: 'materials', label: 'Base de Materiais', icon: Package },
         { id: 'stock', label: 'Almoxarifado', icon: Layers },
