@@ -192,24 +192,83 @@ export const api = {
 
     return { files: results, aiResult };
   },
-  importProjectSpreadsheet: async (projectId: number | string, file: File | File[], userId?: number, mode: 'append' | 'replace' = 'append') => {
-    const formData = new FormData();
-    if (Array.isArray(file)) {
-      file.forEach(f => formData.append('files', f));
-    } else {
-      formData.append('files', file);
+  importProjectSpreadsheet: async (
+    projectId: number | string,
+    file: File | File[],
+    userId?: number,
+    mode: 'append' | 'replace' = 'append',
+    onProgress?: (current: number, total: number, fileName: string) => void
+  ) => {
+    const fileList = Array.isArray(file) ? file : [file];
+    if (fileList.length === 0) {
+      throw new Error('Nenhum arquivo de planilha foi fornecido');
     }
-    if (userId) formData.append('userId', String(userId));
-    formData.append('mode', mode);
-    const res = await fetch(`${API_BASE}/projects/${projectId}/import-spreadsheet`, {
-      method: 'POST',
-      body: formData
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Erro ao importar planilha' }));
-      throw new Error(err.error || 'Erro ao importar planilha');
+
+    let lastResult: any = null;
+    let totalItemsAdded = 0;
+    const allSheets: string[] = [];
+    const processedFilesInfo: any[] = [];
+
+    // Envia cada planilha em requisição HTTP isolada e sequencial.
+    // Isso evita estourar o limite de payload de 4.5MB da Vercel (HTTP 413 FUNCTION_PAYLOAD_TOO_LARGE).
+    for (let i = 0; i < fileList.length; i++) {
+      const currentFile = fileList[i];
+      // O primeiro arquivo obedece ao modo escolhido ('replace' ou 'append').
+      // Os arquivos seguintes usam sempre 'append' para acumular com o primeiro.
+      const currentMode = (i === 0) ? mode : 'append';
+
+      if (onProgress) {
+        onProgress(i + 1, fileList.length, currentFile.name);
+      }
+
+      if (currentFile.size > 4.5 * 1024 * 1024) {
+        throw new Error(
+          `O arquivo "${currentFile.name}" possui ${(currentFile.size / (1024 * 1024)).toFixed(1)}MB, excedendo o limite de 4.5MB da Vercel. Por favor, remova abas desnecessárias ou divida a planilha.`
+        );
+      }
+
+      const formData = new FormData();
+      formData.append('files', currentFile);
+      if (userId) formData.append('userId', String(userId));
+      formData.append('mode', currentMode);
+
+      const res = await fetch(`${API_BASE}/projects/${projectId}/import-spreadsheet`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        let errorMsg = `Erro ao importar planilha "${currentFile.name}"`;
+        try {
+          const err = await res.json();
+          if (err.error) errorMsg = err.error;
+        } catch (_) {
+          if (res.status === 413) {
+            errorMsg = `O arquivo "${currentFile.name}" (${(currentFile.size / (1024 * 1024)).toFixed(1)}MB) excedeu o limite máximo de requisição do servidor (HTTP 413).`;
+          }
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = await res.json();
+      lastResult = data;
+      totalItemsAdded += data.itemsCount || 0;
+      if (data.sheetsNames) {
+        allSheets.push(...data.sheetsNames);
+      }
+      processedFilesInfo.push({
+        filename: currentFile.name,
+        itemsCount: data.itemsCount
+      });
     }
-    return res.json();
+
+    return {
+      ...lastResult,
+      totalFilesProcessed: fileList.length,
+      processedFiles: processedFilesInfo,
+      sheetsNames: Array.from(new Set(allSheets)),
+      itemsCountTotalAdded: totalItemsAdded
+    };
   },
 
   // IA

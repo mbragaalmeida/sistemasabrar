@@ -54,17 +54,57 @@ budgetsRouter.post('/save', async (req, res) => {
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
 
-    // Calcula subtotais
-    const totalMaterials = materials.reduce((acc, m) => acc + (Number(m.quantity) * Number(m.unitPrice)), 0);
+    // Sanitiza e normaliza itens de materiais para evitar colunas nulas ou falhas de constraint (ex: NOT NULL material_name)
+    const validMaterials = [];
+    for (const m of (materials || [])) {
+      const rawName = String(m.materialName || m.material || '').trim();
+      const materialId = m.materialId ? Number(m.materialId) : null;
+      // Se a linha foi adicionada manualmente e ficou completamente sem nome e sem ID de material, descarta com segurança
+      if (!rawName && !materialId) continue;
+
+      const finalName = rawName || `Material #${materialId}`;
+      const qty = Math.max(0.01, Number(m.quantity) || 1);
+      const unitPrice = Number(m.unitPrice !== undefined ? m.unitPrice : (m.unit_price || 0)) || 0;
+      const sub = Number((qty * unitPrice).toFixed(2));
+      validMaterials.push({
+        ...m,
+        materialId,
+        materialName: finalName,
+        quantity: qty,
+        unit: (m.unit && String(m.unit).trim()) ? String(m.unit).trim() : 'und',
+        unitPrice,
+        subtotal: sub
+      });
+    }
+
+    // Calcula subtotais de materiais com base nos itens sanitizados
+    const totalMaterials = validMaterials.reduce((acc, m) => acc + (m.quantity * m.unitPrice), 0);
     
+    // Sanitiza e normaliza serviços
+    const validServices = [];
     let totalLabor = 0;
     let totalEquipmentServices = 0;
     let totalLogistics = 0;
     let totalTaxes = 0;
     let totalAdditional = 0;
 
-    for (const s of services) {
-      const sub = Number(s.quantity) * Number(s.unitPrice);
+    for (const s of (services || [])) {
+      const desc = String(s.description || '').trim();
+      if (!desc) continue;
+      const qty = Math.max(0.01, Number(s.quantity) || 1);
+      const unitPrice = Number(s.unitPrice !== undefined ? s.unitPrice : (s.unit_price || 0)) || 0;
+      const sub = Number((qty * unitPrice).toFixed(2));
+      validServices.push({
+        ...s,
+        category: s.category || 'MÃO DE OBRA',
+        description: desc,
+        quantity: qty,
+        unit: s.unit || 'h',
+        unitPrice,
+        subtotal: sub,
+        notes: s.notes || ''
+      });
+
       if (s.category === 'MÃO DE OBRA') totalLabor += sub;
       else if (s.category === 'EQUIPAMENTO') totalEquipmentServices += sub;
       else if (s.category === 'LOGÍSTICA') totalLogistics += sub;
@@ -78,9 +118,29 @@ budgetsRouter.post('/save', async (req, res) => {
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     
     // Calcula o total de equipamentos / faturamento direto
+    const validEquipment = [];
     let equipmentTotal = 0;
     if (equipment && equipment.length > 0) {
-      equipmentTotal = equipment.reduce((acc, eq) => acc + (Number(eq.quantity || 0) * Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0))), 0);
+      for (const eq of equipment) {
+        const desc = String(eq.description || eq.name || '').trim();
+        if (!desc) continue;
+        const uPrice = Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0)) || 0;
+        const q = Math.max(0.01, Number(eq.quantity || 1));
+        const sub = Number((q * uPrice).toFixed(2));
+        validEquipment.push({
+          ...eq,
+          category: eq.category || 'Climatização',
+          description: desc,
+          brand: eq.brand || '',
+          model: eq.model || '',
+          quantity: q,
+          unit: eq.unit || 'un',
+          unitPrice: uPrice,
+          subtotal: sub,
+          notes: eq.notes || ''
+        });
+        equipmentTotal += sub;
+      }
     } else if (reqTotalEquipment !== undefined) {
       equipmentTotal = Number(reqTotalEquipment);
     } else if (budget && budget.total_equipment) {
@@ -130,7 +190,7 @@ budgetsRouter.post('/save', async (req, res) => {
     }
 
     // Salva itens da 3ª sessão: Máquinas & Equipamentos (Faturamento Direto)
-    if (equipment && equipment.length > 0) {
+    if (validEquipment && validEquipment.length > 0) {
       await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
       const insertEquipment = db.prepare(`
         INSERT INTO budget_equipment (
@@ -139,21 +199,18 @@ budgetsRouter.post('/save', async (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      for (const eq of equipment) {
-        const uPrice = Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0));
-        const q = Number(eq.quantity || 1);
-        const sub = Number((q * uPrice).toFixed(2));
+      for (const eq of validEquipment) {
         await insertEquipment.run(
           budgetId,
-          eq.category || 'Climatização',
-          eq.description || eq.name,
-          eq.brand || '',
-          eq.model || '',
-          q,
-          eq.unit || 'un',
-          uPrice,
-          sub,
-          eq.notes || ''
+          eq.category,
+          eq.description,
+          eq.brand,
+          eq.model,
+          eq.quantity,
+          eq.unit,
+          eq.unitPrice,
+          eq.subtotal,
+          eq.notes
         );
       }
     }
@@ -180,11 +237,15 @@ budgetsRouter.post('/save', async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const m of materials) {
-      const sub = Number(m.quantity) * Number(m.unitPrice);
+    for (const m of validMaterials) {
       await insertItem.run(
-        budgetId, m.materialId || null, m.materialName || m.material,
-        m.quantity, m.unit, m.unitPrice, sub,
+        budgetId,
+        m.materialId || null,
+        m.materialName,
+        m.quantity,
+        m.unit,
+        m.unitPrice,
+        m.subtotal,
         m.aiSuggestedQuantity || m.quantity,
         m.aiReasoning || null,
         m.humanNotes || null

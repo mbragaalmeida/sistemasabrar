@@ -333,35 +333,45 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const handleSaveBudget = async () => {
     setSavingBudget(true);
     try {
+      // Filtra e limpa linhas em branco que o usuário possa ter adicionado e não preenchido
+      const cleanedMaterials = editableMaterials.filter(m => (m.material_name || m.material || '').trim() || m.material_id || m.materialId);
+      if (cleanedMaterials.length !== editableMaterials.length) {
+        setEditableMaterials(cleanedMaterials);
+      }
+
       await api.saveBudget({
         projectId: project.id,
-        materials: editableMaterials.map(m => ({
+        materials: cleanedMaterials.map(m => ({
           materialId: m.material_id || m.materialId,
-          materialName: m.material_name || m.material,
-          quantity: Number(m.quantity),
-          unit: m.unit,
-          unitPrice: Number(m.unit_price || m.unitPrice),
+          materialName: (m.material_name || m.material || '').trim() || (m.material_id ? `Material #${m.material_id}` : 'Material Avulso'),
+          quantity: Math.max(0.01, Number(m.quantity) || 1),
+          unit: (m.unit && String(m.unit).trim()) ? String(m.unit).trim() : 'und',
+          unitPrice: Number(m.unit_price !== undefined ? m.unit_price : (m.unitPrice || 0)) || 0,
           aiSuggestedQuantity: m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity,
           aiReasoning: m.ai_reasoning || m.reason,
           humanNotes: m.human_notes || ''
         })),
-        services: editableServices.map(s => ({
-          category: s.category,
-          description: s.description,
-          quantity: Number(s.quantity),
-          unit: s.unit,
-          unitPrice: Number(s.unit_price),
-          notes: s.notes || ''
-        })),
-        equipment: editableEquipment.map(eq => ({
-          category: eq.category,
-          description: eq.description || eq.name,
-          brand: eq.brand || '',
-          quantity: Number(eq.quantity),
-          unit: eq.unit || 'un',
-          unitPrice: Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0)),
-          notes: eq.notes || ''
-        })),
+        services: editableServices
+          .filter(s => (s.description || '').trim())
+          .map(s => ({
+            category: s.category || 'MÃO DE OBRA',
+            description: s.description.trim(),
+            quantity: Math.max(0.01, Number(s.quantity) || 1),
+            unit: s.unit || 'h',
+            unitPrice: Number(s.unit_price) || 0,
+            notes: s.notes || ''
+          })),
+        equipment: editableEquipment
+          .filter(eq => (eq.description || eq.name || '').trim())
+          .map(eq => ({
+            category: eq.category || 'Climatização',
+            description: (eq.description || eq.name || '').trim(),
+            brand: eq.brand || '',
+            quantity: Math.max(0.01, Number(eq.quantity) || 1),
+            unit: eq.unit || 'un',
+            unitPrice: Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0)) || 0,
+            notes: eq.notes || ''
+          })),
         totalEquipment,
         validityDays,
         commercialTerms,
@@ -373,9 +383,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       setSaveSuccessMsg(true);
       setTimeout(() => setSaveSuccessMsg(false), 3000);
       await fetchProjectData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar orçamento:', err);
-      alert('Erro ao salvar alterações no orçamento');
+      alert(err.message || 'Erro ao salvar alterações no orçamento');
     } finally {
       setSavingBudget(false);
     }

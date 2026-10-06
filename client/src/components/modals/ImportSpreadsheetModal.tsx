@@ -24,6 +24,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   const [files, setFiles] = useState<File[]>([]);
   const [mode, setMode] = useState<'append' | 'replace'>('append');
   const [loading, setLoading] = useState(false);
+  const [progressText, setProgressText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<any | null>(null);
 
@@ -54,15 +55,25 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
     setLoading(true);
     setError(null);
+    setProgressText(`Preparando ${files.length} planilha(s)...`);
 
     try {
-      const res = await api.importProjectSpreadsheet(projectId, files, currentUser?.id, mode);
+      const res = await api.importProjectSpreadsheet(
+        projectId,
+        files,
+        currentUser?.id,
+        mode,
+        (current, total, fileName) => {
+          setProgressText(`Processando planilha ${current} de ${total}: "${fileName}"...`);
+        }
+      );
       setSuccessData(res);
       if (onSuccess) onSuccess();
     } catch (err: any) {
       setError(err.message || 'Erro ao processar planilha de levantamento');
     } finally {
       setLoading(false);
+      setProgressText(null);
     }
   };
 
@@ -107,6 +118,18 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/60 rounded-2xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {loading && progressText && (
+            <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/60 rounded-2xl flex items-center gap-3 text-xs text-emerald-900 dark:text-emerald-200 shadow-sm animate-pulse">
+              <div className="w-4 h-4 border-2 border-emerald-600 dark:border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-bold">{progressText}</span>
+                <p className="text-[10px] text-emerald-700 dark:text-emerald-300/80 mt-0.5">
+                  Processando planilhas de forma segura e calibrando a base de dados SABRAR.
+                </p>
+              </div>
             </div>
           )}
 
