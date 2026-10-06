@@ -16,7 +16,8 @@ import {
   RefreshCw,
   Sparkles,
   Info,
-  HardHat
+  HardHat,
+  Calendar
 } from 'lucide-react';
 import { Project, Material } from '../../types';
 import { api } from '../../services/api';
@@ -41,6 +42,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [materials, setMaterials] = useState<Material[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | string>('');
   const [priority, setPriority] = useState<'Baixa' | 'Média' | 'Alta' | 'Urgente'>('Média');
+  const [pickupDate, setPickupDate] = useState<string>(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [loadingBudget, setLoadingBudget] = useState(false);
@@ -111,7 +113,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       api.getProjects().then(data => {
         let valid = data.filter((p: Project) => {
           if (p.code === 'SAB-INTERNO') return false; // Exibe como opção própria no dropdown
-          if (p.status === 'Cancelado') return false;
+          if (p.status === 'Cancelado' || p.status === 'Concluído' || p.status === 'Concluída' || p.status === 'Finalizado') return false;
           // Requisito 4: Só liberar solicitação após aprovação do orçamento e início da obra
           const isApprovedOrExecuting = 
             p.status === 'Em execução' || 
@@ -657,7 +659,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           items: itemsToSubmit,
           priority,
           notes,
-          userId: currentUser?.id || 3
+          userId: currentUser?.id || 3,
+          pickupDate
         });
       } else {
         const itemsToSubmit = customItemsWithMetrics
@@ -681,7 +684,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           items: itemsToSubmit,
           priority,
           notes,
-          userId: currentUser?.id || 3
+          userId: currentUser?.id || 3,
+          pickupDate
         });
       }
 
@@ -1052,10 +1056,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 type="button"
                                 onClick={() => handleAddCustomUncatalogedExtra(extraSearch, Number(extraQuantity) || 1, extraCustomUnit || 'un')}
                                 disabled={Number(extraQuantity) <= 0}
-                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
                               >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Adicionar "{extraSearch.toUpperCase()}" Fora da Base</span>
+                                <Plus className="w-3.5 h-3.5 !text-white" />
+                                <span className="!text-white">Adicionar "{extraSearch.toUpperCase()}" Fora da Base</span>
                               </button>
                             </div>
                           </div>
@@ -1366,10 +1370,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           type="button"
                           onClick={() => handleAddUncatalogedCustomItem(customMaterialSearch, Number(customQuantity) || 1, customUncatalogedUnit || 'un')}
                           disabled={Number(customQuantity) <= 0}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Adicionar "{customMaterialSearch.toUpperCase()}" Fora da Base</span>
+                          <Plus className="w-3.5 h-3.5 !text-white" />
+                          <span className="!text-white">Adicionar "{customMaterialSearch.toUpperCase()}" Fora da Base</span>
                         </button>
                       </div>
                     </div>
@@ -1629,19 +1633,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           {/* Prioridade e Observações */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Prioridade da Solicitação
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-sabrar-400" />
+                Data para Retirada *
               </label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as any)}
-                className="w-full text-xs sm:text-sm p-2.5 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-medium"
-              >
-                <option value="Baixa">Baixa</option>
-                <option value="Média">Média</option>
-                <option value="Alta">Alta</option>
-                <option value="Urgente">Urgente (Crítico)</option>
-              </select>
+              <input
+                type="date"
+                value={pickupDate}
+                onChange={(e) => setPickupDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full text-xs sm:text-sm p-2.5 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-medium cursor-pointer"
+                required
+              />
             </div>
 
             <div>

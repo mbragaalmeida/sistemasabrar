@@ -167,7 +167,7 @@ body.light header input {
 }
 
 /* Inversão seletiva de text-white para dark text (preserva botões coloridos) */
-.light .text-white:not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]):not(html.dark header *) {
+.light .text-white:not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(button[class*="bg-purple"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not(.bg-purple-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]):not([class*="bg-purple-600"]):not(html.dark header *) {
   color: #0F172A !important;
 }
 
@@ -212,6 +212,12 @@ body.light header input {
 .light button[class*="bg-blue-600"] *,
 .light button[class*="bg-blue-500"],
 .light button[class*="bg-blue-500"] *,
+.light button[class*="bg-purple-600"],
+.light button[class*="bg-purple-600"] *,
+.light button[class*="bg-purple-500"],
+.light button[class*="bg-purple-500"] *,
+.light button[class*="bg-purple-700"],
+.light button[class*="bg-purple-700"] *,
 .light .bg-sabrar-600,
 .light .bg-sabrar-600 *,
 .light .bg-emerald-600,
@@ -219,7 +225,9 @@ body.light header input {
 .light .bg-rose-600,
 .light .bg-rose-600 *,
 .light .bg-teal-600,
-.light .bg-teal-600 * {
+.light .bg-teal-600 *,
+.light .bg-purple-600,
+.light .bg-purple-600 * {
   color: #FFFFFF !important;
 }
 
@@ -352,7 +360,7 @@ body.light header input {
   border-color: #d8b4fe !important;
   color: #6b21a8 !important; /* Roxo escuro legível */
 }
-.light [class*="bg-purple-950"] * {
+.light [class*="bg-purple-950"] *:not(button[class*="bg-purple"]):not(button[class*="bg-purple"] *) {
   color: #6b21a8 !important;
 }
 

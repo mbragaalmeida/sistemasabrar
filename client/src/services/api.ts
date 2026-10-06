@@ -71,6 +71,8 @@ export const api = {
   },
   getProject: (id: number | string) => fetchJson<any>(`/projects/${id}`),
   createProject: (data: any) => fetchJson<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  updateProject: (id: number | string, data: any) =>
+    fetchJson<any>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   assignProjectEngineers: (projectId: number | string, engineerIds: number[], userId?: number) =>
     fetchJson<any>(`/projects/${projectId}/engineers`, {
       method: 'PATCH',
@@ -190,10 +192,15 @@ export const api = {
 
     return { files: results, aiResult };
   },
-  importProjectSpreadsheet: async (projectId: number | string, file: File, userId?: number) => {
+  importProjectSpreadsheet: async (projectId: number | string, file: File | File[], userId?: number, mode: 'append' | 'replace' = 'append') => {
     const formData = new FormData();
-    formData.append('file', file);
+    if (Array.isArray(file)) {
+      file.forEach(f => formData.append('files', f));
+    } else {
+      formData.append('files', file);
+    }
     if (userId) formData.append('userId', String(userId));
+    formData.append('mode', mode);
     const res = await fetch(`${API_BASE}/projects/${projectId}/import-spreadsheet`, {
       method: 'POST',
       body: formData
@@ -254,6 +261,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ userId, reason })
     }),
+  createMaterialSubstitution: (data: { requestItemId: number; requestId?: number; substituteMaterialId: number; quantity: number; reason: string; userId?: number }) =>
+    fetchJson<any>('/requests/substitutions', { method: 'POST', body: JSON.stringify(data) }),
+  getSubstitutions: () => fetchJson<any[]>('/requests/substitutions'),
+  approveSubstitution: (id: number | string, userId?: number, notes?: string) =>
+    fetchJson<any>(`/requests/substitutions/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
+  rejectSubstitution: (id: number | string, userId?: number, notes?: string) =>
+    fetchJson<any>(`/requests/substitutions/${id}/reject`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
 
   // Compras
   getPurchases: (params?: Record<string, string>) => {

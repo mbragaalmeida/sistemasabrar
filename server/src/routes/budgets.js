@@ -46,7 +46,9 @@ budgetsRouter.post('/save', async (req, res) => {
       commercialTerms = '',
       userId = 1,
       userName = 'Orçamentista',
-      totalEquipment: reqTotalEquipment
+      totalEquipment: reqTotalEquipment,
+      materialsMarginPercent = 0,
+      laborMarginPercent = 0
     } = req.body;
 
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
@@ -96,14 +98,16 @@ budgetsRouter.post('/save', async (req, res) => {
         INSERT INTO budgets (
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
-          total_additional, total_final, validity_days, commercial_terms
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          total_additional, total_final, validity_days, commercial_terms,
+          materials_margin_percent, labor_margin_percent
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const result = await insertBudget.run(
         projectId, budgetCode, totalMaterials, totalServices,
         totalLabor, finalTotalEquipment, totalLogistics, totalTaxes,
-        totalAdditional, totalFinal, validityDays, commercialTerms
+        totalAdditional, totalFinal, validityDays, commercialTerms,
+        Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0)
       );
       budgetId = result.lastInsertRowid;
     } else {
@@ -113,12 +117,14 @@ budgetsRouter.post('/save', async (req, res) => {
           total_materials = ?, total_services = ?, total_labor = ?,
           total_equipment = ?, total_logistics = ?, total_taxes = ?,
           total_additional = ?, total_final = ?, validity_days = ?,
-          commercial_terms = ?, updated_at = CURRENT_TIMESTAMP
+          commercial_terms = ?, materials_margin_percent = ?, labor_margin_percent = ?,
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(
         totalMaterials, totalServices, totalLabor,
         finalTotalEquipment, totalLogistics, totalTaxes,
         totalAdditional, totalFinal, validityDays, commercialTerms,
+        Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0),
         budgetId
       );
     }

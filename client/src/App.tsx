@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const fetchUnread = async () => {
       try {
-        const res = await api.getNotifications(undefined, currentUser?.id);
+        const res = await api.getNotifications(currentUser?.role, currentUser?.id);
         setUnreadCount(res.unreadCount || 0);
       } catch (err) {
         // Silencioso se inicializando

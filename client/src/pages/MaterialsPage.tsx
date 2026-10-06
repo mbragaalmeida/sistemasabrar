@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { QuickEntryModal } from '../components/modals/QuickEntryModal';
 import { NewMaterialModal } from '../components/modals/NewMaterialModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
@@ -9,6 +10,15 @@ import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
 
 export const MaterialsPage: React.FC = () => {
+  const { currentUser } = useAuth();
+
+  const canViewPrices = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.email === 'sabrina@sabrar.com.br' ||
+    currentUser?.email === 'emily@sabrar.com.br' ||
+    (currentUser?.name && /sabrina|emily/i.test(currentUser.name))
+  );
+
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
   const [search, setSearch] = useState('');
@@ -263,9 +273,11 @@ export const MaterialsPage: React.FC = () => {
 
                       {/* Preço e Estoque */}
                       <div className="text-right shrink-0">
-                        <div className="text-xs font-black text-sabrar-400">
-                          R$ {Number(item.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
+                        {canViewPrices && (
+                          <div className="text-xs font-black text-sabrar-400">
+                            R$ {Number(item.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
                         <div className="text-[10px] text-slate-400 mt-0.5">
                           Estoque: {item.stock_available ?? item.stock_physical ?? 0} {item.unit}
                         </div>
@@ -531,18 +543,27 @@ export const MaterialsPage: React.FC = () => {
 
                 {/* Bottom Card: Reference Price & Quick Entry Action */}
                 <div className="mt-4 pt-3 border-t border-dark-750 flex items-center justify-between">
-                  <div>
-                    <div className="text-[10px] text-slate-400 font-semibold uppercase">Preço Referência</div>
-                    <div className="font-extrabold text-xs sm:text-sm text-white">
-                      R$ {formatPrice(Number(m.reference_price))} <span className="text-[10px] text-slate-500 font-normal">/{m.unit}</span>
-                    </div>
-                    {m.converted_price != null && m.converted_unit && (
-                      <div className="text-[10px] text-teal-400 font-semibold mt-0.5">
-                        ≈ R$ {formatPrice(Number(m.converted_price))}/{m.converted_unit}
-                        {m.package_content ? ` (emb. ${m.package_content} ${m.converted_unit})` : ''}
+                  {canViewPrices ? (
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Preço Referência</div>
+                      <div className="font-extrabold text-xs sm:text-sm text-white">
+                        R$ {formatPrice(Number(m.reference_price))} <span className="text-[10px] text-slate-500 font-normal">/{m.unit}</span>
                       </div>
-                    )}
-                  </div>
+                      {m.converted_price != null && m.converted_unit && (
+                        <div className="text-[10px] text-teal-400 font-semibold mt-0.5">
+                          ≈ R$ {formatPrice(Number(m.converted_price))}/{m.converted_unit}
+                          {m.package_content ? ` (emb. ${m.package_content} ${m.converted_unit})` : ''}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Preço Referência</div>
+                      <div className="font-semibold text-xs text-slate-500 italic mt-0.5">
+                        Restrito à Diretoria
+                      </div>
+                    </div>
+                  )}
 
                   <button
                     onClick={() => {

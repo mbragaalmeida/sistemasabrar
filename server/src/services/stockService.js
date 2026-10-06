@@ -71,13 +71,14 @@ export class StockService {
    * - Se houver estoque disponível: Reserva total e gera movimentação de reserva.
    * - Se houver déficit: Reserva o disponível e gera Demanda de Compra automática para o setor de Compras!
    */
-  static async createMaterialRequest(projectId, materialId, requestedQty, priority, userId, notes = '') {
+  static async createMaterialRequest(projectId, materialId, requestedQty, priority, userId, notes = '', pickupDate = null) {
     return await StockService.createBatchMaterialRequest(
       projectId,
       [{ materialId, quantity: requestedQty }],
       priority,
       userId,
-      notes
+      notes,
+      pickupDate
     );
   }
 
@@ -87,13 +88,17 @@ export class StockService {
    * - Se houver itens extras ou quantidades que excedam a cota, exige aprovação de Administrador (Requisito 2)
    * - Se dentro do orçamento: reserva estoque e gera déficit automaticamente
    */
-  static async createBatchMaterialRequest(projectId, items, priority, userId, notes = '') {
+  static async createBatchMaterialRequest(projectId, items, priority, userId, notes = '', pickupDate = null) {
     if (!Array.isArray(items) || items.length === 0) {
       throw new Error('Lista de materiais solicitados não pode estar vazia');
     }
 
     const project = await db.prepare('SELECT * FROM projects WHERE id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
+
+    if (project.status === 'Concluído' || project.status === 'Concluída' || project.status === 'Finalizado') {
+      throw new Error('Não é possível solicitar novos materiais para uma obra já concluída.');
+    }
 
     const nextReqCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
     const reqCode = `SOL-2026-${String(nextReqCount).padStart(4, '0')}`;
@@ -223,11 +228,11 @@ export class StockService {
     const reqResult = await db.prepare(`
       INSERT INTO material_requests (
         code, project_id, requested_by, priority, status, notes,
-        requires_admin_approval, admin_approval_status, has_extra_items
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        requires_admin_approval, admin_approval_status, has_extra_items, pickup_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       reqCode, projectId, userId, priority || 'Média', initialStatus, notes,
-      requiresAdminApproval, initialApprovalStatus, hasExtraItems
+      requiresAdminApproval, initialApprovalStatus, hasExtraItems, pickupDate || null
     );
 
     const requestId = reqResult.lastInsertRowid;

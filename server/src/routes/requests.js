@@ -66,7 +66,7 @@ requestsRouter.get('/', async (req, res) => {
 // Cria solicitação de material (Engenharia / Compras - individual ou em lote)
 requestsRouter.post('/', async (req, res) => {
   try {
-    let { projectId, materialId, quantity, items, priority, notes, userId } = req.body;
+    let { projectId, materialId, quantity, items, priority, notes, userId, pickupDate } = req.body;
 
     if (projectId === 'internal' || !projectId) {
       const internalProj = await db.prepare("SELECT id FROM projects WHERE code = 'SAB-INTERNO' LIMIT 1").get();
@@ -79,7 +79,15 @@ requestsRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Projeto de destino é obrigatório' });
     }
 
-    const project = await db.prepare('SELECT id, name, code, responsible_engineer FROM projects WHERE id = ?').get(projectId);
+    const project = await db.prepare('SELECT id, name, code, responsible_engineer, status FROM projects WHERE id = ?').get(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    if (project.status === 'Concluído' || project.status === 'Concluída' || project.status === 'Finalizado') {
+      return res.status(400).json({ error: 'Não é possível solicitar novos materiais para uma obra já concluída.' });
+    }
+
     const isInternal = project?.code === 'SAB-INTERNO';
 
     // Validação de responsabilidade técnica do engenheiro (apenas para obras externas)
@@ -117,7 +125,8 @@ requestsRouter.post('/', async (req, res) => {
         items,
         priority || 'Média',
         userId || 3,
-        notes
+        notes,
+        pickupDate
       );
     } else {
       // Envio individual avulso
@@ -131,7 +140,8 @@ requestsRouter.post('/', async (req, res) => {
         quantity,
         priority || 'Média',
         userId || 3,
-        notes
+        notes,
+        pickupDate
       );
     }
 
@@ -221,5 +231,167 @@ requestsRouter.patch('/:id/status', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Solicitar troca de material pelo Almoxarifado (Item 8)
+requestsRouter.post('/substitutions', async (req, res) => {
+  try {
+    const { requestItemId, requestId, substituteMaterialId, quantity, reason, userId } = req.body;
+    if (!requestItemId || !substituteMaterialId) {
+      return res.status(400).json({ error: 'Item da solicitação e material substituto são obrigatórios' });
+    }
+
+    const item = await db.prepare('SELECT * FROM material_request_items WHERE id = ?').get(requestItemId);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+
+    const origMat = await db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id);
+    const subMat = await db.prepare('SELECT name FROM materials WHERE id = ?').get(substituteMaterialId);
+
+    const subResult = await db.prepare(`
+      INSERT INTO material_substitutions (
+        request_item_id, request_id, original_material_id, substitute_material_id,
+        quantity, reason, requested_by, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendente')
+    `).run(
+      requestItemId, requestId || item.request_id, item.material_id, substituteMaterialId,
+      quantity || item.quantity_requested, reason || '', userId || 4
+    );
+
+    // Notifica Administradores, Sabrina e Emily
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('admin', 'Almoxarifado Solicitou Troca de Material', ?, 'urgent', '/estoque')
+    `).run(`Almoxarifado solicitou substituir "${origMat?.name}" por "${subMat?.name}". Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
+
+    res.status(201).json({ success: true, id: subResult.lastInsertRowid, message: 'Solicitação de troca enviada para aprovação.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Listar substituições pendentes/gerais
+requestsRouter.get('/substitutions', async (req, res) => {
+  try {
+    const subs = await db.prepare(`
+      SELECT ms.*,
+             m_orig.name as original_material_name, m_orig.code as original_material_code,
+             m_sub.name as substitute_material_name, m_sub.code as substitute_material_code, m_sub.unit as substitute_material_unit,
+             m_sub.image_url as substitute_image_url,
+             u.name as requested_by_name,
+             u_rev.name as reviewed_by_name,
+             mr.code as request_code,
+             p.name as project_name
+      FROM material_substitutions ms
+      JOIN materials m_orig ON ms.original_material_id = m_orig.id
+      JOIN materials m_sub ON ms.substitute_material_id = m_sub.id
+      LEFT JOIN users u ON ms.requested_by = u.id
+      LEFT JOIN users u_rev ON ms.reviewed_by = u_rev.id
+      LEFT JOIN material_requests mr ON ms.request_id = mr.id
+      LEFT JOIN projects p ON mr.project_id = p.id
+      ORDER BY ms.id DESC
+    `).all();
+
+    res.json(subs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aprovar troca de material (Admin, Sabrina ou Emily)
+requestsRouter.post('/substitutions/:id/approve', async (req, res) => {
+  try {
+    const subId = req.params.id;
+    const { userId, notes } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para aprovar a troca de materiais.'
+        });
+      }
+    }
+
+    const sub = await db.prepare('SELECT * FROM material_substitutions WHERE id = ?').get(subId);
+    if (!sub) return res.status(404).json({ error: 'Substituição não encontrada' });
+    if (sub.status !== 'Pendente') return res.status(400).json({ error: 'Esta solicitação já foi analisada' });
+
+    // Atualiza o item da solicitação com o novo material
+    await db.prepare(`
+      UPDATE material_request_items 
+      SET material_id = ?, quantity_requested = ?
+      WHERE id = ?
+    `).run(sub.substitute_material_id, sub.quantity, sub.request_item_id);
+
+    // Atualiza o registro de substituição
+    await db.prepare(`
+      UPDATE material_substitutions
+      SET status = 'Aprovado', reviewed_by = ?, reviewed_at = NOW(), review_notes = ?
+      WHERE id = ?
+    `).run(userId || 1, notes || 'Aprovado', subId);
+
+    // Notifica Almoxarifado
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('almoxarifado', 'Troca de Material Autorizada', ?, 'info', '/estoque')
+    `).run(`A troca de material para a solicitação #${sub.request_id} foi autorizada com sucesso.`);
+
+    res.json({ success: true, message: 'Substituição de material aprovada e aplicada.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Recusar troca de material
+requestsRouter.post('/substitutions/:id/reject', async (req, res) => {
+  try {
+    const subId = req.params.id;
+    const { userId, notes } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para recusar a troca de materiais.'
+        });
+      }
+    }
+
+    await db.prepare(`
+      UPDATE material_substitutions
+      SET status = 'Recusado', reviewed_by = ?, reviewed_at = NOW(), review_notes = ?
+      WHERE id = ?
+    `).run(userId || 1, notes || 'Recusado', subId);
+
+    // Notifica Almoxarifado
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('almoxarifado', 'Troca de Material Não Autorizada', ?, 'urgent', '/estoque')
+    `).run(`A solicitação de troca de material foi recusada. Motivo: ${notes || 'Não informado'}.`);
+
+    res.json({ success: true, message: 'Substituição recusada.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });

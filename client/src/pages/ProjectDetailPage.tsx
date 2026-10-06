@@ -36,6 +36,7 @@ import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { ImportSpreadsheetModal } from '../components/modals/ImportSpreadsheetModal';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
+import { EditProjectModal } from '../components/modals/EditProjectModal';
 
 interface ProjectDetailPageProps {
   projectId: number;
@@ -60,6 +61,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [isNewReturnModalOpen, setIsNewReturnModalOpen] = useState(false);
   const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
   const [isAssignEngineersModalOpen, setIsAssignEngineersModalOpen] = useState(false);
+  const [isEditProjectModalOpen, setIsEditProjectModalOpen] = useState(false);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
 
   // Estados locais para edição de orçamento
@@ -68,8 +70,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [editableEquipment, setEditableEquipment] = useState<any[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [commercialTerms, setCommercialTerms] = useState('');
+  const [materialsMarginPercent, setMaterialsMarginPercent] = useState<number>(0);
+  const [laborMarginPercent, setLaborMarginPercent] = useState<number>(0);
   const [savingBudget, setSavingBudget] = useState(false);
   const [approvingBudget, setApprovingBudget] = useState(false);
+  const [concludingProject, setConcludingProject] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
   // Autocomplete flutuante em tempo real para materiais do orçamento
@@ -191,24 +196,47 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const handleSelectMaterialSuggestion = (idx: number, material: any) => {
     setEditableMaterials(prev => prev.map((item, i) => {
       if (i !== idx) return item;
-      // Mantém o preço unitário da planilha se já existir, senão usa o preço de referência do catálogo
+      // REGRA CRÍTICA: Manter estritamente o preço unitário e subtotal levantados na planilha real.
+      // O vínculo serve exclusivamente para que o almoxarifado saiba qual material cadastrado atende ao item.
       const currentPrice = Number(item.unit_price !== undefined ? item.unit_price : item.unitPrice) || 0;
-      const price = currentPrice > 0 ? currentPrice : (Number(material.reference_price) || 0);
+      const currentSubtotal = Number(item.subtotal) || 0;
       const qty = Number(item.quantity) || 1;
+      
+      // Preserva o preço já existente. Apenas se for uma linha criada do zero sem preço algum (manualmente) utiliza o de referência.
+      const isManualEmptyRow = !item.material_name && currentPrice === 0 && currentSubtotal === 0;
+      const price = isManualEmptyRow ? (Number(material.reference_price) || 0) : currentPrice;
+      const subtotal = currentSubtotal > 0 ? currentSubtotal : Number((qty * price).toFixed(2));
+
       return {
         ...item,
         material_id: material.id,
         materialId: material.id,
-        material_name: material.name,
-        material: material.name,
+        material_code: material.code || item.material_code,
+        catalog_material_name: material.name,
+        // Mantém a descrição original da planilha; se vazia, preenche com o nome do catálogo
+        material_name: item.material_name || item.material || material.name,
+        material: item.material || item.material_name || material.name,
         unit: item.unit && item.unit !== 'und' ? item.unit : (material.unit || 'und'),
         unit_price: price,
         unitPrice: price,
-        subtotal: Number((qty * price).toFixed(2))
+        subtotal: subtotal
       };
     }));
     setActiveMaterialSearchIdx(null);
     setRowSuggestions([]);
+  };
+
+  const handleUnlinkMaterial = (idx: number) => {
+    setEditableMaterials(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      return {
+        ...item,
+        material_id: undefined,
+        materialId: undefined,
+        material_code: undefined,
+        catalog_material_name: undefined
+      };
+    }));
   };
 
   const tabFileInputRef = useRef<HTMLInputElement>(null);
@@ -241,6 +269,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         setEditableEquipment(res.budget.equipment || []);
         setValidityDays(res.budget.validity_days || 15);
         setCommercialTerms(res.budget.commercial_terms || '');
+        setMaterialsMarginPercent(Number(res.budget.materials_margin_percent) || 0);
+        setLaborMarginPercent(Number(res.budget.labor_margin_percent) || 0);
       }
     } catch (err) {
       console.error('Erro ao buscar detalhes do projeto:', err);
@@ -265,13 +295,19 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const budget: Budget | null = data.budget;
   const comparisonTable: ComparisonRow[] = data.comparisonTable || [];
 
-  // Recálculo dinâmico dos totais de orçamento
+  // Recálculo dinâmico dos totais de orçamento (custo base real)
   const totalMaterials = editableMaterials.reduce((acc, m) => acc + (Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0)), 0);
   const totalServices = editableServices.reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unit_price || 0)), 0);
   const totalEquipment = editableEquipment.reduce((acc, eq) => acc + (Number(eq.quantity || 0) * Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0))), 0);
   const totalBudgetCalculated = totalMaterials + totalServices + totalEquipment;
 
+  // Totais com margem para a proposta comercial do cliente
+  const totalMaterialsClient = totalMaterials * (1 + (Number(materialsMarginPercent) || 0) / 100);
+  const totalServicesClient = totalServices * (1 + (Number(laborMarginPercent) || 0) / 100);
+  const totalBudgetCalculatedClient = totalMaterialsClient + totalServicesClient + totalEquipment;
+
   const handleAddEquipmentRow = () => {
+    const newIdx = editableEquipment.length;
     setEditableEquipment(prev => [
       ...prev,
       {
@@ -284,6 +320,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         notes: ''
       }
     ]);
+    setTimeout(() => {
+      const rowEl = document.getElementById(`equipment-row-${newIdx}`);
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const inputEl = rowEl.querySelector('input') as HTMLInputElement | null;
+        if (inputEl) inputEl.focus();
+      }
+    }, 120);
   };
 
   const handleSaveBudget = async () => {
@@ -321,6 +365,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         totalEquipment,
         validityDays,
         commercialTerms,
+        materialsMarginPercent: Number(materialsMarginPercent) || 0,
+        laborMarginPercent: Number(laborMarginPercent) || 0,
         userId: currentUser?.id,
         userName: currentUser?.name
       });
@@ -335,11 +381,34 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     }
   };
 
-  const isObraLiberada = Boolean(
+  const isObraConcluida = Boolean(
+    project?.status === 'Concluído' ||
+    project?.status === 'Concluída' ||
+    project?.status === 'Finalizado'
+  );
+
+  const isObraLiberada = !isObraConcluida && Boolean(
     project?.status === 'Em execução' ||
     project?.status === 'Aprovado' ||
     budget?.status === 'Aprovado'
   );
+
+  const handleConcludeProject = async () => {
+    if (!window.confirm('Tem certeza que deseja concluir esta obra? Após a conclusão, não será mais possível solicitar novos materiais para esta obra.')) {
+      return;
+    }
+    setConcludingProject(true);
+    try {
+      await api.updateProject(project.id, { status: 'Concluído' });
+      await fetchProjectData();
+      alert('Obra concluída com sucesso! Solicitações de materiais foram encerradas.');
+    } catch (err: any) {
+      console.error('Erro ao concluir obra:', err);
+      alert(err.message || 'Erro ao concluir obra.');
+    } finally {
+      setConcludingProject(false);
+    }
+  };
 
   const handleApproveBudget = async () => {
     if (!budget || approvingBudget) return;
@@ -381,9 +450,19 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     ]);
     setActiveMaterialSearchIdx(newIdx);
     setRowSuggestions([]);
+
+    setTimeout(() => {
+      const rowEl = document.getElementById(`material-row-${newIdx}`);
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const inputEl = rowEl.querySelector('input[type="text"]') as HTMLInputElement | null;
+        if (inputEl) inputEl.focus();
+      }
+    }, 120);
   };
 
   const handleAddServiceRow = () => {
+    const newIdx = editableServices.length;
     setEditableServices(prev => [
       ...prev,
       {
@@ -395,6 +474,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         subtotal: 3200.0
       }
     ]);
+
+    setTimeout(() => {
+      const rowEl = document.getElementById(`service-row-${newIdx}`);
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const inputEl = rowEl.querySelector('input[type="text"]') as HTMLInputElement | null;
+        if (inputEl) inputEl.focus();
+      }
+    }, 120);
   };
 
   return (
@@ -443,6 +531,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     <span>{project.responsible_engineer ? 'Editar Engenheiros' : '+ Atribuir Engenheiro'}</span>
                   </button>
                 )}
+                {hasPermission(['admin', 'orcamento', 'orcamento_engenharia']) && (
+                  <button
+                    onClick={() => setIsEditProjectModalOpen(true)}
+                    className="text-[11px] font-bold text-emerald-600 dark:text-sabrar-300 hover:text-white bg-slate-100 dark:bg-dark-800 hover:bg-emerald-600 dark:hover:bg-sabrar-600 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-dark-700 transition-all flex items-center gap-1 shadow-xs active:scale-95"
+                    title="Editar dados cadastrais da obra (nome, cliente, endereço, etc.)"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Editar Informações da Obra</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -483,6 +581,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                   <span className="sm:hidden">Solicitar</span>
                   <span className="hidden sm:inline">Solicitar Material</span>
+                </button>
+              ) : isObraConcluida ? (
+                <button
+                  disabled
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-dark-800 text-slate-500 border border-dark-700 text-xs font-semibold whitespace-nowrap cursor-not-allowed opacity-60"
+                  title="Obra concluída. Novas solicitações de materiais estão encerradas."
+                >
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-blue-500" />
+                  <span className="hidden sm:inline">Obra Concluída (Bloqueada)</span>
                 </button>
               ) : (
                 <button
@@ -823,6 +930,34 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     <Plus className="w-3.5 h-3.5" />
                     <span>Solicitar Materiais desta Obra</span>
                   </button>
+                  {hasPermission(['admin', 'orcamento', 'engenharia', 'orcamento_engenharia']) && (
+                    <button
+                      onClick={handleConcludeProject}
+                      disabled={concludingProject}
+                      className="w-full py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-amber-400 hover:text-amber-300 border border-amber-500/40 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                      title="Concluir esta obra e encerrar novas solicitações de materiais"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{concludingProject ? 'Concluindo Obra...' : 'Concluir Obra'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : isObraConcluida ? (
+                <div className="p-3.5 rounded-2xl bg-blue-950/70 border border-blue-500/50 space-y-2">
+                  <div className="flex items-center gap-2 text-blue-300 font-bold text-xs">
+                    <CheckCircle className="w-4 h-4 text-blue-400" />
+                    <span>Obra Concluída & Finalizada</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Esta obra foi concluída. Novas solicitações de materiais estão permanentemente encerradas.
+                  </p>
+                  <button
+                    disabled
+                    className="w-full py-2 rounded-xl bg-dark-800 text-slate-500 border border-dark-700 text-xs font-semibold flex items-center justify-center gap-2 cursor-not-allowed opacity-60"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Solicitar Materiais (Obra Concluída)</span>
+                  </button>
                 </div>
               ) : budget ? (
                 <button
@@ -871,13 +1006,13 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           )}
 
           {/* Top Budget Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 rounded-3xl border border-dark-750">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-dark-900 p-4 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div>
-              <div className="text-sm font-extrabold text-white flex items-center gap-2">
+              <div className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>Revisão Humana de Orçamento</span>
-                <span className="text-[11px] font-semibold text-slate-400">(Setor de Orçamento)</span>
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">(Setor de Orçamento)</span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Altere quantidades, valores ou adicione mão de obra e serviços complementares
               </p>
             </div>
@@ -885,9 +1020,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setIsSpreadsheetModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sabrar-500/40 bg-sabrar-950/80 hover:bg-sabrar-900 text-sabrar-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sabrar-500/40 bg-sabrar-50 dark:bg-sabrar-950/80 hover:bg-sabrar-100 dark:hover:bg-sabrar-900 text-sabrar-700 dark:text-sabrar-300 text-xs font-bold transition-all shadow-sm active:scale-95"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-sabrar-400" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-sabrar-600 dark:text-sabrar-400" />
                 <span>Importar Planilha Real (Excel)</span>
               </button>
               <button
@@ -906,9 +1041,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </button>
               <button
                 onClick={handleAddEquipmentRow}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-50 dark:bg-cyan-950/80 hover:bg-cyan-100 dark:hover:bg-cyan-900 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
               >
-                <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                <Plus className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                 <span>+ Máquina</span>
               </button>
               <button
@@ -922,16 +1057,157 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             </div>
           </div>
 
+          {/* PAINEL PROEMINENTE DE MARGEM COMERCIAL (%) */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 dark:from-dark-900 dark:via-dark-850 dark:to-dark-900 border-2 border-emerald-500/60 dark:border-emerald-500/40 rounded-3xl p-5 shadow-lg space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-1 px-2.5 rounded-lg bg-emerald-600 text-white font-black text-xs tracking-wider shadow-sm">
+                    % MARGEM COMERCIAL
+                  </span>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Configuração de Margem para Proposta ao Cliente
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  O sistema preserva integralmente o seu <strong>Custo Real Base</strong> da planilha e calcula automaticamente a proposta comercial com as margens configuradas.
+                </p>
+              </div>
+
+              {/* Resumo Total com e sem Margem */}
+              <div className="flex items-center gap-4 bg-white dark:bg-dark-900 px-4 py-2.5 rounded-2xl border border-emerald-500/40 shadow-sm shrink-0">
+                <div className="text-right">
+                  <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Total Proposta Cliente</div>
+                  <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                    R$ {totalBudgetCalculatedClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="h-8 w-px bg-slate-200 dark:bg-dark-700" />
+                <div className="text-right">
+                  <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Custo Real Base</div>
+                  <div className="text-xs font-bold text-slate-600 dark:text-slate-400 font-mono">
+                    R$ {totalBudgetCalculated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Cards dos controles de margem */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* 1. Margem de Materiais */}
+              <div className="bg-white dark:bg-dark-850 p-4 rounded-2xl border-2 border-emerald-400/50 dark:border-dark-700 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">1. Margem sobre Materiais</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700">
+                    Materiais
+                  </span>
+                </div>
+                <div className="my-3 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="500"
+                      value={materialsMarginPercent}
+                      onChange={(e) => setMaterialsMarginPercent(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full text-2xl font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-dark-900 border-2 border-emerald-500 rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-400 font-mono"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-3 top-2 text-lg font-black text-emerald-600 dark:text-emerald-400">%</span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 flex justify-between pt-2 border-t border-slate-100 dark:border-dark-750">
+                  <span>Custo Base: <strong>R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">Cliente: R$ {totalMaterialsClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* 2. Margem de Mão de Obra e Serviços */}
+              <div className="bg-white dark:bg-dark-850 p-4 rounded-2xl border-2 border-amber-400/50 dark:border-dark-700 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">2. Margem sobre Serviços</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700">
+                    Mão de Obra
+                  </span>
+                </div>
+                <div className="my-3 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="500"
+                      value={laborMarginPercent}
+                      onChange={(e) => setLaborMarginPercent(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full text-2xl font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-dark-900 border-2 border-amber-500 rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-amber-400 font-mono"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-3 top-2 text-lg font-black text-amber-600 dark:text-amber-400">%</span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 flex justify-between pt-2 border-t border-slate-100 dark:border-dark-750">
+                  <span>Custo Base: <strong>R$ {totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400">Cliente: R$ {totalServicesClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* 3. Máquinas / Faturamento Direto */}
+              <div className="bg-white dark:bg-dark-850 p-4 rounded-2xl border-2 border-cyan-400/50 dark:border-dark-700 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">3. Máquinas & Equipamentos</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-700">
+                    Faturamento Direto
+                  </span>
+                </div>
+                <div className="my-3 text-center">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Faturado direto ao fabricante</span>
+                  <div className="text-xl font-black text-cyan-600 dark:text-cyan-400 font-mono mt-0.5">
+                    R$ {totalEquipment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 flex justify-between pt-2 border-t border-slate-100 dark:border-dark-750">
+                  <span>Itens: {editableEquipment.length}</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Sem acréscimo</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* 1. Tabela de Materiais Editável */}
-          <div ref={budgetTableRef} className="bg-dark-900 rounded-3xl border border-dark-750 shadow-md">
-            <div className="p-4 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-xs font-bold text-slate-200">
-              <span>1. Materiais (Sugestão IA & Revisão Técnica)</span>
-              <span className="text-sabrar-400">Subtotal Materiais: R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          <div ref={budgetTableRef} className="bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md overflow-hidden">
+            <div className="p-4 bg-slate-50 dark:bg-dark-850 border-b border-slate-200 dark:border-dark-750 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <div className="flex items-center gap-2">
+                <span>1. Materiais (Sugestão IA & Revisão Técnica)</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">({editableMaterials.length} itens)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Custo Real Base: <strong className="text-slate-900 dark:text-white font-mono">R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                </span>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-dark-900 border-2 border-emerald-500 px-2.5 py-1 rounded-xl shadow-xs">
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-black">Margem (%):</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="500"
+                    value={materialsMarginPercent}
+                    onChange={(e) => setMaterialsMarginPercent(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-16 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-dark-800 border border-slate-300 dark:border-dark-600 rounded px-1.5 py-0.5 text-xs outline-none focus:border-emerald-500"
+                    title="Defina a margem comercial (%) sobre os materiais"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">%</span>
+                </div>
+                <span className="text-emerald-700 dark:text-sabrar-300 bg-emerald-50 dark:bg-sabrar-950/80 border border-emerald-300 dark:border-sabrar-600/40 px-2.5 py-1 rounded-xl">
+                  Preço Cliente: <strong className="text-emerald-900 dark:text-white font-mono font-black">R$ {totalMaterialsClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto" style={{ minHeight: activeMaterialSearchIdx !== null ? '320px' : 'auto' }}>
               <table className="w-full text-left text-xs">
-                <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
+                <thead className="bg-slate-100 dark:bg-dark-850 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-dark-700">
                   <tr>
                     <th className="p-3">Material</th>
                     <th className="p-3 text-center">Quant. IA</th>
@@ -942,13 +1218,13 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     <th className="p-3 text-center">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-dark-750">
+                <tbody className="divide-y divide-slate-200 dark:divide-dark-750">
                   {editableMaterials.map((m, idx) => {
                     const sub = Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0);
                     const isSearchingThisRow = activeMaterialSearchIdx === idx;
 
                     return (
-                      <tr key={idx} className="hover:bg-dark-850/60">
+                      <tr key={idx} id={`material-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
                         <td className="p-3">
                           <div className="relative flex items-center material-search-input-container">
                             <input
@@ -965,7 +1241,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                                 triggerMaterialSearch(idx, val, e.currentTarget);
                               }}
                               onKeyDown={(e) => handleInputKeyDown(e, idx)}
-                              className="w-full font-bold text-white bg-transparent border-b border-dark-700 hover:border-slate-500 focus:border-sabrar-500 focus:bg-dark-850 pl-2 pr-7 py-1 rounded outline-none transition-colors"
+                              className="w-full font-bold text-slate-900 dark:text-white bg-transparent border-b border-slate-300 dark:border-dark-700 hover:border-slate-500 focus:border-sabrar-500 focus:bg-slate-50 dark:focus:bg-dark-850 pl-2 pr-7 py-1 rounded outline-none transition-colors"
                             />
                             <button
                               type="button"
@@ -989,18 +1265,26 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                                   const inputEl = tr?.querySelector('input[type="text"]') as HTMLElement;
                                   triggerMaterialSearch(idx, m.material_name || m.material || '', inputEl || e.currentTarget);
                                 }}
-                                className="text-[10px] font-bold text-amber-400 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/40 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 active:scale-95"
-                                title="Clique para pesquisar e vincular a um item oficial do catálogo SABRAR"
+                                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 border border-amber-500/50 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 active:scale-95"
+                                title="Clique para pesquisar e vincular a um item oficial do catálogo SABRAR (para o almoxarifado)"
                               >
                                 <span>🔗 Vincular ao catálogo oficial</span>
                               </button>
                             ) : (
-                              <span className="text-[10px] text-emerald-400 bg-emerald-950/40 border border-emerald-600/30 px-1 py-0.2 rounded flex items-center gap-1">
-                                ✓ Catálogo SABRAR
-                              </span>
+                              <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-500/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded text-[10px]">
+                                <span className="font-semibold">✓ Catálogo: {m.material_code ? `[${m.material_code}] ` : ''}{m.catalog_material_name || m.material_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkMaterial(idx)}
+                                  className="ml-1 text-slate-400 hover:text-rose-500 font-bold px-1"
+                                  title="Desvincular do catálogo"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             )}
                             {(m.ai_reasoning || m.reason) && (
-                              <span className="text-[10px] text-slate-400 line-clamp-1 italic">
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 italic">
                                 ({m.ai_reasoning || m.reason})
                               </span>
                             )}
@@ -1066,14 +1350,38 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
 
           {/* 2. Mão de Obra e Serviços Complementares */}
           <div className="bg-dark-900 rounded-3xl border border-dark-750 overflow-hidden shadow-md">
-            <div className="p-4 bg-dark-850 border-b border-dark-750 flex items-center justify-between text-xs font-bold text-slate-200">
-              <span>2. Serviços, Mão de Obra & Custos Complementares</span>
-              <span className="text-sabrar-400">Subtotal Serviços: R$ {totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            <div className="p-4 bg-dark-850 border-b border-dark-750 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold text-slate-200">
+              <div className="flex items-center gap-2">
+                <span>2. Serviços, Mão de Obra & Custos Complementares</span>
+                <span className="text-[11px] text-slate-400 font-normal">({editableServices.length} itens)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-slate-400">
+                  Custo Real Base: <strong className="text-white font-mono">R$ {totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                </span>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-dark-900 border-2 border-amber-500 px-2.5 py-1 rounded-xl shadow-xs">
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-black">Margem (%):</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="500"
+                    value={laborMarginPercent}
+                    onChange={(e) => setLaborMarginPercent(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-16 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-dark-800 border border-slate-300 dark:border-dark-600 rounded px-1.5 py-0.5 text-xs outline-none focus:border-amber-500"
+                    title="Defina a margem comercial (%) sobre serviços e mão de obra"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">%</span>
+                </div>
+                <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-600/40 px-2.5 py-1 rounded-xl">
+                  Preço Cliente: <strong className="text-amber-900 dark:text-white font-mono font-black">R$ {totalServicesClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
+                <thead className="bg-slate-100 dark:bg-dark-850 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-dark-700">
                   <tr>
                     <th className="p-3">Categoria</th>
                     <th className="p-3">Descrição do Serviço</th>
@@ -1084,11 +1392,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     <th className="p-3 text-center">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-dark-750">
+                <tbody className="divide-y divide-slate-200 dark:divide-dark-750">
                   {editableServices.map((s, idx) => {
                     const sub = Number(s.quantity || 0) * Number(s.unit_price || 0);
                     return (
-                      <tr key={idx} className="hover:bg-dark-850/60">
+                      <tr key={idx} id={`service-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
                         <td className="p-3">
                           <select
                             value={s.category}
@@ -1205,7 +1513,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                       const uPrice = Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0));
                       const sub = Number(eq.quantity || 0) * uPrice;
                       return (
-                        <tr key={idx} className="hover:bg-dark-850/60">
+                        <tr key={idx} id={`equipment-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
                           <td className="p-3">
                             <input
                               type="text"
@@ -1289,24 +1597,36 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           </div>
 
           {/* Resumo Final do Orçamento */}
-          <div className="p-4 bg-dark-850 border border-dark-700 text-white rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="p-4 sm:p-5 bg-dark-850 border border-dark-700 text-white rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <div className="text-xs font-bold text-sabrar-400 uppercase">Orçamento Final Calculado</div>
-              <div className="text-2xl font-black">
-                R$ {totalBudgetCalculated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-sabrar-400 uppercase">Resumo da Proposta ao Cliente</span>
+                {(materialsMarginPercent > 0 || laborMarginPercent > 0) && (
+                  <span className="text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                    Margens: Materiais (+{materialsMarginPercent}%) • Serviços (+{laborMarginPercent}%)
+                  </span>
+                )}
               </div>
-              {totalEquipment > 0 && (
-                <div className="text-[11px] text-slate-400 mt-1">
-                  Materiais: R$ {totalMaterials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Mão de Obra: R$ {totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Faturamento Direto (Máquinas): R$ {totalEquipment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <div className="flex items-baseline gap-3 mt-1 flex-wrap">
+                <div className="text-2xl sm:text-3xl font-black text-white">
+                  R$ {totalBudgetCalculatedClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </div>
-              )}
+                <div className="text-xs text-slate-400">
+                  (Custo Base Real Interno: R$ {totalBudgetCalculated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1">
+                Materiais Cliente: R$ {totalMaterialsClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Mão de Obra Cliente: R$ {totalServicesClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                {totalEquipment > 0 && ` • Faturamento Direto (Máquinas): R$ ${totalEquipment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleSaveBudget}
-                className="px-5 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-md shadow-sabrar-600/30"
+                disabled={savingBudget}
+                className="px-5 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-md shadow-sabrar-600/30 active:scale-95 disabled:opacity-50"
               >
-                Salvar Orçamento
+                {savingBudget ? 'Salvando...' : 'Salvar Orçamento & Margens'}
               </button>
               {budget && (
                 <button
@@ -1620,10 +1940,43 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           isOpen={isProposalModalOpen}
           onClose={() => setIsProposalModalOpen(false)}
           project={project}
-          budget={budget}
+          budget={{
+            ...budget,
+            items: editableMaterials.map(m => ({
+              ...m,
+              material_name: m.material_name || m.material,
+              unit_price: Number(m.unit_price || m.unitPrice || 0),
+              subtotal: Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0)
+            })),
+            services: editableServices.map(s => ({
+              ...s,
+              unit_price: Number(s.unit_price || 0),
+              subtotal: Number(s.quantity || 0) * Number(s.unit_price || 0)
+            })),
+            equipment: editableEquipment.map(eq => ({
+              ...eq,
+              unit_price: Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0)),
+              subtotal: Number(eq.quantity || 0) * Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0))
+            })),
+            total_materials: totalMaterials,
+            total_services: totalServices,
+            total_equipment: totalEquipment,
+            materials_margin_percent: materialsMarginPercent,
+            labor_margin_percent: laborMarginPercent
+          }}
           onSentToClient={() => fetchProjectData()}
         />
       )}
+
+      <EditProjectModal
+        isOpen={isEditProjectModalOpen}
+        onClose={() => setIsEditProjectModalOpen(false)}
+        project={project}
+        onSuccess={(updated) => {
+          setData((prev: any) => ({ ...prev, project: { ...prev.project, ...updated } }));
+          setIsEditProjectModalOpen(false);
+        }}
+      />
 
       <NewRequestModal
         isOpen={isNewRequestModalOpen}

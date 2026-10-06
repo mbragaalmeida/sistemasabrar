@@ -12,7 +12,7 @@ export const NotificationsPage: React.FC = () => {
   const fetchNotifs = async () => {
     setLoading(true);
     try {
-      const data = await api.getNotifications(undefined, currentUser?.id);
+      const data = await api.getNotifications(currentUser?.role, currentUser?.id);
       setNotifications(data.notifications || []);
     } catch (err) {
       console.error(err);

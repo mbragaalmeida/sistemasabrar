@@ -20,26 +20,39 @@ import {
   HardHat,
   List,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Search,
+  RefreshCw,
+  ArrowRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
+import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'aguardando' | 'separacao' | 'separado' | 'entregue'>('todos');
+  const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
+  const [substitutions, setSubstitutions] = useState<any[]>([]);
+  const [substituteItemData, setSubstituteItemData] = useState<{ request: any; item: any } | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
   const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
+
+  const canApproveSubstitution = Boolean(
+    currentUser?.role === 'admin' ||
+    /sabrina|emily/i.test(currentUser?.name || '') ||
+    /sabrina|emily/i.test(currentUser?.email || '')
+  );
 
   const toggleProjectExpand = (id: number | string) => {
     setExpandedProjects(prev => {
@@ -68,16 +81,18 @@ export const StockPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, reqs, rets, moves] = await Promise.all([
+      const [sumData, reqs, rets, moves, subs] = await Promise.all([
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
-        api.getStockMovements()
+        api.getStockMovements(),
+        api.getSubstitutions()
       ]);
       setSummary(sumData);
       setPendingRequests(reqs);
       setReturns(rets);
       setMovements(moves);
+      setSubstitutions(subs || []);
     } catch (err) {
       console.error('Erro ao carregar dados do estoque:', err);
     } finally {
@@ -88,6 +103,31 @@ export const StockPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleApproveSubstitution = async (subId: number) => {
+    if (!window.confirm('Confirma a autorização para a troca deste material?')) return;
+    try {
+      await api.approveSubstitution(subId, currentUser?.id, 'Autorizado');
+      await loadData();
+      alert('Troca de material autorizada e aplicada com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao aprovar troca:', err);
+      alert(err.message || 'Erro ao aprovar troca de material');
+    }
+  };
+
+  const handleRejectSubstitution = async (subId: number) => {
+    const reason = prompt('Informe a justificativa da recusa da troca:');
+    if (!reason) return;
+    try {
+      await api.rejectSubstitution(subId, currentUser?.id, reason);
+      await loadData();
+      alert('Troca de material recusada.');
+    } catch (err: any) {
+      console.error('Erro ao recusar troca:', err);
+      alert(err.message || 'Erro ao recusar troca de material');
+    }
+  };
 
   const handleUpdateStatus = async (requestId: number, newStatus: string) => {
     setUpdatingId(requestId);
@@ -196,11 +236,33 @@ export const StockPage: React.FC = () => {
         const deliveredCount = pendingRequests.filter(r => r.status === 'Entregue').length;
 
         const filteredRequests = pendingRequests.filter(req => {
-          if (statusFilter === 'aguardando_aprovacao') return req.status === 'Aguardando aprovação';
-          if (statusFilter === 'aguardando') return ['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status);
-          if (statusFilter === 'separacao') return req.status === 'Em separação';
-          if (statusFilter === 'separado') return req.status === 'Separado';
-          if (statusFilter === 'entregue') return req.status === 'Entregue';
+          if (statusFilter === 'aguardando_aprovacao') {
+            if (req.status !== 'Aguardando aprovação') return false;
+          } else if (statusFilter === 'aguardando') {
+            if (!['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status)) return false;
+          } else if (statusFilter === 'separacao') {
+            if (req.status !== 'Em separação') return false;
+          } else if (statusFilter === 'separado') {
+            if (req.status !== 'Separado') return false;
+          } else if (statusFilter === 'entregue') {
+            if (req.status !== 'Entregue') return false;
+          }
+
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const matchesCode = (req.code || '').toLowerCase().includes(q);
+            const matchesProject = (req.project_name || '').toLowerCase().includes(q) || (req.project_code || '').toLowerCase().includes(q);
+            const matchesClient = (req.client_name || '').toLowerCase().includes(q);
+            const matchesRequester = (req.requested_by_name || '').toLowerCase().includes(q);
+            const matchesEngineer = (req.responsible_engineer || '').toLowerCase().includes(q);
+            const matchesItems = (req.items || []).some((it: any) =>
+              (it.material_name || '').toLowerCase().includes(q) ||
+              (it.material_code || '').toLowerCase().includes(q)
+            );
+            if (!matchesCode && !matchesProject && !matchesClient && !matchesRequester && !matchesEngineer && !matchesItems) {
+              return false;
+            }
+          }
           return true;
         });
 
@@ -361,42 +423,101 @@ export const StockPage: React.FC = () => {
                 {/* Conteúdo Retraível Expandido */}
                 {isExpanded && (
                   <div className="p-3 border-t border-dark-700 space-y-2 bg-dark-900/40 animate-fadeIn">
-                    {items.map((it: any) => (
-                      <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 py-1.5 border-b border-dark-800 last:border-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {it.image_url && (
-                            <div className="w-8 h-8 rounded-lg bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm" title={it.material_name}>
-                              <img src={it.image_url} alt="" className="w-full h-full object-contain" />
+                    {items.map((it: any) => {
+                      const itemSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Pendente');
+                      const approvedSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Aprovado');
+
+                      return (
+                        <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 py-2 border-b border-dark-800 last:border-0">
+                          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                            {it.image_url && (
+                              <div className="w-8 h-8 rounded-lg bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm" title={it.material_name}>
+                                <img src={it.image_url} alt="" className="w-full h-full object-contain" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-white">{it.material_name}</span>
+                                <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
+                                {it.is_extra && (
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
+                                    Extra Obra
+                                  </span>
+                                )}
+                              </div>
+
+                              {itemSub && (
+                                <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                  <span className="text-[11px] font-bold text-amber-300 bg-amber-950/80 border border-amber-600/50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
+                                    Troca Solicitada: {itemSub.substitute_material_name} (Qtd: {itemSub.quantity})
+                                  </span>
+                                  {canApproveSubstitution && (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveSubstitution(itemSub.id)}
+                                        className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded shadow-xs"
+                                        title="Aprovar substituição deste item"
+                                      >
+                                        Aprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRejectSubstitution(itemSub.id)}
+                                        className="text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded shadow-xs"
+                                        title="Recusar substituição"
+                                      >
+                                        Recusar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {approvedSub && (
+                                <div className="mt-0.5 text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Substituído com autorização por: {approvedSub.substitute_material_name}</span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                          <span className="font-bold text-white">{it.material_name}</span>
-                          <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
-                          {it.is_extra && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
-                              Extra Obra
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            <span className="text-slate-300">
+                              Solicitado: <span className="font-bold text-white">{it.quantity_requested} {it.material_unit}</span>
                             </span>
-                          )}
+                            <span className="text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700 font-semibold text-[11px]">
+                              Reservado: {it.quantity_reserved}
+                            </span>
+                            {it.deficit > 0 && (
+                              <span className="text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700 font-bold text-[11px]">
+                                Déficit: {it.deficit}
+                              </span>
+                            )}
+                            {it.quantity_delivered > 0 && (
+                              <span className="text-sabrar-300 bg-sabrar-950 px-2 py-0.5 rounded border border-sabrar-500/40 text-[11px] font-bold">
+                                Entregue: {it.quantity_delivered}
+                              </span>
+                            )}
+
+                            {/* Botão Trocar Material para o Almoxarifado */}
+                            {!itemSub && req.status !== 'Entregue' && (
+                              <button
+                                type="button"
+                                onClick={() => setSubstituteItemData({ request: req, item: it })}
+                                className="flex items-center gap-1 text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                title="Solicitar troca deste material por outro disponível no almoxarifado"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Trocar Material</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-slate-300">
-                            Solicitado: <span className="font-bold text-white">{it.quantity_requested} {it.material_unit}</span>
-                          </span>
-                          <span className="text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700 font-semibold text-[11px]">
-                            Reservado: {it.quantity_reserved}
-                          </span>
-                          {it.deficit > 0 && (
-                            <span className="text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700 font-bold text-[11px]">
-                              Déficit: {it.deficit}
-                            </span>
-                          )}
-                          {it.quantity_delivered > 0 && (
-                            <span className="text-sabrar-300 bg-sabrar-950 px-2 py-0.5 rounded border border-sabrar-500/40 text-[11px] font-bold">
-                              Entregue: {it.quantity_delivered}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -553,44 +674,31 @@ export const StockPage: React.FC = () => {
 
         return (
           <div className="space-y-4">
-            {/* View Mode & Filter Bar */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              {/* Filter Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-                <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0 mr-1">
-                  <Filter className="w-3.5 h-3.5 text-sabrar-400" />
-                  <span>Filtrar fila:</span>
-                </div>
-
-                {[
-                  { id: 'todos', label: 'Todos', count: pendingRequests.length },
-                  { id: 'aguardando_aprovacao', label: 'Aguardando Aprovação Admin', count: awaitingApprovalCount },
-                  { id: 'aguardando', label: 'Aguardando Separação', count: waitingCount },
-                  { id: 'separacao', label: 'Em Separação', count: inProgressCount },
-                  { id: 'separado', label: 'Separados / Prontos', count: separatedCount },
-                  { id: 'entregue', label: 'Entregues no Canteiro', count: deliveredCount },
-                ].map(f => (
+            {/* Search and View Mode Header Bar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-dark-900 p-3 sm:p-4 rounded-3xl border border-dark-750 shadow-md">
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[260px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar solicitações por obra, código, material ou solicitante..."
+                  className="w-full bg-dark-850 text-white placeholder-slate-400 text-xs rounded-2xl pl-10 pr-9 py-2.5 border border-dark-700 focus:outline-none focus:border-sabrar-500 transition-colors"
+                />
+                {searchQuery && (
                   <button
-                    key={f.id}
-                    onClick={() => setStatusFilter(f.id as any)}
-                    className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                      statusFilter === f.id
-                        ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
-                        : 'bg-dark-850 text-slate-400 hover:text-white hover:bg-dark-800 border border-dark-700'
-                    }`}
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-bold"
+                    title="Limpar busca"
                   >
-                    <span>{f.label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      statusFilter === f.id ? 'bg-sabrar-800 text-white' : 'bg-dark-750 text-slate-300'
-                    }`}>
-                      {f.count}
-                    </span>
+                    ✕
                   </button>
-                ))}
+                )}
               </div>
 
               {/* View Mode Toggle: Por Obra (Boxes) vs Lista Geral */}
-              <div className="flex items-center bg-dark-850 p-1 rounded-2xl border border-dark-700 text-xs shrink-0 self-start lg:self-auto">
+              <div className="flex items-center bg-dark-850 p-1 rounded-2xl border border-dark-700 text-xs shrink-0 self-start md:self-auto">
                 <button
                   type="button"
                   onClick={() => setViewMode('by_project')}
@@ -619,6 +727,108 @@ export const StockPage: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+              <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0 mr-1">
+                <Filter className="w-3.5 h-3.5 text-sabrar-400" />
+                <span>Filtrar fila:</span>
+              </div>
+
+              {[
+                { id: 'todos', label: 'Todos', count: pendingRequests.length },
+                { id: 'aguardando_aprovacao', label: 'Aguardando Aprovação Admin', count: awaitingApprovalCount },
+                { id: 'aguardando', label: 'Aguardando Separação', count: waitingCount },
+                { id: 'separacao', label: 'Em Separação', count: inProgressCount },
+                { id: 'separado', label: 'Separados / Prontos', count: separatedCount },
+                { id: 'entregue', label: 'Entregues no Canteiro', count: deliveredCount },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setStatusFilter(f.id as any)}
+                  className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    statusFilter === f.id
+                      ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                      : 'bg-dark-850 text-slate-400 hover:text-white hover:bg-dark-800 border border-dark-700'
+                  }`}
+                >
+                  <span>{f.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    statusFilter === f.id ? 'bg-sabrar-800 text-white' : 'bg-dark-750 text-slate-300'
+                  }`}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Banner de Solicitações de Troca de Material Pendentes */}
+            {substitutions.filter(s => s.status === 'Pendente').length > 0 && (
+              <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs sm:text-sm">
+                    <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>
+                      {substitutions.filter(s => s.status === 'Pendente').length} Solicitação(ões) de Troca de Material Aguardando Autorização
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-amber-400 font-semibold bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-600/40">
+                    Aprovação: Admins, Sabrina ou Emily
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {substitutions.filter(s => s.status === 'Pendente').map((sub) => (
+                    <div key={sub.id} className="p-3.5 bg-dark-900/90 border border-amber-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                          <span className="font-mono text-amber-300 font-bold">{sub.request_code}</span>
+                          <span className="truncate max-w-[200px]">{sub.project_name}</span>
+                        </div>
+                        <div className="text-xs space-y-1">
+                          <div className="text-slate-300">
+                            De: <strong className="text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
+                          </div>
+                          <div className="text-emerald-400 font-bold flex items-center gap-1">
+                            <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
+                            <span>Para: {sub.substitute_material_name} ({sub.quantity} {sub.substitute_material_unit || 'un'})</span>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
+                          Motivo: "{sub.reason}"
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-1">
+                          Solicitado por: <strong>{sub.requested_by_name || 'Almoxarifado'}</strong>
+                        </div>
+                      </div>
+
+                      {canApproveSubstitution ? (
+                        <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                          <button
+                            type="button"
+                            onClick={() => handleApproveSubstitution(sub.id)}
+                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
+                          >
+                            Autorizar Troca
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectSubstitution(sub.id)}
+                            className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
+                          >
+                            Recusar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-amber-400/90 bg-amber-950/40 p-1.5 rounded-xl text-center border border-amber-800/40 font-medium">
+                          Aguardando análise da Direção / Compras
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* VISUALIZAÇÃO 1: POR OBRA (BOXES SEPARADAS COM BOTÃO DE IMPRESSÃO) */}
             {viewMode === 'by_project' ? (
@@ -851,6 +1061,20 @@ export const StockPage: React.FC = () => {
         onClose={() => setSelectedRequestForPrint(null)}
         request={selectedRequestForPrint}
       />
+
+      {/* Modal de Solicitação de Troca de Material */}
+      {substituteItemData && (
+        <SubstituteMaterialModal
+          isOpen={!!substituteItemData}
+          onClose={() => setSubstituteItemData(null)}
+          request={substituteItemData.request}
+          item={substituteItemData.item}
+          onSuccess={() => {
+            loadData();
+            setSubstituteItemData(null);
+          }}
+        />
+      )}
     </div>
   );
 };

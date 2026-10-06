@@ -21,6 +21,38 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
 
+  const materialsMargin = Number(budget?.materials_margin_percent) || 0;
+  const laborMargin = Number(budget?.labor_margin_percent) || 0;
+
+  // Itens de materiais com a margem do cliente aplicada
+  const materialsWithMargin = (budget?.items || []).map(it => {
+    const rawPrice = Number(it.unit_price) || 0;
+    const clientUnitPrice = rawPrice * (1 + materialsMargin / 100);
+    const clientSubtotal = Number(it.quantity || 0) * clientUnitPrice;
+    return {
+      ...it,
+      clientUnitPrice,
+      clientSubtotal
+    };
+  });
+  const totalMaterialsClient = materialsWithMargin.reduce((acc, it) => acc + it.clientSubtotal, 0);
+
+  // Itens de serviços com a margem do cliente aplicada
+  const servicesWithMargin = (budget?.services || []).map(srv => {
+    const rawPrice = Number(srv.unit_price) || 0;
+    const clientUnitPrice = rawPrice * (1 + laborMargin / 100);
+    const clientSubtotal = Number(srv.quantity || 0) * clientUnitPrice;
+    return {
+      ...srv,
+      clientUnitPrice,
+      clientSubtotal
+    };
+  });
+  const totalServicesClient = servicesWithMargin.reduce((acc, s) => acc + s.clientSubtotal, 0);
+
+  const totalEquipmentClient = Number(budget?.total_equipment) || 0;
+  const totalFinalClient = totalMaterialsClient + totalServicesClient + totalEquipmentClient;
+
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -161,7 +193,7 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
           <div className="mb-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2 flex items-center justify-between">
               <span>1. Fornecimento de Materiais</span>
-              <span className="text-slate-500 font-normal">Subtotal: R$ {budget.total_materials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              <span className="text-slate-500 font-normal">Subtotal: R$ {totalMaterialsClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             </h3>
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <table className="w-full text-left text-xs">
@@ -175,14 +207,14 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(budget.items || []).map((it, idx) => (
+                  {materialsWithMargin.map((it, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/50">
                       <td className="p-2.5 font-medium text-slate-900">{it.material_name}</td>
                       <td className="p-2.5 text-center font-bold text-slate-800">{it.quantity}</td>
                       <td className="p-2.5 text-center text-slate-500">{it.unit}</td>
-                      <td className="p-2.5 text-right text-slate-600">R$ {it.unit_price.toFixed(2)}</td>
+                      <td className="p-2.5 text-right text-slate-600">R$ {it.clientUnitPrice.toFixed(2)}</td>
                       <td className="p-2.5 text-right font-bold text-slate-900">
-                        R$ {it.subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        R$ {it.clientSubtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   ))}
@@ -192,11 +224,11 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
           </div>
 
           {/* 2. Serviços, Mão de Obra e Custos Complementares */}
-          {(budget.services || []).length > 0 && (
+          {servicesWithMargin.length > 0 && (
             <div className="mb-6">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2 flex items-center justify-between">
                 <span>2. Mão de Obra, Equipamentos e Serviços Especializados</span>
-                <span className="text-slate-500 font-normal">Subtotal: R$ {budget.total_services.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-slate-500 font-normal">Subtotal: R$ {totalServicesClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </h3>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <table className="w-full text-left text-xs">
@@ -210,14 +242,14 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {budget.services.map((srv, idx) => (
+                    {servicesWithMargin.map((srv, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/50">
                         <td className="p-2.5 font-bold text-emerald-800 text-[11px] uppercase">{srv.category}</td>
                         <td className="p-2.5 text-slate-800">{srv.description}</td>
                         <td className="p-2.5 text-center font-bold text-slate-700">{srv.quantity} {srv.unit}</td>
-                        <td className="p-2.5 text-right text-slate-600">R$ {srv.unit_price.toFixed(2)}</td>
+                        <td className="p-2.5 text-right text-slate-600">R$ {srv.clientUnitPrice.toFixed(2)}</td>
                         <td className="p-2.5 text-right font-bold text-slate-900">
-                          R$ {srv.subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          R$ {srv.clientSubtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
@@ -228,11 +260,11 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
           )}
 
           {/* 3. Faturamento Direto / Equipamentos Principais */}
-          {(Number(budget.total_equipment) > 0) && (
+          {(totalEquipmentClient > 0) && (
             <div className="mb-6">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2 flex items-center justify-between">
                 <span>3. Faturamento Direto de Equipamentos (Fabricante / Distribuidor)</span>
-                <span className="text-slate-500 font-normal">Subtotal: R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-slate-500 font-normal">Subtotal: R$ {totalEquipmentClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </h3>
               
               {budget.equipment && budget.equipment.length > 0 ? (
@@ -282,7 +314,7 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
                       </div>
                     </div>
                     <div className="text-right font-black text-slate-900 text-sm sm:text-base">
-                      R$ {Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      R$ {totalEquipmentClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </div>
                   </div>
                 </div>
@@ -295,13 +327,13 @@ export const ClientProposalModal: React.FC<ClientProposalModalProps> = ({
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-emerald-400">Total Geral da Proposta</div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Materiais (R$ {budget.total_materials.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) + Mão de Obra (R$ {budget.total_services.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
-                {Number(budget.total_equipment) > 0 && ` + Faturamento Direto Máquinas (R$ ${Number(budget.total_equipment).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
+                Materiais (R$ {totalMaterialsClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) + Mão de Obra (R$ {totalServicesClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                {totalEquipmentClient > 0 && ` + Faturamento Direto Máquinas (R$ ${totalEquipmentClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
               </p>
             </div>
             <div className="text-right">
               <div className="text-2xl sm:text-3xl font-black text-white">
-                R$ {budget.total_final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {totalFinalClient.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
               <div className="text-[11px] text-emerald-300 font-semibold">Valor Global SABRAR Engenharia</div>
             </div>

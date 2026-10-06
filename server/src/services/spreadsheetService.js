@@ -31,7 +31,7 @@ export class SpreadsheetService {
    * atualiza o orçamento com as quantidades/valores reais (Materiais, Mão de Obra e Faturamento Direto)
    * e calibra o motor de IA.
    */
-  static async processRealSurveySpreadsheet(projectId, filePath, originalName, userId = 1) {
+  static async processRealSurveySpreadsheet(projectId, filePath, originalName, userId = 1, mode = 'replace') {
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
 
@@ -104,6 +104,11 @@ export class SpreadsheetService {
     const parsedMaterials = [];
     const parsedServices = [];
     const parsedEquipment = [];
+
+    // Conjuntos de controle para evitar duplicação de blocos idênticos dentro da mesma planilha
+    const seenMaterialKeys = new Set();
+    const seenServiceKeys = new Set();
+    const seenEquipmentKeys = new Set();
 
     let grandTotalMaterials = 0;
     let grandTotalServices = 0;
@@ -287,6 +292,12 @@ export class SpreadsheetService {
             const materialId = matchedMat ? matchedMat.id : null;
             const finalUnit = (!unit || unit === '-' || unit === '0') ? (matchedMat?.unit || 'und') : unit;
 
+            const dedupeKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${finalUnit.toLowerCase()}|${subtotal}`;
+            if (seenMaterialKeys.has(dedupeKey)) {
+              continue;
+            }
+            seenMaterialKeys.add(dedupeKey);
+
             parsedMaterials.push({
               sheet: sName,
               materialId,
@@ -311,6 +322,12 @@ export class SpreadsheetService {
             const subtotal = Number(valMO.toFixed(2));
             const unitPrice = Number((subtotal / finalQty).toFixed(2));
 
+            const dedupeSrvKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${subtotal}`;
+            if (seenServiceKeys.has(dedupeSrvKey)) {
+              continue;
+            }
+            seenServiceKeys.add(dedupeSrvKey);
+
             parsedServices.push({
               category: 'MÃO DE OBRA',
               description: rawDesc,
@@ -329,6 +346,12 @@ export class SpreadsheetService {
             const finalQty = qty > 0 ? qty : 1;
             const subtotal = Number(valFat.toFixed(2));
             const unitPrice = Number((subtotal / finalQty).toFixed(2));
+
+            const dedupeEqKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${subtotal}`;
+            if (seenEquipmentKeys.has(dedupeEqKey)) {
+              continue;
+            }
+            seenEquipmentKeys.add(dedupeEqKey);
 
             parsedEquipment.push({
               category: getCategoryFromSheet(sName),
@@ -358,6 +381,12 @@ export class SpreadsheetService {
             const materialId = matchedMat ? matchedMat.id : null;
             const finalPrice = price > 0 ? price : (Number(matchedMat?.reference_price) || 10.0);
             const subtotal = Number((qty * finalPrice).toFixed(2));
+
+            const dedupeGenKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${qty}|${subtotal}`;
+            if (seenMaterialKeys.has(dedupeGenKey)) {
+              continue;
+            }
+            seenMaterialKeys.add(dedupeGenKey);
 
             parsedMaterials.push({
               sheet: sName,
@@ -402,6 +431,11 @@ export class SpreadsheetService {
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetId;
 
+    let finalMaterialsSum = grandTotalMaterials;
+    let finalServicesSum = grandTotalServices;
+    let finalEquipmentSum = grandTotalEquipment;
+    let finalTotalSum = grandTotalFinal;
+
     if (!budget) {
       const budgetCode = await generateUniqueBudgetCode(db);
 
@@ -419,17 +453,31 @@ export class SpreadsheetService {
       budgetId = resB.lastInsertRowid;
     } else {
       budgetId = budget.id;
-      await db.prepare(`
-        UPDATE budgets SET
-          total_materials = ?, total_services = ?, total_labor = ?,
-          total_equipment = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(grandTotalMaterials, grandTotalServices, grandTotalServices, grandTotalEquipment, grandTotalFinal, budgetId);
+      if (mode === 'append') {
+        finalMaterialsSum = Number((Number(budget.total_materials || 0) + grandTotalMaterials).toFixed(2));
+        finalServicesSum = Number((Number(budget.total_services || 0) + grandTotalServices).toFixed(2));
+        finalEquipmentSum = Number((Number(budget.total_equipment || 0) + grandTotalEquipment).toFixed(2));
+        finalTotalSum = Number((finalMaterialsSum + finalServicesSum + finalEquipmentSum).toFixed(2));
 
-      // Limpa dados antigos para substituir pelos dados reais da planilha
-      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
-      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
-      await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
+        await db.prepare(`
+          UPDATE budgets SET
+            total_materials = ?, total_services = ?, total_labor = ?,
+            total_equipment = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(finalMaterialsSum, finalServicesSum, finalServicesSum, finalEquipmentSum, finalTotalSum, budgetId);
+      } else {
+        await db.prepare(`
+          UPDATE budgets SET
+            total_materials = ?, total_services = ?, total_labor = ?,
+            total_equipment = ?, total_final = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(grandTotalMaterials, grandTotalServices, grandTotalServices, grandTotalEquipment, grandTotalFinal, budgetId);
+
+        // Limpa dados antigos apenas se mode === 'replace'
+        await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+        await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
+        await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
+      }
     }
 
     // 3. Insere os itens na tabela `budget_items`
@@ -487,8 +535,8 @@ export class SpreadsheetService {
           s.notes
         );
       }
-    } else {
-      // Serviços padrão mínimos se a planilha não continha coluna de mão de obra
+    } else if (mode !== 'append' && !budget) {
+      // Serviços padrão mínimos se a planilha não continha coluna de mão de obra e é orçamento novo
       const insertService = db.prepare(`
         INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -552,7 +600,7 @@ export class SpreadsheetService {
         total_budget_final = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(updatedStatus, grandTotalMaterials, grandTotalServices, grandTotalFinal, projectId);
+    `).run(updatedStatus, finalMaterialsSum, finalServicesSum, finalTotalSum, projectId);
 
     // 8. Registra auditoria
     await db.prepare(`
@@ -560,21 +608,28 @@ export class SpreadsheetService {
       VALUES (?, 'IMPORTACAO_PLANILHA_REAL', 'ORCAMENTO', ?, ?, ?)
     `).run(
       userId, budgetId, projectId,
-      `Planilha ${originalName} importada com sucesso: ${parsedMaterials.length} materiais (R$ ${grandTotalMaterials.toLocaleString('pt-BR')}), ${parsedServices.length} serviços (R$ ${grandTotalServices.toLocaleString('pt-BR')}) e ${parsedEquipment.length} equipamentos (R$ ${grandTotalEquipment.toLocaleString('pt-BR')}) processados com valores reais.`
+      `Planilha ${originalName} importada com sucesso (modo: ${mode}): ${parsedMaterials.length} materiais (R$ ${grandTotalMaterials.toLocaleString('pt-BR')}), ${parsedServices.length} serviços (R$ ${grandTotalServices.toLocaleString('pt-BR')}) e ${parsedEquipment.length} equipamentos (R$ ${grandTotalEquipment.toLocaleString('pt-BR')}) processados com valores reais.`
     );
+
+    const totalItemsInBudgetRow = await db.prepare('SELECT count(*) as count FROM budget_items WHERE budget_id = ?').get(budgetId);
 
     return {
       success: true,
       projectId,
       budgetId,
+      mode,
       itemsCount: parsedMaterials.length,
+      totalItemsInBudget: totalItemsInBudgetRow?.count || parsedMaterials.length,
       servicesCount: parsedServices.length,
       equipmentCount: parsedEquipment.length,
       calibratedCount,
-      totalMaterials: grandTotalMaterials,
-      totalServices: grandTotalServices,
-      totalEquipment: grandTotalEquipment,
-      totalFinal: grandTotalFinal,
+      totalMaterials: finalMaterialsSum,
+      totalServices: finalServicesSum,
+      totalEquipment: finalEquipmentSum,
+      totalFinal: finalTotalSum,
+      newMaterialsAdded: grandTotalMaterials,
+      newServicesAdded: grandTotalServices,
+      newEquipmentAdded: grandTotalEquipment,
       sheetsCount: processedSheets.length,
       sheetsNames: processedSheets.map(s => s.sheet),
       items: parsedMaterials

@@ -436,41 +436,73 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
   }
 });
 
-// Importação e processamento de planilha de levantamento executivo real (Excel/CSV)
-projectsRouter.post('/:id/import-spreadsheet', upload.single('file'), async (req, res) => {
+// Importação e processamento de planilha(s) de levantamento executivo real (Excel/CSV)
+projectsRouter.post('/:id/import-spreadsheet', upload.any(), async (req, res) => {
   try {
     const projectId = req.params.id;
-    const file = req.file;
-    const { userId } = req.body || {};
+    const files = req.files || (req.file ? [req.file] : []);
+    const { userId, mode = 'append' } = req.body || {};
 
-    if (!file) {
+    if (!files || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo de planilha foi selecionado' });
     }
 
-    console.log(`[Import Spreadsheet] Processando planilha ${file.originalname} para o projeto ${projectId}...`);
+    console.log(`[Import Spreadsheet] Processando ${files.length} planilha(s) para o projeto ${projectId} (modo: ${mode})...`);
 
-    const result = await SpreadsheetService.processRealSurveySpreadsheet(
-      projectId,
-      file.path,
-      file.originalname,
-      userId ? Number(userId) : 1
-    );
+    let finalResult = null;
+    let totalItemsAdded = 0;
+    const processedFilesInfo = [];
+    const allSheetsNames = [];
 
-    // Registra o arquivo em project_files
-    await db.prepare(`
-      INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
-      VALUES (?, 'PLANILHA_LEVANTAMENTO', ?, ?, ?, ?, ?, ?)
-    `).run(
-      projectId,
-      file.originalname,
-      `/uploads/${file.filename}`,
-      file.size,
-      file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      `Planilha de levantamento real importada: ${result.itemsCount} materiais processados e calibrados no motor de IA.`,
-      userId || 1
-    );
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      // Se for múltiplos arquivos e o primeiro for 'replace', os seguintes devem ser 'append'
+      const currentMode = (i === 0) ? mode : 'append';
 
-    res.json(result);
+      console.log(`[Import Spreadsheet] (${i + 1}/${files.length}) Processando arquivo: ${file.originalname} (modo: ${currentMode})`);
+
+      const resSpreadsheet = await SpreadsheetService.processRealSurveySpreadsheet(
+        projectId,
+        file.path,
+        file.originalname,
+        userId ? Number(userId) : 1,
+        currentMode
+      );
+
+      finalResult = resSpreadsheet;
+      totalItemsAdded += resSpreadsheet.itemsCount || 0;
+      if (resSpreadsheet.sheetsNames) {
+        allSheetsNames.push(...resSpreadsheet.sheetsNames);
+      }
+
+      // Registra o arquivo em project_files
+      await db.prepare(`
+        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
+        VALUES (?, 'PLANILHA_LEVANTAMENTO', ?, ?, ?, ?, ?, ?)
+      `).run(
+        projectId,
+        file.originalname,
+        `/uploads/${file.filename}`,
+        file.size,
+        file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        `Planilha de levantamento real importada: ${resSpreadsheet.itemsCount} materiais processados e calibrados no motor de IA.`,
+        userId || 1
+      );
+
+      processedFilesInfo.push({
+        filename: file.originalname,
+        itemsCount: resSpreadsheet.itemsCount,
+        sheets: resSpreadsheet.sheetsNames
+      });
+    }
+
+    res.json({
+      ...finalResult,
+      totalFilesProcessed: files.length,
+      processedFiles: processedFilesInfo,
+      sheetsNames: Array.from(new Set(allSheetsNames)),
+      itemsCountTotalAdded: totalItemsAdded
+    });
   } catch (err) {
     console.error('[Import Spreadsheet Error]', err);
     res.status(500).json({ error: err.message });
@@ -515,6 +547,71 @@ projectsRouter.patch('/:id/status', async (req, res) => {
     );
 
     res.json({ success: true, projectId, oldStatus: project.status, newStatus: status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Edita informações cadastrais do projeto (Item 2)
+projectsRouter.put('/:id', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const {
+      name,
+      client,
+      client_email,
+      client_phone,
+      address,
+      city,
+      state,
+      project_type,
+      responsible_engineer,
+      notes,
+      userId
+    } = req.body;
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
+
+    await db.prepare(`
+      UPDATE projects SET
+        name = COALESCE(?, name),
+        client = COALESCE(?, client),
+        client_email = ?,
+        client_phone = ?,
+        address = COALESCE(?, address),
+        city = ?,
+        state = ?,
+        project_type = COALESCE(?, project_type),
+        responsible_engineer = COALESCE(?, responsible_engineer),
+        notes = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      name !== undefined ? name.trim() : project.name,
+      client !== undefined ? client.trim() : project.client,
+      client_email !== undefined ? client_email?.trim() : project.client_email,
+      client_phone !== undefined ? client_phone?.trim() : project.client_phone,
+      address !== undefined ? address.trim() : project.address,
+      city !== undefined ? city?.trim() : project.city,
+      state !== undefined ? state?.trim() : project.state,
+      project_type || project.project_type,
+      responsible_engineer !== undefined ? responsible_engineer?.trim() : project.responsible_engineer,
+      notes !== undefined ? notes?.trim() : project.notes,
+      projectId
+    );
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+      VALUES (?, 'EDITAR_PROJETO', 'PROJETO', ?, ?, ?)
+    `).run(
+      userId || 1, projectId, projectId,
+      `Dados cadastrais da obra ${name || project.name} atualizados.`
+    );
+
+    const updated = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

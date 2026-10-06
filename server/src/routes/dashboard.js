@@ -17,42 +17,28 @@ dashboardRouter.get('/overview', async (req, res) => {
     const materials = await db.prepare("SELECT stock_physical, reference_price FROM materials WHERE status = 'Ativo'").all();
     const stockValuation = materials.reduce((acc, m) => acc + (Number(m.stock_physical || 0) * Number(m.reference_price || 0)), 0);
 
-    // Comparativo Real Obra a Obra: Apenas obras já iniciadas ('Em execução', 'Finalizado')
+    // Comparativo Real Obra a Obra: Apenas obras já iniciadas ('Em execução', 'Concluído', 'Concluída', 'Finalizado')
     const projects = await db.prepare(`
       SELECT p.id, p.code, p.name, p.client, p.project_type, p.status, p.total_budget_final, p.total_budget_materials
       FROM projects p
-      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL) AND p.status IN ('Em execução', 'Finalizado')
+      WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL) AND p.status IN ('Em execução', 'Concluído', 'Concluída', 'Finalizado')
       ORDER BY p.id DESC
     `).all();
 
     const projectsComparison = await Promise.all(projects.map(async p => {
       const revenue = Number(p.total_budget_final || 0);
-      const isCompleted = p.status === 'Finalizado';
+      const isCompleted = p.status === 'Finalizado' || p.status === 'Concluído' || p.status === 'Concluída';
 
-      // 1. Levantamento de materiais: apenas os materiais já solicitados
-      const histReq = (await db.prepare(`
-        SELECT SUM(hu.total_requested_qty * COALESCE(m.reference_price, 0)) as cost
-        FROM historical_usage hu
-        JOIN materials m ON hu.material_id = m.id
-        WHERE hu.project_id = ?
-      `).get(p.id))?.cost;
-
+      // 1. Levantamento de materiais: estritamente os materiais efetivamente solicitados em material_requests para esta obra
       const mrReq = (await db.prepare(`
-        SELECT SUM(mri.quantity_requested * COALESCE(m.reference_price, 0)) as cost
+        SELECT COALESCE(SUM(mri.quantity_requested * COALESCE(m.reference_price, 0)), 0) as cost
         FROM material_requests mr
         JOIN material_request_items mri ON mr.id = mri.request_id
         JOIN materials m ON mri.material_id = m.id
         WHERE mr.project_id = ? AND (mr.is_hidden IS FALSE OR mr.is_hidden IS NULL)
-      `).get(p.id))?.cost;
+      `).get(p.id))?.cost || 0;
 
-      let requestedMaterialsCost = 0;
-      if (histReq && histReq > 0) {
-        requestedMaterialsCost = Number(histReq.toFixed(2));
-      } else if (mrReq && mrReq > 0) {
-        requestedMaterialsCost = Number(Math.min(mrReq, p.total_budget_materials > 0 ? p.total_budget_materials : mrReq).toFixed(2));
-      } else {
-        requestedMaterialsCost = Number((p.total_budget_materials || 0).toFixed(2));
-      }
+      const requestedMaterialsCost = Number(Number(mrReq).toFixed(2));
 
       // 2. Custo Real: apurado apenas quando a obra tiver sido concluída (com devoluções descontadas)
       let actualMaterialsCost = null;

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
+import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3 } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
+import { EditProjectModal } from '../components/modals/EditProjectModal';
 
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -19,6 +20,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   const [selectedType, setSelectedType] = useState('');
   const [loading, setLoading] = useState(true);
   const [assigningProject, setAssigningProject] = useState<Project | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   // Aba de estágio operacional: Todas vs Em Execução (Aprovadas) vs Em Orçamento vs Finalizadas
   const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas'>('todas');
@@ -28,11 +30,11 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   }, [projects]);
 
   const orcamentoCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
   }, [projects]);
 
   const finalizadasCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && p.status === 'Finalizado').length;
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && ['Finalizado', 'Concluído', 'Concluída'].includes(p.status)).length;
   }, [projects]);
 
   const displayedProjects = useMemo(() => {
@@ -45,7 +47,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
         return !['Em execução', 'Aprovado', 'Finalizado', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado';
       }
       if (workflowTab === 'finalizadas') {
-        return p.status === 'Finalizado';
+        return ['Finalizado', 'Concluído', 'Concluída'].includes(p.status);
       }
       return true;
     });
@@ -269,7 +271,22 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                     <span className="font-mono text-xs font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
                       {p.code}
                     </span>
-                    <StatusBadge status={p.status} size="sm" />
+                    <div className="flex items-center gap-1.5">
+                      <StatusBadge status={p.status} size="sm" />
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento' || currentUser?.role === 'orcamento_engenharia') && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProject(p);
+                          }}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-dark-800 border border-transparent hover:border-dark-700 transition-colors"
+                          title="Editar informações cadastradas da obra"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <h3 className="font-extrabold text-sm sm:text-base text-white group-hover:text-sabrar-400 transition-colors line-clamp-1">
@@ -348,6 +365,19 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
           onSuccess={() => {
             fetchProjects();
             setAssigningProject(null);
+          }}
+        />
+      )}
+
+      {/* Modal para Edição de Informações da Obra */}
+      {editingProject && (
+        <EditProjectModal
+          isOpen={!!editingProject}
+          onClose={() => setEditingProject(null)}
+          project={editingProject}
+          onSuccess={() => {
+            fetchProjects();
+            setEditingProject(null);
           }}
         />
       )}

@@ -633,7 +633,7 @@ export class AIAnalysisService {
           },
           {
             name: 'Kit Fixação, Mastic Alta Temperatura, Vedações e Varetas Solda',
-            code: 'SAB-0654',
+            code: 'SAB-KIT-VED',
             category: 'Outros',
             unit: 'cj',
             quantity: 1,

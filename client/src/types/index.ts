@@ -29,6 +29,8 @@ export type ProjectStatus =
   | 'Aprovado'
   | 'Em execução'
   | 'Finalizado'
+  | 'Concluído'
+  | 'Concluída'
   | 'Não aprovado'
   | 'Cancelado';
 
@@ -144,6 +146,7 @@ export interface MaterialRequest {
   admin_approved_at?: string;
   admin_approval_notes?: string;
   has_extra_items?: boolean;
+  pickup_date?: string;
   notes?: string;
   items?: MaterialRequestItem[];
   created_at: string;
@@ -238,6 +241,8 @@ export interface Budget {
   total_final: number;
   validity_days: number;
   commercial_terms?: string;
+  materials_margin_percent?: number;
+  labor_margin_percent?: number;
   approved_by?: number;
   approved_at?: string;
   items?: BudgetItem[];
