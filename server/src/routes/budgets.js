@@ -56,6 +56,7 @@ budgetsRouter.post('/save', async (req, res) => {
 
     // Sanitiza e normaliza itens de materiais para evitar colunas nulas ou falhas de constraint (ex: NOT NULL material_name)
     const validMaterials = [];
+    const seenMaterialRows = new Set();
     for (const m of (materials || [])) {
       const rawName = String(m.materialName || m.material || '').trim();
       const materialId = m.materialId ? Number(m.materialId) : null;
@@ -66,6 +67,15 @@ budgetsRouter.post('/save', async (req, res) => {
       const qty = Math.max(0.01, Number(m.quantity) || 1);
       const unitPrice = Number(m.unitPrice !== undefined ? m.unitPrice : (m.unit_price || 0)) || 0;
       const sub = Number((qty * unitPrice).toFixed(2));
+      const noteStr = String(m.humanNotes || m.human_notes || '').trim().toLowerCase();
+
+      // Deduplica linhas exatamente idênticas para evitar duplicações acidentais na persistência
+      const dedupeKey = `${finalName.toLowerCase()}|${qty}|${unitPrice}|${noteStr}`;
+      if (seenMaterialRows.has(dedupeKey)) {
+        continue;
+      }
+      seenMaterialRows.add(dedupeKey);
+
       validMaterials.push({
         ...m,
         materialId,

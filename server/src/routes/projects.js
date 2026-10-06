@@ -441,7 +441,7 @@ projectsRouter.post('/:id/import-spreadsheet', upload.any(), async (req, res) =>
   try {
     const projectId = req.params.id;
     const files = req.files || (req.file ? [req.file] : []);
-    const { userId, mode = 'append' } = req.body || {};
+    const { userId, mode = 'replace' } = req.body || {};
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo de planilha foi selecionado' });

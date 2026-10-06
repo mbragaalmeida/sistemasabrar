@@ -22,7 +22,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [files, setFiles] = useState<File[]>([]);
-  const [mode, setMode] = useState<'append' | 'replace'>('append');
+  const [mode, setMode] = useState<'append' | 'replace'>('replace');
   const [loading, setLoading] = useState(false);
   const [progressText, setProgressText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -211,33 +211,10 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <label
-                    onClick={() => setMode('append')}
-                    className={`cursor-pointer p-2.5 rounded-xl border flex items-start gap-2.5 transition-all ${
-                      mode === 'append'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-white'
-                        : 'border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 text-slate-700 dark:text-slate-400 hover:border-slate-400'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="importMode"
-                      checked={mode === 'append'}
-                      onChange={() => setMode('append')}
-                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <div>
-                      <strong className="block text-xs font-bold">Mesclar / Adicionar ao Orçamento</strong>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Soma os itens às planilhas anteriores sem apagar o que já foi importado.
-                      </span>
-                    </div>
-                  </label>
-
-                  <label
                     onClick={() => setMode('replace')}
                     className={`cursor-pointer p-2.5 rounded-xl border flex items-start gap-2.5 transition-all ${
                       mode === 'replace'
-                        ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-950 dark:text-white'
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-white ring-1 ring-emerald-500'
                         : 'border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 text-slate-700 dark:text-slate-400 hover:border-slate-400'
                     }`}
                   >
@@ -246,12 +223,38 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       name="importMode"
                       checked={mode === 'replace'}
                       onChange={() => setMode('replace')}
-                      className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                     />
                     <div>
-                      <strong className="block text-xs font-bold">Substituir Orçamento Atual</strong>
+                      <div className="flex items-center gap-1.5">
+                        <strong className="block text-xs font-bold">Substituir Orçamento Atual</strong>
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded">Padrão</span>
+                      </div>
                       <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Limpa itens anteriores e reconstrói o orçamento a partir destas planilhas.
+                        Substitui a lista pelo levantamento desta planilha, evitando duplicidades.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    onClick={() => setMode('append')}
+                    className={`cursor-pointer p-2.5 rounded-xl border flex items-start gap-2.5 transition-all ${
+                      mode === 'append'
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-950 dark:text-white ring-1 ring-blue-500'
+                        : 'border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 text-slate-700 dark:text-slate-400 hover:border-slate-400'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importMode"
+                      checked={mode === 'append'}
+                      onChange={() => setMode('append')}
+                      className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <strong className="block text-xs font-bold">Acrescentar ao Orçamento</strong>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Soma aos itens existentes (use apenas se for uma planilha adicional/complementar).
                       </span>
                     </div>
                   </label>
