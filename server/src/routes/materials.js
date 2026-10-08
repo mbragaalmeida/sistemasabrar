@@ -266,3 +266,64 @@ materialsRouter.post('/quick-entry', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// Lista todos os aliases mapeados entre planilhas e base de materiais
+materialsRouter.get('/aliases', async (req, res) => {
+  try {
+    const aliases = await db.prepare(`
+      SELECT ma.*, m.name as material_name, m.code as material_code
+      FROM material_aliases ma
+      JOIN materials m ON ma.material_id = m.id
+      ORDER BY ma.alias_name ASC
+    `).all();
+    res.json(aliases);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Salva vínculos (aliases) de materiais identificados em planilhas para reaproveitamento permanente
+materialsRouter.post('/aliases', async (req, res) => {
+  try {
+    const { mappings } = req.body;
+    // mappings pode ser um array [{ alias, materialId }] ou um único objeto { alias, materialId }
+    const list = Array.isArray(mappings) ? mappings : (req.body.alias && req.body.materialId ? [req.body] : []);
+
+    if (list.length === 0) {
+      return res.status(400).json({ error: 'Nenhum mapeamento de vínculo fornecido' });
+    }
+
+    const saved = [];
+    for (const item of list) {
+      const aliasName = String(item.alias || item.alias_name || '').trim();
+      const materialId = Number(item.materialId || item.material_id);
+      if (!aliasName || !materialId || isNaN(materialId)) continue;
+
+      // 1. Grava na tabela material_aliases
+      await db.prepare(`
+        INSERT INTO material_aliases (alias_name, material_id)
+        VALUES (?, ?)
+        ON CONFLICT (alias_name) DO UPDATE SET material_id = EXCLUDED.material_id
+      `).run(aliasName.toLowerCase(), materialId);
+
+      // 2. Atualiza a coluna synonyms do material correspondente para retroalimentar o autocomplete
+      const mat = await db.prepare('SELECT id, synonyms FROM materials WHERE id = ?').get(materialId);
+      if (mat) {
+        const curSyns = mat.synonyms || '';
+        const normAlias = aliasName.toLowerCase();
+        const existingTokens = curSyns.split(/[,;\n/]+/).map(s => s.trim().toLowerCase());
+        if (!existingTokens.includes(normAlias)) {
+          const updatedSyns = curSyns ? `${curSyns}, ${aliasName}` : aliasName;
+          await db.prepare('UPDATE materials SET synonyms = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(updatedSyns, materialId);
+        }
+      }
+
+      saved.push({ alias: aliasName, materialId });
+    }
+
+    res.json({ success: true, savedCount: saved.length, saved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+

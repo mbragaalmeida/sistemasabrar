@@ -1,4 +1,5 @@
 import { extractTextFromPDF } from '../utils/pdfExtractor';
+import { extractTextFromCad } from '../utils/cadExtractor';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
@@ -73,6 +74,8 @@ export const api = {
   createProject: (data: any) => fetchJson<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
   updateProject: (id: number | string, data: any) =>
     fetchJson<any>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteProject: (id: number | string) =>
+    fetchJson<any>(`/projects/${id}`, { method: 'DELETE' }),
   assignProjectEngineers: (projectId: number | string, engineerIds: number[], userId?: number) =>
     fetchJson<any>(`/projects/${projectId}/engineers`, {
       method: 'PATCH',
@@ -90,16 +93,24 @@ export const api = {
 
     for (const f of files) {
       const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+      const isCad = f.name.toLowerCase().endsWith('.dwg') || f.name.toLowerCase().endsWith('.dxf');
       const isText = f.type.includes('text') || f.name.endsWith('.txt') || f.name.endsWith('.csv');
 
-      // Se for arquivo grande (> 3.5 MB) ou PDF/Texto, extrai texto diretamente no navegador
-      if (f.size > VERCEL_MAX_SAFE_FILE_SIZE || isText) {
+      // Se for arquivo grande (> 3.5 MB) ou PDF/CAD/Texto, extrai texto diretamente no navegador
+      // Isso contorna o limite de 4.5 MB da Vercel (HTTP 413) e alimenta a IA com o conteúdo do projeto
+      if (f.size > VERCEL_MAX_SAFE_FILE_SIZE || isText || isCad) {
         let extractedText = '';
         if (isPdf) {
           try {
             extractedText = await extractTextFromPDF(f);
           } catch (e) {
             console.warn('[Upload] Erro ao extrair PDF localmente:', e);
+          }
+        } else if (isCad) {
+          try {
+            extractedText = await extractTextFromCad(f);
+          } catch (e) {
+            console.warn('[Upload] Erro ao extrair CAD localmente:', e);
           }
         } else if (isText) {
           try {
@@ -113,10 +124,10 @@ export const api = {
           const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
             method: 'POST',
             body: JSON.stringify({
-              type: isPdf ? 'PROJETO_PDF' : 'MEMORIAL_DESCRITIVO',
+              type: isPdf ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'MEMORIAL_DESCRITIVO'),
               original_name: f.name,
               file_size: f.size,
-              mime_type: f.type || (isPdf ? 'application/pdf' : 'text/plain'),
+              mime_type: f.type || (isPdf ? 'application/pdf' : (isCad ? 'application/octet-stream' : 'text/plain')),
               content_summary: extractedText
             })
           });
@@ -135,17 +146,22 @@ export const api = {
         });
 
         if (!res.ok) {
-          // Se Vercel rejeitar por tamanho (HTTP 413), executa extração do PDF como fallback
-          if (res.status === 413 && isPdf) {
-            const extractedText = await extractTextFromPDF(f);
+          // Se Vercel rejeitar por tamanho (HTTP 413), executa extração do PDF ou CAD como fallback imediato
+          if (res.status === 413) {
+            let extractedText = '';
+            if (isPdf) {
+              extractedText = await extractTextFromPDF(f).catch(() => '');
+            } else if (isCad) {
+              extractedText = await extractTextFromCad(f).catch(() => '');
+            }
             if (extractedText && extractedText.trim()) {
               const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
                 method: 'POST',
                 body: JSON.stringify({
-                  type: 'PROJETO_PDF',
+                  type: isPdf ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'PROJETO_TECNICO'),
                   original_name: f.name,
                   file_size: f.size,
-                  mime_type: 'application/pdf',
+                  mime_type: f.type || 'application/octet-stream',
                   content_summary: extractedText
                 })
               });
@@ -160,16 +176,16 @@ export const api = {
         const data = await res.json();
         results.push(data);
       } catch (err: any) {
-        if (isPdf) {
-          const extractedText = await extractTextFromPDF(f);
+        if (isPdf || isCad) {
+          const extractedText = isPdf ? await extractTextFromPDF(f).catch(() => '') : await extractTextFromCad(f).catch(() => '');
           if (extractedText && extractedText.trim()) {
             const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
               method: 'POST',
               body: JSON.stringify({
-                type: 'PROJETO_PDF',
+                type: isPdf ? 'PROJETO_PDF' : 'PROJETO_CAD',
                 original_name: f.name,
                 file_size: f.size,
-                mime_type: 'application/pdf',
+                mime_type: f.type || 'application/octet-stream',
                 content_summary: extractedText
               })
             });
@@ -301,6 +317,9 @@ export const api = {
     fetchJson<any>(`/materials/${id}/image`, { method: 'PATCH', body: JSON.stringify({ image_url }) }),
   quickStockEntry: (materialId: number, quantity: number, notes?: string, userId?: number) =>
     fetchJson<any>('/materials/quick-entry', { method: 'POST', body: JSON.stringify({ materialId, quantity, notes, userId }) }),
+  getMaterialAliases: () => fetchJson<any[]>('/materials/aliases'),
+  saveMaterialAliases: (mappings: Array<{ alias: string; materialId: number }>) =>
+    fetchJson<any>('/materials/aliases', { method: 'POST', body: JSON.stringify({ mappings }) }),
 
   // Solicitações
   getRequests: (params?: Record<string, string>) => {

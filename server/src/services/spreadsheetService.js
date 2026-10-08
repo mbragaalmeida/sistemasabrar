@@ -90,8 +90,20 @@ export class SpreadsheetService {
     const candidateSheets = workbook.SheetNames.filter((name, idx) => !isSummaryOrAuxSheet(name, idx, workbook.SheetNames.length));
     const sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames.filter((_, idx) => !isHiddenSheet(idx));
 
-    // Busca catálogo oficial da SABRAR
+    // Busca catálogo oficial da SABRAR e aliases memorizados (Item 2)
     const catalog = await db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
+    let aliasRows = [];
+    try {
+      aliasRows = await db.prepare("SELECT alias_name, material_id FROM material_aliases").all();
+    } catch (_) {
+      aliasRows = [];
+    }
+    const aliasMap = new Map();
+    for (const a of aliasRows) {
+      if (a.alias_name) {
+        aliasMap.set(String(a.alias_name).trim().toLowerCase(), a.material_id);
+      }
+    }
 
     const normalizeStr = (s) => String(s || '')
       .trim()
@@ -104,11 +116,6 @@ export class SpreadsheetService {
     const parsedMaterials = [];
     const parsedServices = [];
     const parsedEquipment = [];
-
-    // Conjuntos de controle para evitar duplicação de blocos idênticos dentro da mesma planilha
-    const seenMaterialKeys = new Set();
-    const seenServiceKeys = new Set();
-    const seenEquipmentKeys = new Set();
 
     let grandTotalMaterials = 0;
     let grandTotalServices = 0;
@@ -252,17 +259,32 @@ export class SpreadsheetService {
             const subtotal = Number(valMat.toFixed(2));
             const unitPrice = Number((subtotal / finalQty).toFixed(2));
 
-            // Cruzamento com catálogo oficial
+            // Cruzamento com catálogo oficial e aliases memorizados (Itens 2 e 5)
             const normName = normalizeStr(rawDesc);
+            const lowerRaw = rawDesc.trim().toLowerCase();
             let matchedMat = null;
 
-            if (colCode !== -1 && row[colCode]) {
+            // Prioridade 1: Alias memorizado de projetos anteriores (Item 2)
+            if (aliasMap.has(lowerRaw)) {
+              const matchedId = aliasMap.get(lowerRaw);
+              matchedMat = catalog.find(m => m.id === matchedId);
+            } else if (aliasMap.has(normName)) {
+              const matchedId = aliasMap.get(normName);
+              matchedMat = catalog.find(m => m.id === matchedId);
+            }
+
+            // Prioridade 2: Código oficial (se houver na planilha)
+            if (!matchedMat && colCode !== -1 && row[colCode]) {
               const codeVal = String(row[colCode]).trim().toLowerCase();
               matchedMat = catalog.find(m => m.code.toLowerCase() === codeVal);
             }
+
+            // Prioridade 3: Nome exato normalizado
             if (!matchedMat) {
               matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
             }
+
+            // Prioridade 4: Sinônimos cadastrados no banco
             if (!matchedMat) {
               matchedMat = catalog.find(m => {
                 if (!m.synonyms) return false;
@@ -270,6 +292,8 @@ export class SpreadsheetService {
                 return syns.some(s => s && s === normName);
               });
             }
+
+            // Prioridade 5: Semelhança textual por tokens
             if (!matchedMat) {
               const tokens = normName.split(' ').filter(t => t.length > 2);
               if (tokens.length >= 2) {
@@ -290,18 +314,16 @@ export class SpreadsheetService {
             }
 
             const materialId = matchedMat ? matchedMat.id : null;
+            // Item 5: Se houver vínculo com a base, usar o nome oficial cadastrado!
+            const finalMaterialName = matchedMat ? matchedMat.name : rawDesc;
             const finalUnit = (!unit || unit === '-' || unit === '0') ? (matchedMat?.unit || 'und') : unit;
-
-            const dedupeKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${finalUnit.toLowerCase()}|${subtotal}`;
-            if (seenMaterialKeys.has(dedupeKey)) {
-              continue;
-            }
-            seenMaterialKeys.add(dedupeKey);
 
             parsedMaterials.push({
               sheet: sName,
               materialId,
-              materialName: rawDesc,
+              materialName: finalMaterialName,
+              materialCode: matchedMat?.code || null,
+              originalSpreadsheetName: rawDesc !== finalMaterialName ? rawDesc : null,
               quantity: finalQty,
               unit: finalUnit,
               unitPrice,
@@ -322,12 +344,6 @@ export class SpreadsheetService {
             const subtotal = Number(valMO.toFixed(2));
             const unitPrice = Number((subtotal / finalQty).toFixed(2));
 
-            const dedupeSrvKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${subtotal}`;
-            if (seenServiceKeys.has(dedupeSrvKey)) {
-              continue;
-            }
-            seenServiceKeys.add(dedupeSrvKey);
-
             parsedServices.push({
               category: 'MÃO DE OBRA',
               description: rawDesc,
@@ -346,12 +362,6 @@ export class SpreadsheetService {
             const finalQty = qty > 0 ? qty : 1;
             const subtotal = Number(valFat.toFixed(2));
             const unitPrice = Number((subtotal / finalQty).toFixed(2));
-
-            const dedupeEqKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${finalQty}|${subtotal}`;
-            if (seenEquipmentKeys.has(dedupeEqKey)) {
-              continue;
-            }
-            seenEquipmentKeys.add(dedupeEqKey);
 
             parsedEquipment.push({
               category: getCategoryFromSheet(sName),
@@ -377,21 +387,32 @@ export class SpreadsheetService {
             }
 
             const normName = normalizeStr(rawDesc);
-            const matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
+            const lowerRaw = rawDesc.trim().toLowerCase();
+            let matchedMat = null;
+
+            if (aliasMap.has(lowerRaw)) {
+              const matchedId = aliasMap.get(lowerRaw);
+              matchedMat = catalog.find(m => m.id === matchedId);
+            } else if (aliasMap.has(normName)) {
+              const matchedId = aliasMap.get(normName);
+              matchedMat = catalog.find(m => m.id === matchedId);
+            }
+
+            if (!matchedMat) {
+              matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
+            }
+
             const materialId = matchedMat ? matchedMat.id : null;
+            const finalMaterialName = matchedMat ? matchedMat.name : rawDesc;
             const finalPrice = price > 0 ? price : (Number(matchedMat?.reference_price) || 10.0);
             const subtotal = Number((qty * finalPrice).toFixed(2));
-
-            const dedupeGenKey = `${sName.toLowerCase()}|${rawDesc.trim().toLowerCase()}|${qty}|${subtotal}`;
-            if (seenMaterialKeys.has(dedupeGenKey)) {
-              continue;
-            }
-            seenMaterialKeys.add(dedupeGenKey);
 
             parsedMaterials.push({
               sheet: sName,
               materialId,
-              materialName: rawDesc,
+              materialName: finalMaterialName,
+              materialCode: matchedMat?.code || null,
+              originalSpreadsheetName: rawDesc !== finalMaterialName ? rawDesc : null,
               quantity: qty,
               unit: unit || matchedMat?.unit || 'und',
               unitPrice: finalPrice,
@@ -512,8 +533,8 @@ export class SpreadsheetService {
         item.unitPrice,
         item.subtotal,
         aiSuggestedQty,
-        `Quantitativo real importado da planilha executiva (${originalName} - Aba: ${item.sheet})`,
-        `Levantamento executivo real de campo [${item.sheet}]`
+        `Quantitativo real importado da planilha executiva (${originalName} - Aba: ${item.sheet}${item.originalSpreadsheetName ? ` - Item na planilha: "${item.originalSpreadsheetName}"` : ''})`,
+        item.originalSpreadsheetName ? `Planilha: "${item.originalSpreadsheetName}" [${item.sheet}]` : `Levantamento executivo real de campo [${item.sheet}]`
       );
     }
 

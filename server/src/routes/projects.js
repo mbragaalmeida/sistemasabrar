@@ -6,6 +6,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
+import { extractCadTextFromBuffer } from '../utils/cadHelper.js';
 import { generateUniqueProjectCode } from '../utils/codeGenerator.js';
 
 import os from 'os';
@@ -401,6 +402,14 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
         } catch (sErr) {
           console.warn(`[Spreadsheet Parser Error] ${f.originalname}:`, sErr.message);
         }
+      } else if (f.originalname.toLowerCase().endsWith('.dwg') || f.originalname.toLowerCase().endsWith('.dxf')) {
+        try {
+          const buffer = fs.readFileSync(f.path);
+          contentSummary = extractCadTextFromBuffer(buffer, f.originalname);
+          console.log(`[CAD Parser] Extraídas anotações de ${f.originalname} (${contentSummary.length} caracteres)`);
+        } catch (cadErr) {
+          console.warn(`[CAD Parser Error] ${f.originalname}:`, cadErr.message);
+        }
       }
 
       // Remove placeholder record prévio se tiver sido inserido na criação sem conteúdo extraído
@@ -409,11 +418,15 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
         WHERE project_id = ? AND original_name = ?
       `).run(projectId, f.originalname);
 
+      const isCad = f.originalname.toLowerCase().endsWith('.dwg') || f.originalname.toLowerCase().endsWith('.dxf');
+      const fileType = f.originalname.toLowerCase().endsWith('.pdf') ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'PROJETO_TECNICO');
+
       const resInsert = await db.prepare(`
         INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
-        VALUES (?, 'PROJETO_TECNICO', ?, ?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
       `).run(
         projectId,
+        fileType,
         f.originalname,
         `/uploads/${f.filename}`,
         f.size,
@@ -804,3 +817,109 @@ projectsRouter.get('/:id/material-quotas', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Exclusão definitiva de projeto (Restrito a Administradores e à Sabrina - Item 1)
+projectsRouter.delete('/:id', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const userRole = req.headers['x-user-role'];
+    const userId = req.headers['x-user-id'];
+
+    // 1. Verificação estrita de permissão: Admins ou Sabrina
+    let isAllowed = userRole === 'admin';
+    let user = null;
+
+    if (userId) {
+      user = await db.prepare('SELECT id, name, email, role_id FROM users WHERE id = ?').get(userId);
+    }
+
+    if (user) {
+      const emailLower = (user.email || '').toLowerCase();
+      const nameLower = (user.name || '').toLowerCase();
+      if (emailLower.includes('sabrina') || nameLower.includes('sabrina')) {
+        isAllowed = true;
+      }
+    }
+
+    if (!isAllowed) {
+      return res.status(403).json({
+        error: 'Acesso negado: a exclusão de projetos é permitida exclusivamente aos Administradores e à Sabrina.'
+      });
+    }
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    console.log(`[Delete Project] Excluindo projeto ID ${projectId} ("${project.name}") por ${user?.name || userRole}...`);
+
+    // 2. Libera estoques reservados de solicitações pendentes/aprovadas da obra para não travar estoque
+    const reservedItems = await db.prepare(`
+      SELECT mri.material_id, SUM(mri.quantity_requested) as reserved_qty
+      FROM material_request_items mri
+      JOIN material_requests mr ON mri.request_id = mr.id
+      WHERE mr.project_id = ? AND mr.status IN ('Pendente', 'Aprovado Parcial', 'Aprovado')
+      GROUP BY mri.material_id
+    `).all(projectId);
+
+    for (const item of reservedItems) {
+      await db.prepare(`
+        UPDATE materials 
+        SET stock_reserved = GREATEST(0, stock_reserved - ?), updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(item.reserved_qty, item.material_id);
+    }
+
+    // 3. Remove solicitações de materiais da obra
+    const requests = await db.prepare('SELECT id FROM material_requests WHERE project_id = ?').all(projectId);
+    for (const r of requests) {
+      await db.prepare('DELETE FROM material_request_items WHERE request_id = ?').run(r.id);
+    }
+    await db.prepare('DELETE FROM material_requests WHERE project_id = ?').run(projectId);
+
+    // 4. Remove orçamentos, itens, serviços e máquinas
+    const budgets = await db.prepare('SELECT id FROM budgets WHERE project_id = ?').all(projectId);
+    for (const b of budgets) {
+      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(b.id);
+      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(b.id);
+      await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(b.id);
+    }
+    await db.prepare('DELETE FROM budgets WHERE project_id = ?').run(projectId);
+
+    // 5. Remove arquivos físicos e registros associados
+    await db.prepare('DELETE FROM project_files WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM ai_analyses WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM ai_suggestions WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM duct_analyses WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM project_engineers WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM returns WHERE project_id = ?').run(projectId);
+
+    // 6. Desvincula movimentações de estoque e compras para preservar integridade contábil
+    await db.prepare('UPDATE stock_movements SET project_id = NULL WHERE project_id = ?').run(projectId);
+    await db.prepare('UPDATE purchases SET project_id = NULL WHERE project_id = ?').run(projectId);
+    await db.prepare('DELETE FROM historical_usage WHERE project_id = ?').run(projectId);
+
+    // 7. Remove notificações vinculadas a esta obra
+    await db.prepare("DELETE FROM notifications WHERE link LIKE ?").run(`%/projetos/${projectId}%`);
+
+    // 8. Remove o projeto definitivamente
+    await db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+
+    // 9. Registra log de auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+      VALUES (?, 'EXCLUIR_PROJETO', 'PROJETO', ?, ?)
+    `).run(
+      userId || 1,
+      projectId,
+      `Projeto "${project.name}" (${project.code}) foi excluído com sucesso pelo usuário ${user?.name || userRole}.`
+    );
+
+    res.json({ success: true, message: `Projeto "${project.name}" excluído com sucesso.` });
+  } catch (err) {
+    console.error('[Delete Project Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+

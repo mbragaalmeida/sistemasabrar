@@ -25,6 +25,18 @@ export function isPageAllowed(page: string, role: UserRole): boolean {
   return allowed.includes(role);
 }
 
+/**
+ * Permissão para exclusão de projetos: Apenas administradores e a Sabrina (Item 1)
+ */
+export function canDeleteProject(user: { role?: string; email?: string; name?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const email = (user.email || '').toLowerCase();
+  const name = (user.name || '').toLowerCase();
+  return email.includes('sabrina') || name.includes('sabrina');
+}
+
+
 export interface BottomNavItem {
   id: string;
   label: string;

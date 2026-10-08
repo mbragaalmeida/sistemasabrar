@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3 } from 'lucide-react';
+import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
+import { canDeleteProject } from '../utils/permissions';
 
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -21,6 +22,8 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   const [loading, setLoading] = useState(true);
   const [assigningProject, setAssigningProject] = useState<Project | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   // Aba de estágio operacional: Todas vs Em Execução (Aprovadas) vs Em Orçamento vs Finalizadas
   const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas'>('todas');
@@ -67,6 +70,20 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
       console.error('Erro ao buscar projetos:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    setDeletingProject(true);
+    try {
+      await api.deleteProject(projectToDelete.id);
+      setProjectToDelete(null);
+      await fetchProjects();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir projeto');
+    } finally {
+      setDeletingProject(false);
     }
   };
 
@@ -286,6 +303,19 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                       )}
+                      {canDeleteProject(currentUser) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProjectToDelete(p);
+                          }}
+                          className="p-1 rounded-lg text-rose-400 hover:text-rose-200 hover:bg-rose-950/60 border border-transparent hover:border-rose-800/60 transition-colors"
+                          title="Excluir projeto (Apenas Administrador e Sabrina)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -380,6 +410,55 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
             setEditingProject(null);
           }}
         />
+      )}
+
+      {/* Modal de Confirmação de Exclusão de Projeto (Item 1) */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-dark-900 border border-dark-750 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-3 bg-rose-950/60 border border-rose-800/60 rounded-2xl">
+                <AlertTriangle className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Excluir Obra / Projeto</h3>
+                <span className="text-xs text-rose-400 font-semibold">Ação irreversível</span>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>
+                Tem certeza de que deseja excluir permanentemente o projeto{' '}
+                <strong className="text-white font-bold">{projectToDelete.name}</strong> ({projectToDelete.code})?
+              </p>
+              <div className="bg-dark-850 p-3 rounded-xl border border-dark-750 text-[11px] text-slate-400 space-y-1">
+                <div>• Os orçamentos e listas de materiais serão excluídos.</div>
+                <div>• Os arquivos técnicos e memórias serão desvinculados.</div>
+                <div>• Qualquer estoque reservado por esta obra será liberado.</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-dark-750">
+              <button
+                type="button"
+                onClick={() => setProjectToDelete(null)}
+                disabled={deletingProject}
+                className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white bg-dark-800 hover:bg-dark-750 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProject}
+                disabled={deletingProject}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl transition-all shadow-md shadow-rose-950/40 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deletingProject ? 'Excluindo...' : 'Excluir Definitivamente'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Edit3, X, AlertCircle, Check, Building2, User, Phone, Mail, MapPin, FileText } from 'lucide-react';
+import { Edit3, X, AlertCircle, Check, Building2, User, Phone, Mail, MapPin, FileText, Trash2 } from 'lucide-react';
 import { Project } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { canDeleteProject } from '../../utils/permissions';
 
 interface EditProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: Project | null;
   onSuccess: (updated: Project) => void;
+  onDeleted?: () => void;
 }
 
 export const EditProjectModal: React.FC<EditProjectModalProps> = ({
   isOpen,
   onClose,
   project,
-  onSuccess
+  onSuccess,
+  onDeleted
 }) => {
   const { currentUser } = useAuth();
 
@@ -80,6 +83,30 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
       onClose();
     } catch (err: any) {
       setError(err.message || 'Erro ao salvar alterações da obra');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    const confirmed = window.confirm(
+      `Tem certeza de que deseja excluir permanentemente o projeto "${project.name}" (${project.code})?\nEsta ação removerá os orçamentos, arquivos e dados associados.`
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      await api.deleteProject(project.id);
+      alert(`Obra "${project.name}" excluída com sucesso.`);
+      onClose();
+      if (onDeleted) {
+        onDeleted();
+      } else {
+        onSuccess(project);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir obra');
     } finally {
       setLoading(false);
     }
@@ -235,23 +262,39 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-3 border-t border-slate-200 dark:border-dark-750 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 rounded-xl border border-slate-300 dark:border-dark-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-800 font-bold transition-all text-xs"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-5 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white font-bold transition-all shadow-md shadow-sabrar-600/30 flex items-center gap-1.5 active:scale-95 text-xs disabled:opacity-50"
-            >
-              <Check className="w-4 h-4" />
-              <span>{loading ? 'Salvando...' : 'Salvar Alterações'}</span>
-            </button>
+          <div className="pt-3 border-t border-slate-200 dark:border-dark-750 flex items-center justify-between gap-2.5">
+            <div>
+              {canDeleteProject(currentUser) && project && (
+                <button
+                  type="button"
+                  onClick={handleDeleteProject}
+                  disabled={loading}
+                  className="px-3 py-1.5 rounded-xl border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 font-bold transition-all text-xs flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  title="Excluir obra permanentemente (Apenas Administrador e Sabrina)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Obra</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={loading}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-dark-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-800 font-bold transition-all text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-5 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white font-bold transition-all shadow-md shadow-sabrar-600/30 flex items-center gap-1.5 active:scale-95 text-xs disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>{loading ? 'Salvando...' : 'Salvar Alterações'}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
