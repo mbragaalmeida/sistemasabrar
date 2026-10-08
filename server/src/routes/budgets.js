@@ -56,7 +56,7 @@ budgetsRouter.post('/save', async (req, res) => {
 
     // Sanitiza e normaliza itens de materiais para evitar colunas nulas ou falhas de constraint (ex: NOT NULL material_name)
     const validMaterials = [];
-    const seenMaterialRows = new Set();
+    const seenCrossSheetRows = new Map(); // crossSheetKey -> sheetOrigin
     for (const m of (materials || [])) {
       const rawName = String(m.materialName || m.material || '').trim();
       const materialId = m.materialId ? Number(m.materialId) : null;
@@ -69,12 +69,20 @@ budgetsRouter.post('/save', async (req, res) => {
       const sub = Number((qty * unitPrice).toFixed(2));
       const noteStr = String(m.humanNotes || m.human_notes || '').trim().toLowerCase();
 
-      // Deduplica linhas exatamente idênticas para evitar duplicações acidentais na persistência
-      const dedupeKey = `${finalName.toLowerCase()}|${qty}|${unitPrice}|${noteStr}`;
-      if (seenMaterialRows.has(dedupeKey)) {
-        continue;
+      // Regra de Deduplicação solicitada pelo usuário:
+      // Apenas considerar duplicados itens que aparecerem em abas DIFERENTES da planilha.
+      // Se estiverem duplicados em uma lista da MESMA aba (mesma origem), preservar ambos os valores!
+      const sheetMatch = noteStr.match(/\[(.*?)\]/);
+      const sheetOrigin = (m.sheet ? String(m.sheet) : (sheetMatch ? sheetMatch[1] : '')).trim().toLowerCase();
+
+      if (sheetOrigin) {
+        const crossSheetKey = `${finalName.toLowerCase()}|${qty}|${unitPrice}`;
+        if (seenCrossSheetRows.has(crossSheetKey) && seenCrossSheetRows.get(crossSheetKey) !== sheetOrigin) {
+          // Apareceu em aba diferente da planilha com dados idênticos: considera duplicado
+          continue;
+        }
+        seenCrossSheetRows.set(crossSheetKey, sheetOrigin);
       }
-      seenMaterialRows.add(dedupeKey);
 
       validMaterials.push({
         ...m,

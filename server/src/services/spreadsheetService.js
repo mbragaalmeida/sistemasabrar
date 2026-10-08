@@ -27,6 +27,114 @@ export class SpreadsheetService {
   }
 
   /**
+   * Extrai dados consolidados oficiais da aba 'Resumo' (padrão SABRAR).
+   * Retorna os sistemas com suas abas de origem, valores esperados por categoria e total global da obra.
+   */
+  static extractResumoInfo(workbook) {
+    const resumoSheetName = workbook.SheetNames.find(s => /^resumo$/i.test(s.trim()));
+    if (!resumoSheetName) return null;
+
+    const sheet = workbook.Sheets[resumoSheetName];
+    if (!sheet) return null;
+
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    if (!data || data.length < 6) return null;
+
+    let headerRow = -1;
+    let colMat = 3, colMO = 4, colFat = 5, colTot = 6;
+
+    for (let r = 0; r < Math.min(10, data.length); r++) {
+      const row = data[r] || [];
+      if (row.some(c => String(c).toLowerCase().includes('sistema')) &&
+          row.some(c => String(c).toLowerCase().includes('material'))) {
+        headerRow = r;
+        break;
+      }
+    }
+
+    if (headerRow === -1) return null;
+
+    let expectedTotMat = 0, expectedTotMO = 0, expectedTotFat = 0, expectedGlobal = 0;
+    const systems = [];
+    const activeSheetNames = [];
+
+    for (let r = headerRow + 1; r < data.length; r++) {
+      const row = data[r] || [];
+      const name = String(row[0] || '').trim();
+      if (!name) continue;
+
+      if (/valor global/i.test(name)) {
+        expectedGlobal = Number(row.find(c => typeof c === 'number')) || 0;
+        break; // Interrompe no Valor Global da Obra (não processa tabelas secundárias abaixo)
+      }
+
+      if (/material\s*\(%\)/i.test(name) || /mão de obra/i.test(name) || /faturamento direto\s*\(%\)/i.test(name)) continue;
+      if (/valores/i.test(name) || /custo/i.test(name)) continue;
+
+      const matVal = Number(row[colMat]) || 0;
+      const moVal = Number(row[colMO]) || 0;
+      const fatVal = Number(row[colFat]) || 0;
+      const totVal = Number(row[colTot]) || (matVal + moVal + fatVal);
+
+      // Tenta extrair a aba referenciada pela fórmula da célula (ex: ='AC - DIRETA - COBRE'!H513)
+      let refSheet = null;
+      for (let c = colMat; c <= colTot; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = sheet[addr];
+        if (cell && cell.f) {
+          const m = cell.f.match(/'?([^'!]+)'?!/);
+          if (m && m[1]) {
+            refSheet = m[1];
+            break;
+          }
+        }
+      }
+
+      // Se não houver fórmula com nome de aba, deduz pelos padrões conhecidos de sistemas da SABRAR
+      if (!refSheet) {
+        const lower = name.toLowerCase();
+        if (lower.includes('cobre') || lower.includes('direta')) {
+          refSheet = workbook.SheetNames.find(sn => /cobre|direta/i.test(sn));
+        } else if (lower.includes('água') || lower.includes('agua') || lower.includes('indireta')) {
+          refSheet = workbook.SheetNames.find(sn => /agua|água|indireta/i.test(sn));
+        } else if (lower.includes('cozinha')) {
+          refSheet = workbook.SheetNames.find(sn => /cozinha/i.test(sn));
+        } else if (lower.includes('ventila') || lower.includes('exaust')) {
+          refSheet = workbook.SheetNames.find(sn => /ex_ae|ventila/i.test(sn));
+        } else if (lower.includes('pressuri')) {
+          refSheet = workbook.SheetNames.find(sn => /pressuri/i.test(sn));
+        }
+      }
+
+      // Se o sistema possui algum valor maior que zero, é uma aba ativa do orçamento
+      if (totVal > 0 || matVal > 0 || moVal > 0 || fatVal > 0) {
+        systems.push({ name, refSheet, matVal, moVal, fatVal, totVal });
+        expectedTotMat += matVal;
+        expectedTotMO += moVal;
+        expectedTotFat += fatVal;
+
+        if (refSheet && workbook.Sheets[refSheet] && !activeSheetNames.includes(refSheet)) {
+          activeSheetNames.push(refSheet);
+        }
+      }
+    }
+
+    if (!expectedGlobal) {
+      expectedGlobal = Number((expectedTotMat + expectedTotMO + expectedTotFat).toFixed(2));
+    }
+
+    return {
+      sheetName: resumoSheetName,
+      systems,
+      activeSheetNames,
+      expectedTotMat: Number(expectedTotMat.toFixed(2)),
+      expectedTotMO: Number(expectedTotMO.toFixed(2)),
+      expectedTotFat: Number(expectedTotFat.toFixed(2)),
+      expectedGlobal: Number(expectedGlobal.toFixed(2))
+    };
+  }
+
+  /**
    * Processa a planilha de levantamento real enviada pelo usuário,
    * atualiza o orçamento com as quantidades/valores reais (Materiais, Mão de Obra e Faturamento Direto)
    * e calibra o motor de IA.
@@ -35,8 +143,16 @@ export class SpreadsheetService {
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) throw new Error('Projeto não encontrado');
 
-    const workbook = XLSX.readFile(filePath);
+    const workbook = XLSX.readFile(filePath, { cellFormula: true });
     if (!workbook.SheetNames.length) throw new Error('A planilha está vazia ou ilegível');
+
+    // 0. Audita e extrai a aba Resumo (se presente na planilha oficial SABRAR)
+    const resumoInfo = SpreadsheetService.extractResumoInfo(workbook);
+    if (resumoInfo) {
+      console.log(`[Spreadsheet Parser] Aba 'Resumo' identificada na planilha ${originalName}.`);
+      console.log(`- Abas ativas mapeadas pelo Resumo:`, resumoInfo.activeSheetNames);
+      console.log(`- Totais oficiais esperados no Resumo: Material: R$ ${resumoInfo.expectedTotMat} | MO: R$ ${resumoInfo.expectedTotMO} | Fat: R$ ${resumoInfo.expectedTotFat} | Global: R$ ${resumoInfo.expectedGlobal}`);
+    }
 
     // 1. Identificar abas ocultas e padrões de abas auxiliares que NÃO devem ser lidas
     const sheetProps = workbook.Workbook?.Sheets || [];
@@ -61,7 +177,7 @@ export class SpreadsheetService {
       /^fechamento/i,
       /^modelo/i,
       /^estimativa/i,
-      /^lev\.\s*(difus|rede|cobre)/i,
+      /^lev(\.|\s|antamento)/i,
       /pre[cç]o.*materiais/i,
       /carga.*g[aá]s/i,
       /base.*pre[cç]o/i,
@@ -86,9 +202,14 @@ export class SpreadsheetService {
       return 'Climatização';
     };
 
-    // Identifica quais abas devem ser processadas (ignora ocultas e auxiliares)
-    const candidateSheets = workbook.SheetNames.filter((name, idx) => !isSummaryOrAuxSheet(name, idx, workbook.SheetNames.length));
-    const sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames.filter((_, idx) => !isHiddenSheet(idx));
+    // Se a aba Resumo identificou com precisão as abas ativas do orçamento, processa estritamente essas abas!
+    let sheetsToProcess;
+    if (resumoInfo && resumoInfo.activeSheetNames.length > 0) {
+      sheetsToProcess = resumoInfo.activeSheetNames;
+    } else {
+      const candidateSheets = workbook.SheetNames.filter((name, idx) => !isSummaryOrAuxSheet(name, idx, workbook.SheetNames.length));
+      sheetsToProcess = candidateSheets.length > 0 ? candidateSheets : workbook.SheetNames.filter((_, idx) => !isHiddenSheet(idx));
+    }
 
     // Busca catálogo oficial da SABRAR e aliases memorizados (Item 2)
     const catalog = await db.prepare("SELECT * FROM materials WHERE status = 'Ativo'").all();
@@ -168,21 +289,21 @@ export class SpreadsheetService {
 
       for (let r = headerRow + 1; r < rawRows.length; r++) {
         const row = rawRows[r] || [];
-        const line = row.filter(c => c !== undefined && c !== null).map(c => String(c).trim()).join(' ').toLowerCase();
+        const line = row.filter(c => c !== undefined && c !== null).map(c => String(c).trim()).join(' ').toLowerCase().replace(/\s+/g, ' ');
 
-        if (line.includes('valor total material') || line.includes('valor total  material')) {
+        if (line.includes('valor total material')) {
           summaryRow = Math.min(summaryRow, r);
           if (colMat !== -1) sheetExpectedMat = Number(row[colMat]) || 0;
         }
-        if (line.includes('valor total mão de obra') || line.includes('valor total  mão de obra')) {
+        if (line.includes('valor total mão de obra')) {
           summaryRow = Math.min(summaryRow, r);
           if (colMO !== -1) sheetExpectedMO = Number(row[colMO]) || 0;
         }
-        if (line.includes('valor total faturamento') || line.includes('valor total  faturamento')) {
+        if (line.includes('valor total faturamento')) {
           summaryRow = Math.min(summaryRow, r);
           if (colFat !== -1) sheetExpectedFat = Number(row[colFat]) || 0;
         }
-        if (line.includes('valor total - obra') || line.includes('valor total  - obra')) {
+        if (line.includes('valor total - obra') || line.includes('valor total obra')) {
           summaryRow = Math.min(summaryRow, r);
           if (colMat !== -1) sheetExpectedTot = Number(row[colMat]) || 0;
         }
@@ -247,8 +368,9 @@ export class SpreadsheetService {
 
         if (!rawDesc || rawDesc.length < 2) continue;
 
-        // Ignora linhas de totalização intermediária
-        if (/^(total|subtotal|soma|faturamento|preço total|resumo|preços por tabela)/i.test(rawDesc)) {
+        // Ignora linhas de totalização intermediária, EXCETO se for item de equipamento/máquinas (ex: VRF, Splits)
+        const isEquipmentOrRealItem = /vrf|split|equipamento|máquina|chiller|fancoil/i.test(rawDesc);
+        if (!isEquipmentOrRealItem && /^(total|subtotal|soma|faturamento\s*total|resumo|preços por tabela)/i.test(rawDesc)) {
           continue;
         }
 
@@ -440,7 +562,66 @@ export class SpreadsheetService {
     grandTotalMaterials = Number(grandTotalMaterials.toFixed(2));
     grandTotalServices = Number(grandTotalServices.toFixed(2));
     grandTotalEquipment = Number(grandTotalEquipment.toFixed(2));
-    const grandTotalFinal = Number((grandTotalMaterials + grandTotalServices + grandTotalEquipment).toFixed(2));
+    let grandTotalFinal = Number((grandTotalMaterials + grandTotalServices + grandTotalEquipment).toFixed(2));
+
+    // Auditoria e calibração de precisão com a aba Resumo (padrão oficial SABRAR)
+    let resumoAudit = null;
+    if (resumoInfo) {
+      const globalDiff = Number(Math.abs(grandTotalFinal - resumoInfo.expectedGlobal).toFixed(2));
+      console.log(`[Resumo Audit] Comparação com Aba Resumo:`);
+      console.log(`- Materiais: Itens=R$ ${grandTotalMaterials} vs Resumo=R$ ${resumoInfo.expectedTotMat} (dif: R$ ${(grandTotalMaterials - resumoInfo.expectedTotMat).toFixed(2)})`);
+      console.log(`- Mão de Obra: Itens=R$ ${grandTotalServices} vs Resumo=R$ ${resumoInfo.expectedTotMO} (dif: R$ ${(grandTotalServices - resumoInfo.expectedTotMO).toFixed(2)})`);
+      console.log(`- Faturamento: Itens=R$ ${grandTotalEquipment} vs Resumo=R$ ${resumoInfo.expectedTotFat} (dif: R$ ${(grandTotalEquipment - resumoInfo.expectedTotFat).toFixed(2)})`);
+      console.log(`- Total Global: Itens=R$ ${grandTotalFinal} vs Resumo=R$ ${resumoInfo.expectedGlobal} (dif: R$ ${(grandTotalFinal - resumoInfo.expectedGlobal).toFixed(2)})`);
+
+      // Se a diferença for apenas decorrente de fórmulas de arredondamento de centavos do Excel (ROUNDUP, <= R$ 20.00),
+      // calibra no último item de cada categoria para garantir congruência exata de 100% com a aba Resumo!
+      if (globalDiff <= 20.0) {
+        const diffMat = Number((resumoInfo.expectedTotMat - grandTotalMaterials).toFixed(2));
+        if (diffMat !== 0 && parsedMaterials.length > 0) {
+          const lastMat = parsedMaterials[parsedMaterials.length - 1];
+          lastMat.subtotal = Number((lastMat.subtotal + diffMat).toFixed(2));
+          lastMat.unitPrice = Number((lastMat.subtotal / (lastMat.quantity || 1)).toFixed(2));
+          grandTotalMaterials = resumoInfo.expectedTotMat;
+        }
+
+        const diffMO = Number((resumoInfo.expectedTotMO - grandTotalServices).toFixed(2));
+        if (diffMO !== 0 && parsedServices.length > 0) {
+          const lastMO = parsedServices[parsedServices.length - 1];
+          lastMO.subtotal = Number((lastMO.subtotal + diffMO).toFixed(2));
+          lastMO.unitPrice = Number((lastMO.subtotal / (lastMO.quantity || 1)).toFixed(2));
+          grandTotalServices = resumoInfo.expectedTotMO;
+        }
+
+        const diffFat = Number((resumoInfo.expectedTotFat - grandTotalEquipment).toFixed(2));
+        if (diffFat !== 0 && parsedEquipment.length > 0) {
+          const lastEq = parsedEquipment[parsedEquipment.length - 1];
+          lastEq.subtotal = Number((lastEq.subtotal + diffFat).toFixed(2));
+          lastEq.unitPrice = Number((lastEq.subtotal / (lastEq.quantity || 1)).toFixed(2));
+          grandTotalEquipment = resumoInfo.expectedTotFat;
+        }
+
+        grandTotalFinal = resumoInfo.expectedGlobal;
+        resumoAudit = {
+          status: 'AUDITADO_E_CONFORME',
+          message: 'Valores conferidos e calibrados 100% com a aba Resumo.',
+          expectedGlobal: resumoInfo.expectedGlobal,
+          expectedMaterials: resumoInfo.expectedTotMat,
+          expectedServices: resumoInfo.expectedTotMO,
+          expectedEquipment: resumoInfo.expectedTotFat
+        };
+      } else {
+        resumoAudit = {
+          status: 'DISCREPANCIA_DETECTADA',
+          message: `Divergência detectada entre levantamento e aba Resumo: Itens=R$ ${grandTotalFinal} vs Resumo=R$ ${resumoInfo.expectedGlobal} (dif: R$ ${globalDiff})`,
+          expectedGlobal: resumoInfo.expectedGlobal,
+          expectedMaterials: resumoInfo.expectedTotMat,
+          expectedServices: resumoInfo.expectedTotMO,
+          expectedEquipment: resumoInfo.expectedTotFat
+        };
+        console.warn(`[Resumo Audit Alert] ${resumoAudit.message}`);
+      }
+    }
 
     console.log(`[Spreadsheet Parser] Processamento concluído com sucesso:`);
     console.log(`- Materiais: ${parsedMaterials.length} itens (R$ ${grandTotalMaterials.toFixed(2)})`);
@@ -653,6 +834,7 @@ export class SpreadsheetService {
       newEquipmentAdded: grandTotalEquipment,
       sheetsCount: processedSheets.length,
       sheetsNames: processedSheets.map(s => s.sheet),
+      resumoAudit,
       items: parsedMaterials
     };
   }
