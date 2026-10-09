@@ -55,8 +55,9 @@ budgetsRouter.post('/save', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
 
     // Sanitiza e normaliza itens de materiais para evitar colunas nulas ou falhas de constraint (ex: NOT NULL material_name)
+    // REGRA CRÍTICA DEFINITIVA: NUNCA deduplicar ou descartar linhas que estejam no orçamento.
+    // Todas as linhas cadastradas/importadas devem ser integralmente preservadas com seus respectivos subtotais.
     const validMaterials = [];
-    const seenCrossSheetRows = new Map(); // crossSheetKey -> sheetOrigin
     for (const m of (materials || [])) {
       const rawName = String(m.materialName || m.material || '').trim();
       const materialId = m.materialId ? Number(m.materialId) : null;
@@ -64,25 +65,11 @@ budgetsRouter.post('/save', async (req, res) => {
       if (!rawName && !materialId) continue;
 
       const finalName = rawName || `Material #${materialId}`;
-      const qty = Math.max(0.01, Number(m.quantity) || 1);
+      const qty = Math.max(0.0001, Number(m.quantity) || 1);
       const unitPrice = Number(m.unitPrice !== undefined ? m.unitPrice : (m.unit_price || 0)) || 0;
-      const sub = Number((qty * unitPrice).toFixed(2));
-      const noteStr = String(m.humanNotes || m.human_notes || '').trim().toLowerCase();
-
-      // Regra de Deduplicação solicitada pelo usuário:
-      // Apenas considerar duplicados itens que aparecerem em abas DIFERENTES da planilha.
-      // Se estiverem duplicados em uma lista da MESMA aba (mesma origem), preservar ambos os valores!
-      const sheetMatch = noteStr.match(/\[(.*?)\]/);
-      const sheetOrigin = (m.sheet ? String(m.sheet) : (sheetMatch ? sheetMatch[1] : '')).trim().toLowerCase();
-
-      if (sheetOrigin) {
-        const crossSheetKey = `${finalName.toLowerCase()}|${qty}|${unitPrice}`;
-        if (seenCrossSheetRows.has(crossSheetKey) && seenCrossSheetRows.get(crossSheetKey) !== sheetOrigin) {
-          // Apareceu em aba diferente da planilha com dados idênticos: considera duplicado
-          continue;
-        }
-        seenCrossSheetRows.set(crossSheetKey, sheetOrigin);
-      }
+      const sub = (m.subtotal !== undefined && m.subtotal !== null && Number(m.subtotal) > 0)
+        ? Number(Number(m.subtotal).toFixed(2))
+        : Number((qty * unitPrice).toFixed(2));
 
       validMaterials.push({
         ...m,
@@ -95,8 +82,8 @@ budgetsRouter.post('/save', async (req, res) => {
       });
     }
 
-    // Calcula subtotais de materiais com base nos itens sanitizados
-    const totalMaterials = validMaterials.reduce((acc, m) => acc + (m.quantity * m.unitPrice), 0);
+    // Calcula subtotais de materiais com base nos subtotais exatos dos itens sanitizados
+    const totalMaterials = Number(validMaterials.reduce((acc, m) => acc + m.subtotal, 0).toFixed(2));
     
     // Sanitiza e normaliza serviços
     const validServices = [];
@@ -109,9 +96,11 @@ budgetsRouter.post('/save', async (req, res) => {
     for (const s of (services || [])) {
       const desc = String(s.description || '').trim();
       if (!desc) continue;
-      const qty = Math.max(0.01, Number(s.quantity) || 1);
+      const qty = Math.max(0.0001, Number(s.quantity) || 1);
       const unitPrice = Number(s.unitPrice !== undefined ? s.unitPrice : (s.unit_price || 0)) || 0;
-      const sub = Number((qty * unitPrice).toFixed(2));
+      const sub = (s.subtotal !== undefined && s.subtotal !== null && Number(s.subtotal) > 0)
+        ? Number(Number(s.subtotal).toFixed(2))
+        : Number((qty * unitPrice).toFixed(2));
       validServices.push({
         ...s,
         category: s.category || 'MÃO DE OBRA',
@@ -130,7 +119,12 @@ budgetsRouter.post('/save', async (req, res) => {
       else totalAdditional += sub;
     }
 
-    const totalServices = totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional;
+    totalLabor = Number(totalLabor.toFixed(2));
+    totalEquipmentServices = Number(totalEquipmentServices.toFixed(2));
+    totalLogistics = Number(totalLogistics.toFixed(2));
+    totalTaxes = Number(totalTaxes.toFixed(2));
+    totalAdditional = Number(totalAdditional.toFixed(2));
+    const totalServices = Number((totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional).toFixed(2));
 
     // Busca orçamento existente
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
@@ -143,8 +137,10 @@ budgetsRouter.post('/save', async (req, res) => {
         const desc = String(eq.description || eq.name || '').trim();
         if (!desc) continue;
         const uPrice = Number(eq.unitPrice !== undefined ? eq.unitPrice : (eq.unit_price || 0)) || 0;
-        const q = Math.max(0.01, Number(eq.quantity || 1));
-        const sub = Number((q * uPrice).toFixed(2));
+        const q = Math.max(0.0001, Number(eq.quantity || 1));
+        const sub = (eq.subtotal !== undefined && eq.subtotal !== null && Number(eq.subtotal) > 0)
+          ? Number(Number(eq.subtotal).toFixed(2))
+          : Number((q * uPrice).toFixed(2));
         validEquipment.push({
           ...eq,
           category: eq.category || 'Climatização',
@@ -165,7 +161,7 @@ budgetsRouter.post('/save', async (req, res) => {
       equipmentTotal = Number(budget.total_equipment);
     }
 
-    const finalTotalEquipment = equipmentTotal;
+    const finalTotalEquipment = Number(equipmentTotal.toFixed(2));
     const totalFinal = Number((totalMaterials + totalServices + finalTotalEquipment).toFixed(2));
     let budgetId;
 
@@ -298,11 +294,10 @@ budgetsRouter.post('/save', async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const s of services) {
-      const sub = Number(s.quantity) * Number(s.unitPrice);
+    for (const s of validServices) {
       await insertService.run(
         budgetId, s.category || 'MÃO DE OBRA', s.description,
-        s.quantity || 1, s.unit || 'vb', s.unitPrice, sub, s.notes || null
+        s.quantity, s.unit || 'vb', s.unitPrice, s.subtotal, s.notes || null
       );
     }
 

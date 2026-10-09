@@ -324,16 +324,43 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const budget: Budget | null = data.budget;
   const comparisonTable: ComparisonRow[] = data.comparisonTable || [];
 
-  // Recálculo dinâmico dos totais de orçamento (custo base real)
-  const totalMaterials = editableMaterials.reduce((acc, m) => acc + (Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0)), 0);
-  const totalServices = editableServices.reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unit_price || 0)), 0);
-  const totalEquipment = editableEquipment.reduce((acc, eq) => acc + (Number(eq.quantity || 0) * Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0))), 0);
-  const totalBudgetCalculated = totalMaterials + totalServices + totalEquipment;
+  // Recálculo dinâmico e preciso dos totais de orçamento (custo base real preservando subtotais da planilha)
+  const getItemSubtotal = (m: any) => {
+    if (m.subtotal !== undefined && m.subtotal !== null && !isNaN(Number(m.subtotal)) && Number(m.subtotal) > 0) {
+      return Number(Number(m.subtotal).toFixed(2));
+    }
+    const q = Number(m.quantity) || 0;
+    const p = Number(m.unit_price !== undefined ? m.unit_price : (m.unitPrice || 0));
+    return Number((q * p).toFixed(2));
+  };
+
+  const getServiceSubtotal = (s: any) => {
+    if (s.subtotal !== undefined && s.subtotal !== null && !isNaN(Number(s.subtotal)) && Number(s.subtotal) > 0) {
+      return Number(Number(s.subtotal).toFixed(2));
+    }
+    const q = Number(s.quantity) || 0;
+    const p = Number(s.unit_price !== undefined ? s.unit_price : (s.unitPrice || 0));
+    return Number((q * p).toFixed(2));
+  };
+
+  const getEquipmentSubtotal = (eq: any) => {
+    if (eq.subtotal !== undefined && eq.subtotal !== null && !isNaN(Number(eq.subtotal)) && Number(eq.subtotal) > 0) {
+      return Number(Number(eq.subtotal).toFixed(2));
+    }
+    const q = Number(eq.quantity) || 0;
+    const p = Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0));
+    return Number((q * p).toFixed(2));
+  };
+
+  const totalMaterials = Number(editableMaterials.reduce((acc, m) => acc + getItemSubtotal(m), 0).toFixed(2));
+  const totalServices = Number(editableServices.reduce((acc, s) => acc + getServiceSubtotal(s), 0).toFixed(2));
+  const totalEquipment = Number(editableEquipment.reduce((acc, eq) => acc + getEquipmentSubtotal(eq), 0).toFixed(2));
+  const totalBudgetCalculated = Number((totalMaterials + totalServices + totalEquipment).toFixed(2));
 
   // Totais com margem para a proposta comercial do cliente
-  const totalMaterialsClient = totalMaterials * (1 + (Number(materialsMarginPercent) || 0) / 100);
-  const totalServicesClient = totalServices * (1 + (Number(laborMarginPercent) || 0) / 100);
-  const totalBudgetCalculatedClient = totalMaterialsClient + totalServicesClient + totalEquipment;
+  const totalMaterialsClient = Number((totalMaterials * (1 + (Number(materialsMarginPercent) || 0) / 100)).toFixed(2));
+  const totalServicesClient = Number((totalServices * (1 + (Number(laborMarginPercent) || 0) / 100)).toFixed(2));
+  const totalBudgetCalculatedClient = Number((totalMaterialsClient + totalServicesClient + totalEquipment).toFixed(2));
 
   const handleAddEquipmentRow = () => {
     const newIdx = editableEquipment.length;
@@ -346,6 +373,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         quantity: 1,
         unit: 'un',
         unit_price: 0,
+        subtotal: 0,
         notes: ''
       }
     ]);
@@ -384,9 +412,10 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         materials: cleanedMaterials.map(m => ({
           materialId: m.material_id || m.materialId,
           materialName: (m.material_name || m.material || '').trim() || (m.material_id ? `Material #${m.material_id}` : 'Material Avulso'),
-          quantity: Math.max(0.01, Number(m.quantity) || 1),
+          quantity: Math.max(0.0001, Number(m.quantity) || 1),
           unit: (m.unit && String(m.unit).trim()) ? String(m.unit).trim() : 'und',
           unitPrice: Number(m.unit_price !== undefined ? m.unit_price : (m.unitPrice || 0)) || 0,
+          subtotal: getItemSubtotal(m),
           aiSuggestedQuantity: m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity,
           aiReasoning: m.ai_reasoning || m.reason,
           humanNotes: m.human_notes || (m.original_spreadsheet_name ? `Origem na planilha: "${m.original_spreadsheet_name}"` : '')
@@ -396,9 +425,10 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           .map(s => ({
             category: s.category || 'MÃO DE OBRA',
             description: s.description.trim(),
-            quantity: Math.max(0.01, Number(s.quantity) || 1),
+            quantity: Math.max(0.0001, Number(s.quantity) || 1),
             unit: s.unit || 'h',
             unitPrice: Number(s.unit_price) || 0,
+            subtotal: getServiceSubtotal(s),
             notes: s.notes || ''
           })),
         equipment: editableEquipment
@@ -407,9 +437,10 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             category: eq.category || 'Climatização',
             description: (eq.description || eq.name || '').trim(),
             brand: eq.brand || '',
-            quantity: Math.max(0.01, Number(eq.quantity) || 1),
+            quantity: Math.max(0.0001, Number(eq.quantity) || 1),
             unit: eq.unit || 'un',
             unitPrice: Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0)) || 0,
+            subtotal: getEquipmentSubtotal(eq),
             notes: eq.notes || ''
           })),
         totalEquipment,
@@ -1280,7 +1311,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-dark-750">
                   {editableMaterials.map((m, idx) => {
-                    const sub = Number(m.quantity || 0) * Number(m.unit_price || m.unitPrice || 0);
+                    const sub = getItemSubtotal(m);
                     const isSearchingThisRow = activeMaterialSearchIdx === idx;
 
                     return (
@@ -1365,7 +1396,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             value={m.quantity}
                             onChange={(e) => {
                               const val = Number(e.target.value);
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                ...item,
+                                quantity: val,
+                                subtotal: Number((val * (Number(item.unit_price !== undefined ? item.unit_price : item.unitPrice) || 0)).toFixed(2))
+                              } : item));
                             }}
                             className="w-20 text-center font-black text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
                           />
@@ -1388,7 +1423,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             value={m.unit_price || m.unitPrice}
                             onChange={(e) => {
                               const val = Number(e.target.value);
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, unit_price: val, unitPrice: val } : item));
+                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                ...item,
+                                unit_price: val,
+                                unitPrice: val,
+                                subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
+                              } : item));
                             }}
                             className="w-24 text-right font-bold text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
                           />
@@ -1459,7 +1499,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-dark-750">
                   {editableServices.map((s, idx) => {
-                    const sub = Number(s.quantity || 0) * Number(s.unit_price || 0);
+                    const sub = getServiceSubtotal(s);
                     return (
                       <tr key={idx} id={`service-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
                         <td className="p-3">
@@ -1497,7 +1537,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             value={s.quantity}
                             onChange={(e) => {
                               const val = Number(e.target.value);
-                              setEditableServices(prev => prev.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+                              setEditableServices(prev => prev.map((item, i) => i === idx ? {
+                                ...item,
+                                quantity: val,
+                                subtotal: Number((val * (Number(item.unit_price) || 0)).toFixed(2))
+                              } : item));
                             }}
                             className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                           />
@@ -1510,7 +1554,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             value={s.unit_price}
                             onChange={(e) => {
                               const val = Number(e.target.value);
-                              setEditableServices(prev => prev.map((item, i) => i === idx ? { ...item, unit_price: val } : item));
+                              setEditableServices(prev => prev.map((item, i) => i === idx ? {
+                                ...item,
+                                unit_price: val,
+                                subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
+                              } : item));
                             }}
                             className="w-20 text-right font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                           />
@@ -1576,7 +1624,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   <tbody className="divide-y divide-dark-750">
                     {editableEquipment.map((eq, idx) => {
                       const uPrice = Number(eq.unit_price !== undefined ? eq.unit_price : (eq.unitPrice || 0));
-                      const sub = Number(eq.quantity || 0) * uPrice;
+                      const sub = getEquipmentSubtotal(eq);
                       return (
                         <tr key={idx} id={`equipment-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
                           <td className="p-3">
@@ -1621,7 +1669,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               value={eq.quantity}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
-                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? {
+                                  ...item,
+                                  quantity: val,
+                                  subtotal: Number((val * (Number(item.unit_price !== undefined ? item.unit_price : (item.unitPrice || 0)))).toFixed(2))
+                                } : item));
                               }}
                               className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                             />
@@ -1634,7 +1686,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               value={uPrice}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
-                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, unit_price: val, unitPrice: val } : item));
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? {
+                                  ...item,
+                                  unit_price: val,
+                                  unitPrice: val,
+                                  subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
+                                } : item));
                               }}
                               className="w-24 text-right font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                             />
