@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS budget_items (
   ai_suggested_quantity NUMERIC(14, 2),
   ai_reasoning TEXT,
   human_notes TEXT,
+  original_spreadsheet_name TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

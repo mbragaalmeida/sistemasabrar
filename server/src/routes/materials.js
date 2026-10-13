@@ -87,33 +87,61 @@ materialsRouter.get('/autocomplete', async (req, res) => {
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
 
-    const words = q.split(/\s+/).filter(w => w.length > 0);
-    const whereClauses = [];
-    const params = [];
+    const STOPWORDS = new Set([
+      'de', 'da', 'do', 'das', 'dos', 'para', 'pra', 'com', 'em', 'na', 'no',
+      'nas', 'nos', 'a', 'o', 'as', 'os', 'e', 'ou', 'por', 'sem', 'sob', 'sobre',
+      '-', '/', '\\', 'tubulacao', 'tubulação'
+    ]);
 
-    for (const w of words) {
-      whereClauses.push(`(unaccent(name) ILIKE unaccent(?) OR unaccent(coalesce(code, '')) ILIKE unaccent(?) OR unaccent(coalesce(synonyms, '')) ILIKE unaccent(?) OR unaccent(coalesce(brand, '')) ILIKE unaccent(?))`);
-      params.push(`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`);
+    // Limpa pontuações mantendo medidas como 2.1/2 ou 4"
+    const rawTokens = q
+      .replace(/[()[\]{},;:]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 0);
+
+    let words = rawTokens.filter(w => !STOPWORDS.has(w.toLowerCase()));
+    if (words.length === 0) words = rawTokens;
+
+    const runSearch = async (tokens, matchAll = true) => {
+      const whereClauses = [];
+      const params = [];
+
+      for (const w of tokens) {
+        whereClauses.push(`(
+          unaccent(m.name) ILIKE unaccent(?) OR 
+          unaccent(coalesce(m.code, '')) ILIKE unaccent(?) OR 
+          unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?) OR 
+          unaccent(coalesce(m.brand, '')) ILIKE unaccent(?) OR
+          EXISTS (SELECT 1 FROM material_aliases ma WHERE ma.material_id = m.id AND unaccent(ma.alias_name) ILIKE unaccent(?))
+        )`);
+        params.push(`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`);
+      }
+
+      const connector = matchAll ? ' AND ' : ' OR ';
+      const query = `
+        SELECT m.id, m.code, m.name, m.category, m.unit, m.reference_price, m.synonyms, m.image_url, m.stock_physical, m.stock_reserved, m.stock_minimum
+        FROM materials m
+        WHERE ${whereClauses.join(connector)}
+        ORDER BY 
+          CASE 
+            WHEN unaccent(m.name) ILIKE unaccent(?) THEN 1 
+            WHEN unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?) THEN 2 
+            WHEN unaccent(coalesce(m.code, '')) ILIKE unaccent(?) THEN 3 
+            ELSE 4 
+          END,
+          m.name ASC
+        LIMIT 35
+      `;
+      return await db.prepare(query).all(...params, `${q}%`, `${q}%`, `${q}%`);
+    };
+
+    // 1. Tenta busca estrita com termos significativos (AND)
+    let materials = await runSearch(words, true);
+
+    // 2. Se não encontrou e temos múltiplos termos, tenta busca flexível (OR)
+    if (materials.length === 0 && words.length > 1) {
+      materials = await runSearch(words, false);
     }
-
-    const orderParams = [`${q}%`, `${q}%`, `${q}%`];
-
-    const query = `
-      SELECT id, code, name, category, unit, reference_price, synonyms, image_url, stock_physical, stock_reserved, stock_minimum
-      FROM materials
-      WHERE ${whereClauses.join(' AND ')}
-      ORDER BY 
-        CASE 
-          WHEN unaccent(name) ILIKE unaccent(?) THEN 1 
-          WHEN unaccent(coalesce(synonyms, '')) ILIKE unaccent(?) THEN 2 
-          WHEN unaccent(coalesce(code, '')) ILIKE unaccent(?) THEN 3 
-          ELSE 4 
-        END,
-        name ASC
-      LIMIT 30
-    `;
-
-    const materials = await db.prepare(query).all(...params, ...orderParams);
 
     const enriched = materials.map(m => ({
       ...m,

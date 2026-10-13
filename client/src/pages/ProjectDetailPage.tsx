@@ -37,6 +37,7 @@ import { ImportSpreadsheetModal } from '../components/modals/ImportSpreadsheetMo
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
+import { LinkMaterialModal } from '../components/modals/LinkMaterialModal';
 import { canDeleteProject } from '../utils/permissions';
 
 interface ProjectDetailPageProps {
@@ -66,6 +67,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState(false);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
+  const [linkModalItemIdx, setLinkModalItemIdx] = useState<number | null>(null);
 
   // Estados locais para edição de orçamento
   const [editableMaterials, setEditableMaterials] = useState<any[]>([]);
@@ -210,9 +212,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     }
   };
 
-  const handleSelectMaterialSuggestion = (idx: number, material: any) => {
+  const handleSelectMaterialSuggestion = (idx: number, material: any, explicitSpreadsheetName?: string) => {
     const targetItem = editableMaterials[idx];
-    const originalSpreadsheetName = targetItem?.original_spreadsheet_name || 
+    const originalSpreadsheetName = explicitSpreadsheetName || targetItem?.original_spreadsheet_name || 
       (targetItem?.material_name && targetItem?.material_name !== material.name ? targetItem?.material_name : undefined);
 
     // Item 2: Salva imediatamente o vínculo (alias) na base para futuros projetos
@@ -293,7 +295,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       setData(res);
 
       if (res.budget) {
-        setEditableMaterials(res.budget.items || []);
+        setEditableMaterials((res.budget.items || []).map((item: any) => ({
+          ...item,
+          original_spreadsheet_name: item.original_spreadsheet_name || 
+            (item.human_notes?.match(/Planilha:\s*"([^"]+)"/)?.[1]) ||
+            (item.human_notes?.match(/Origem na planilha:\s*"([^"]+)"/)?.[1]) ||
+            (item.ai_reasoning?.match(/Item na planilha:\s*"([^"]+)"/)?.[1]) ||
+            item.originalSpreadsheetName ||
+            item.material_name || item.material
+        })));
         setEditableServices(res.budget.services || []);
         setEditableEquipment(res.budget.equipment || []);
         setValidityDays(res.budget.validity_days || 15);
@@ -418,7 +428,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           subtotal: getItemSubtotal(m),
           aiSuggestedQuantity: m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity,
           aiReasoning: m.ai_reasoning || m.reason,
-          humanNotes: m.human_notes || (m.original_spreadsheet_name ? `Origem na planilha: "${m.original_spreadsheet_name}"` : '')
+          humanNotes: m.human_notes || (m.original_spreadsheet_name ? `Origem na planilha: "${m.original_spreadsheet_name}"` : ''),
+          originalSpreadsheetName: m.original_spreadsheet_name || null
         })),
         services: editableServices
           .filter(s => (s.description || '').trim())
@@ -1328,7 +1339,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               }}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, material_name: val, material: val } : item));
+                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                  ...item,
+                                  material_name: val,
+                                  material: val,
+                                  original_spreadsheet_name: item.original_spreadsheet_name || (item.material_name !== val ? item.material_name : val)
+                                } : item));
                                 triggerMaterialSearch(idx, val, e.currentTarget);
                               }}
                               onKeyDown={(e) => handleInputKeyDown(e, idx)}
@@ -1336,13 +1352,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             />
                             <button
                               type="button"
-                              onClick={(e) => {
-                                const container = e.currentTarget.closest('.material-search-input-container');
-                                const inputEl = container?.querySelector('input') as HTMLElement;
-                                triggerMaterialSearch(idx, m.material_name || m.material || '', inputEl || e.currentTarget);
-                              }}
+                              onClick={() => setLinkModalItemIdx(idx)}
                               className="absolute right-1 text-slate-400 hover:text-sabrar-400 p-1"
-                              title="Buscar na base de materiais (Enter)"
+                              title="Abrir busca interna no catálogo de materiais"
                             >
                               <Search className="w-3.5 h-3.5" />
                             </button>
@@ -1351,13 +1363,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             {!m.material_id ? (
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  const inputEl = tr?.querySelector('input[type="text"]') as HTMLElement;
-                                  triggerMaterialSearch(idx, m.material_name || m.material || '', inputEl || e.currentTarget);
-                                }}
-                                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 border border-amber-500/50 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 active:scale-95"
-                                title="Clique para pesquisar e vincular a um item oficial do catálogo SABRAR (para o almoxarifado)"
+                                onClick={() => setLinkModalItemIdx(idx)}
+                                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 border border-amber-500/50 px-2 py-0.5 rounded transition-all flex items-center gap-1 active:scale-95 shadow-xs"
+                                title="Clique para abrir a busca interna e vincular a um item oficial do catálogo SABRAR"
                               >
                                 <span>🔗 Vincular ao catálogo oficial</span>
                               </button>
@@ -1366,8 +1374,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                                 <span className="font-semibold">✓ Catálogo: {m.material_code ? `[${m.material_code}] ` : ''}{m.catalog_material_name || m.material_name}</span>
                                 <button
                                   type="button"
+                                  onClick={() => setLinkModalItemIdx(idx)}
+                                  className="ml-1 text-slate-400 hover:text-amber-500 font-bold px-1"
+                                  title="Alterar vínculo no catálogo"
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => handleUnlinkMaterial(idx)}
-                                  className="ml-1 text-slate-400 hover:text-rose-500 font-bold px-1"
+                                  className="text-slate-400 hover:text-rose-500 font-bold px-1"
                                   title="Desvincular do catálogo"
                                 >
                                   ×
@@ -1375,7 +1391,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               </div>
                             )}
                             {m.original_spreadsheet_name && m.original_spreadsheet_name !== (m.catalog_material_name || m.material_name) && (
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 italic">
+                              <span className="text-[10px] text-amber-700 dark:text-amber-400/90 font-medium italic">
                                 (Item planilha: "{m.original_spreadsheet_name}")
                               </span>
                             )}
@@ -2278,6 +2294,18 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Dedicado de Busca Interna e Vinculação ao Catálogo Oficial SABRAR */}
+      <LinkMaterialModal
+        isOpen={linkModalItemIdx !== null}
+        onClose={() => setLinkModalItemIdx(null)}
+        item={linkModalItemIdx !== null ? editableMaterials[linkModalItemIdx] : null}
+        onLink={async (material, spreadsheetName) => {
+          if (linkModalItemIdx !== null) {
+            handleSelectMaterialSuggestion(linkModalItemIdx, material, spreadsheetName);
+          }
+        }}
+      />
     </div>
   );
 };

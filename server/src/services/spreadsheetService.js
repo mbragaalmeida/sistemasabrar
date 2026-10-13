@@ -445,7 +445,7 @@ export class SpreadsheetService {
               materialId,
               materialName: finalMaterialName,
               materialCode: matchedMat?.code || null,
-              originalSpreadsheetName: rawDesc !== finalMaterialName ? rawDesc : null,
+              originalSpreadsheetName: rawDesc,
               quantity: finalQty,
               unit: finalUnit,
               unitPrice,
@@ -534,7 +534,7 @@ export class SpreadsheetService {
               materialId,
               materialName: finalMaterialName,
               materialCode: matchedMat?.code || null,
-              originalSpreadsheetName: rawDesc !== finalMaterialName ? rawDesc : null,
+              originalSpreadsheetName: rawDesc,
               quantity: qty,
               unit: unit || matchedMat?.unit || 'und',
               unitPrice: finalPrice,
@@ -686,8 +686,9 @@ export class SpreadsheetService {
     const insertItem = db.prepare(`
       INSERT INTO budget_items (
         budget_id, material_id, material_name, quantity, unit,
-        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes,
+        original_spreadsheet_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // Sugestões anteriores da IA
@@ -715,7 +716,8 @@ export class SpreadsheetService {
         item.subtotal,
         aiSuggestedQty,
         `Quantitativo real importado da planilha executiva (${originalName} - Aba: ${item.sheet}${item.originalSpreadsheetName ? ` - Item na planilha: "${item.originalSpreadsheetName}"` : ''})`,
-        item.originalSpreadsheetName ? `Planilha: "${item.originalSpreadsheetName}" [${item.sheet}]` : `Levantamento executivo real de campo [${item.sheet}]`
+        item.originalSpreadsheetName ? `Planilha: "${item.originalSpreadsheetName}" [${item.sheet}]` : `Levantamento executivo real de campo [${item.sheet}]`,
+        item.originalSpreadsheetName || null
       );
     }
 

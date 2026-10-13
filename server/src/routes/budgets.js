@@ -78,7 +78,8 @@ budgetsRouter.post('/save', async (req, res) => {
         quantity: qty,
         unit: (m.unit && String(m.unit).trim()) ? String(m.unit).trim() : 'und',
         unitPrice,
-        subtotal: sub
+        subtotal: sub,
+        originalSpreadsheetName: m.originalSpreadsheetName || m.original_spreadsheet_name || null
       });
     }
 
@@ -247,8 +248,9 @@ budgetsRouter.post('/save', async (req, res) => {
     const insertItem = db.prepare(`
       INSERT INTO budget_items (
         budget_id, material_id, material_name, quantity, unit,
-        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes,
+        original_spreadsheet_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of validMaterials) {
@@ -262,7 +264,8 @@ budgetsRouter.post('/save', async (req, res) => {
         m.subtotal,
         m.aiSuggestedQuantity || m.quantity,
         m.aiReasoning || null,
-        m.humanNotes || null
+        m.humanNotes || null,
+        m.originalSpreadsheetName || null
       );
 
       // Se o usuário alterou a quantidade sugerida pela IA, registra no log de auditoria (Seção 27 e 37)
