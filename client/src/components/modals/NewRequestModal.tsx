@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ClipboardList,
   AlertTriangle,
@@ -17,7 +17,9 @@ import {
   Sparkles,
   Info,
   HardHat,
-  Calendar
+  Calendar,
+  Building2,
+  ChevronDown
 } from 'lucide-react';
 import { Project, Material } from '../../types';
 import { api } from '../../services/api';
@@ -69,6 +71,44 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     }
     return projects.find(p => p.id === Number(selectedProjectId));
   }, [projects, selectedProjectId]);
+
+  // Seletor inteligente com busca para obras
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
+        setIsProjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const normalizeStr = (s: string) => (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const filteredProjects = useMemo(() => {
+    const term = normalizeStr(projectSearchTerm.trim());
+    if (!term) return projects;
+    const tokens = term.split(/\s+/).filter(Boolean);
+    return projects.filter(p => {
+      const text = normalizeStr(`${p.code} ${p.name} ${p.client || ''} ${p.responsible_engineer || ''}`);
+      return tokens.every(token => text.includes(token));
+    });
+  }, [projects, projectSearchTerm]);
+
+  const showInternalOption = useMemo(() => {
+    if (!projectSearchTerm.trim()) return true;
+    const term = normalizeStr(projectSearchTerm.trim());
+    const text = normalizeStr('solicitacoes internas sabrar uso interno almoxarifado administrativo');
+    const tokens = term.split(/\s+/).filter(Boolean);
+    return tokens.every(token => text.includes(token));
+  }, [projectSearchTerm]);
 
   // Modo de Solicitação: 'batch' (orçamento da obra) ou 'custom' (lista avulsa montada pelo engenheiro)
   const [requestMode, setRequestMode] = useState<'batch' | 'custom'>('batch');
@@ -740,31 +780,187 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 </span>
               )}
             </div>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'internal') {
-                  setSelectedProjectId('internal');
-                } else if (val) {
-                  setSelectedProjectId(Number(val));
-                } else {
-                  setSelectedProjectId('');
-                }
-              }}
-              className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-semibold"
-              required
-            >
-              <option value="">Selecione a obra aprovada...</option>
-              <option value="internal" className="font-bold text-amber-400 bg-dark-800">
-                🏢 Solicitações Internas (Uso Interno SABRAR)
-              </option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.name} ({p.client}) {p.responsible_engineer ? `[${p.responsible_engineer}]` : ''}
-                </option>
-              ))}
-            </select>
+            {/* Seletor Inteligente com Busca */}
+            <div ref={projectDropdownRef} className="relative">
+              {/* Se uma obra está selecionada e o dropdown está fechado */}
+              {selectedProject && !isProjectDropdownOpen ? (
+                <div 
+                  onClick={() => setIsProjectDropdownOpen(true)}
+                  className="w-full p-3 rounded-2xl border border-emerald-600/60 bg-dark-850 hover:bg-dark-800 transition-all cursor-pointer flex items-center justify-between gap-3 group shadow-md"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                      selectedProjectId === 'internal' 
+                        ? 'bg-purple-950/80 border border-purple-600/40 text-purple-400' 
+                        : 'bg-emerald-950/80 border border-emerald-600/40 text-emerald-400'
+                    }`}>
+                      {selectedProjectId === 'internal' ? <ClipboardList className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-black bg-dark-750 text-slate-200 border border-dark-650">
+                          {selectedProject.code}
+                        </span>
+                        <strong className="text-white text-xs sm:text-sm font-bold truncate">
+                          {selectedProject.name}
+                        </strong>
+                        {selectedProject.client && selectedProjectId !== 'internal' && (
+                          <span className="text-xs text-slate-400">
+                            ({selectedProject.client})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] font-bold text-sabrar-400 group-hover:text-sabrar-300 transition-colors">
+                      Trocar Obra
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProjectId('');
+                        setIsProjectDropdownOpen(true);
+                      }}
+                      className="p-1 rounded-lg hover:bg-dark-700 text-slate-400 hover:text-white transition-colors"
+                      title="Desmarcar obra selecionada"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Campo de busca inteligente */
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      autoFocus={isProjectDropdownOpen}
+                      value={projectSearchTerm}
+                      onChange={(e) => {
+                        setProjectSearchTerm(e.target.value);
+                        setIsProjectDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsProjectDropdownOpen(true)}
+                      placeholder="🔍 Digite para buscar obra por nome, código, cliente ou engenheiro..."
+                      className="w-full pl-10 pr-10 text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-medium placeholder-slate-500 transition-all shadow-inner"
+                    />
+                    {projectSearchTerm ? (
+                      <button
+                        type="button"
+                        onClick={() => setProjectSearchTerm('')}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <ChevronDown className="absolute right-3.5 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
+                    )}
+                  </div>
+
+                  {/* Dropdown de opções filtradas */}
+                  {isProjectDropdownOpen && (
+                    <div className="max-h-64 overflow-y-auto rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl p-1.5 space-y-1 z-30">
+                      {/* Opção Solicitações Internas */}
+                      {showInternalOption && (
+                        <div
+                          onClick={() => {
+                            setSelectedProjectId('internal');
+                            setIsProjectDropdownOpen(false);
+                            setProjectSearchTerm('');
+                          }}
+                          className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-2.5 ${
+                            selectedProjectId === 'internal'
+                              ? 'bg-purple-950/70 border border-purple-500/50 text-purple-200'
+                              : 'hover:bg-dark-800 text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-purple-950 border border-purple-600/40 text-purple-400 flex items-center justify-center shrink-0 text-xs">
+                              🏢
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                                  SAB-INTERNO
+                                </span>
+                                <strong className="text-xs font-bold text-white">
+                                  Solicitações Internas (Uso Interno SABRAR)
+                                </strong>
+                              </div>
+                              <p className="text-[11px] text-slate-400 truncate">
+                                Administrativo / Almoxarifado / Manutenção Interna
+                              </p>
+                            </div>
+                          </div>
+                          {selectedProjectId === 'internal' && (
+                            <CheckCircle className="w-4 h-4 text-purple-400 shrink-0" />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Lista de Obras Filtradas */}
+                      {filteredProjects.map((p) => {
+                        const isSelected = selectedProjectId === p.id;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              setSelectedProjectId(p.id);
+                              setIsProjectDropdownOpen(false);
+                              setProjectSearchTerm('');
+                            }}
+                            className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-2.5 ${
+                              isSelected
+                                ? 'bg-emerald-950/70 border border-emerald-500/50 text-emerald-200'
+                                : 'hover:bg-dark-800 text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-lg bg-dark-800 border border-dark-650 text-slate-400 flex items-center justify-center shrink-0">
+                                <Building2 className="w-3.5 h-3.5 text-sabrar-400" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-dark-750 text-slate-300 border border-dark-650">
+                                    {p.code}
+                                  </span>
+                                  <strong className="text-xs font-bold text-white">
+                                    {p.name}
+                                  </strong>
+                                  {p.client && (
+                                    <span className="text-[11px] text-slate-400">
+                                      ({p.client})
+                                    </span>
+                                  )}
+                                </div>
+                                {p.responsible_engineer && (
+                                  <div className="flex items-center gap-1 text-[11px] text-amber-400/90 mt-0.5 font-medium">
+                                    <HardHat className="w-3 h-3" />
+                                    <span>{p.responsible_engineer}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {filteredProjects.length === 0 && !showInternalOption && (
+                        <div className="p-4 text-center text-xs text-slate-400">
+                          Nenhuma obra encontrada para "<strong>{projectSearchTerm}</strong>".
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {currentUser?.role === 'engenharia' && projects.length === 0 && (
               <p className="text-[11px] text-amber-400/90 mt-1">
                 Nenhuma obra externa com orçamento aprovado e status "Em execução" está atribuída ao seu perfil no momento. Para demandas internas, selecione <strong>"Solicitações Internas (Uso Interno SABRAR)"</strong> acima.

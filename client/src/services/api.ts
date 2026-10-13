@@ -346,6 +346,8 @@ export const api = {
     fetchJson<any>(`/requests/substitutions/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
   rejectSubstitution: (id: number | string, userId?: number, notes?: string) =>
     fetchJson<any>(`/requests/substitutions/${id}/reject`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
+  deleteRequest: (id: number | string, userId?: number) =>
+    fetchJson<any>(`/requests/${id}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
 
   // Compras
   getPurchases: (params?: Record<string, string>) => {

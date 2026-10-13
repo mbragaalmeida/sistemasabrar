@@ -395,3 +395,64 @@ requestsRouter.post('/substitutions/:id/reject', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Excluir solicitação de material (Admin, Sabrina ou Emily)
+requestsRouter.delete('/:id', async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const userId = req.body?.userId || req.query?.userId;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para excluir solicitações de materiais.'
+        });
+      }
+    }
+
+    const request = await db.prepare('SELECT * FROM material_requests WHERE id = ?').get(requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Solicitação não encontrada' });
+    }
+
+    // 1. Estorna quantidades reservadas no estoque de materiais, se ainda não tiverem sido entregues
+    if (request.status !== 'Entregue') {
+      const items = await db.prepare('SELECT material_id, quantity_reserved FROM material_request_items WHERE request_id = ?').all(requestId);
+      for (const item of items) {
+        if (item.quantity_reserved && item.quantity_reserved > 0) {
+          await db.prepare(`
+            UPDATE materials 
+            SET stock_reserved = GREATEST(0, stock_reserved - ?), updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(item.quantity_reserved, item.material_id);
+        }
+      }
+    }
+
+    // 2. Remove substituições vinculadas à solicitação
+    await db.prepare('DELETE FROM material_substitutions WHERE request_id = ?').run(requestId);
+
+    // 3. Remove os itens da solicitação
+    await db.prepare('DELETE FROM material_request_items WHERE request_id = ?').run(requestId);
+
+    // 4. Remove a solicitação
+    await db.prepare('DELETE FROM material_requests WHERE id = ?').run(requestId);
+
+    res.json({ success: true, message: `Solicitação #${request.code || requestId} excluída com sucesso.` });
+  } catch (err) {
+    console.error('Erro ao excluir solicitação:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+

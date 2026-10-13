@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Plus, Search, Filter, HardHat, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Package, Printer, ShieldCheck, Check, X } from 'lucide-react';
+import { ClipboardList, Plus, Search, Filter, HardHat, Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Package, Printer, ShieldCheck, Check, X, Trash2 } from 'lucide-react';
 import { MaterialRequest } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,13 @@ export const RequestsPage: React.FC = () => {
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
 
   const canApproveExtra = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.email === 'sabrina@sabrar.com.br' ||
+    currentUser?.email === 'emily@sabrar.com.br' ||
+    (currentUser?.name && /sabrina|emily/i.test(currentUser.name))
+  );
+
+  const canDeleteRequest = Boolean(
     currentUser?.role === 'admin' ||
     currentUser?.email === 'sabrina@sabrar.com.br' ||
     currentUser?.email === 'emily@sabrar.com.br' ||
@@ -83,6 +90,21 @@ export const RequestsPage: React.FC = () => {
       await fetchRequests();
     } catch (err: any) {
       alert(err.message || 'Erro ao rejeitar solicitação extra');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteRequest = async (request: MaterialRequest) => {
+    const confirmMsg = `Tem certeza que deseja EXCLUIR permanentemente a solicitação #${request.code || request.id}?\n\nObra: ${request.project_name || 'Solicitação Interna'}\nSolicitante: ${request.requested_by_name || 'Não informado'}\n\n⚠️ Esta ação removerá a solicitação e estornará quaisquer materiais que estejam reservados no estoque.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoadingId(request.id);
+    try {
+      await api.deleteRequest(request.id, currentUser?.id);
+      await fetchRequests();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir solicitação');
     } finally {
       setActionLoadingId(null);
     }
@@ -233,6 +255,20 @@ export const RequestsPage: React.FC = () => {
                       <Printer className="w-3.5 h-3.5 text-sabrar-400" />
                       <span>Imprimir Romaneio</span>
                     </button>
+
+                    {/* Botão Excluir Solicitação (Admin, Sabrina ou Emily) */}
+                    {canDeleteRequest && (
+                      <button
+                        type="button"
+                        disabled={actionLoadingId === r.id}
+                        onClick={() => handleDeleteRequest(r)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white text-xs font-bold border border-rose-800/60 hover:border-rose-600 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                        title="Excluir esta solicitação de material (Apenas Administradores, Sabrina e Emily)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>{actionLoadingId === r.id ? 'Excluindo...' : 'Excluir'}</span>
+                      </button>
+                    )}
 
                     {/* Ações de Aprovação da Gestão (Admin, Sabrina ou Emily) */}
                     {canApproveExtra && r.requires_admin_approval && r.admin_approval_status === 'Pendente' && (

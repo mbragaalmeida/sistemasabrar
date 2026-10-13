@@ -433,10 +433,7 @@ export class AIAnalysisService {
     if (itemDef.code) {
       const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
       if (byCode) {
-        if (itemDef.defaultPrice !== undefined && itemDef.defaultPrice !== null && Number(byCode.reference_price) !== Number(itemDef.defaultPrice)) {
-          await db.prepare('UPDATE materials SET reference_price = ? WHERE id = ?').run(itemDef.defaultPrice, byCode.id);
-          byCode.reference_price = itemDef.defaultPrice;
-        }
+        // Base oficial de materiais preservada: nunca sobrescrever reference_price
         return byCode;
       }
       // Se possui código específico e defaultPrice, cadastra com o código e preço definidos
@@ -552,9 +549,7 @@ export class AIAnalysisService {
         requiredItems = [
           // 1. Dutos de Exaustão de Cozinha - Chapa Preta #16 (NBR 14518)
           {
-            name: 'Chapa Preta - Exaustão (Dutos Soldados #16 para Gordura)',
-            code: 'SAB-0013',
-            category: 'Dutos',
+            name: 'Chapa Preta - Exaustão (Dutos Soldados #16 para Gordura)',            category: 'Dutos',
             unit: 'KG',
             quantity: 1400,
             defaultPrice: 12.00,
@@ -562,9 +557,7 @@ export class AIAnalysisService {
             reason: 'Rede de dutos de exaustão de gordura fabricada em chapa de aço preta #16 com solda estanque NBR 14518'
           },
           {
-            name: 'Isolamento Fibra Cerâmica - 38 mm - 96 kg/m3 - 3,05m² (Kaowool)',
-            code: 'SAB-0316',
-            category: 'Isolamento',
+            name: 'Isolamento Fibra Cerâmica - 38 mm - 96 kg/m3 - 3,05m² (Kaowool)',            category: 'Isolamento',
             unit: 'm²',
             quantity: 160,
             defaultPrice: 130.50,
@@ -572,9 +565,7 @@ export class AIAnalysisService {
             reason: 'Isolamento corta-fogo em manta de fibra cerâmica Kaowool 38mm (128 kg/m³) com proteção em filme de alumínio'
           },
           {
-            name: 'Chapa Galvanizada - Matéria Prima e Fabricação',
-            code: 'SAB-0011',
-            category: 'Dutos',
+            name: 'Chapa Galvanizada - Matéria Prima e Fabricação',            category: 'Dutos',
             unit: 'kg',
             quantity: 800,
             defaultPrice: 30.00,
@@ -582,9 +573,7 @@ export class AIAnalysisService {
             reason: 'Dutos de insuflamento e renovação de ar exterior em chapa de aço galvanizada'
           },
           {
-            name: 'Isolamento Manta Armaflex 32mm / Isoflex 38mm para Dutos',
-            code: 'SAB-0325',
-            category: 'Isolamento',
+            name: 'Isolamento Manta Armaflex 32mm / Isoflex 38mm para Dutos',            category: 'Isolamento',
             unit: 'm²',
             quantity: 45,
             defaultPrice: 200.40,
@@ -592,9 +581,7 @@ export class AIAnalysisService {
             reason: 'Isolamento térmico para a rede de dutos de insuflamento e ar exterior'
           },
           {
-            name: 'Damper Corta-Fogo Motorizado com Chave Fim de Curso e Solenoide',
-            code: 'SAB-0649',
-            category: 'Ventilação e Exaustão',
+            name: 'Damper Corta-Fogo Motorizado com Chave Fim de Curso e Solenoide',            category: 'Ventilação e Exaustão',
             unit: 'un',
             quantity: 3,
             defaultPrice: 2150.00,
@@ -602,9 +589,7 @@ export class AIAnalysisService {
             reason: 'Dampers corta-fogo motorizados com acionamento por solenoide intertravados ao sensor Firestat Honeywell'
           },
           {
-            name: 'Porta de Inspeção - a cada 1,5 metro em Dutos de Exaustão NBR 14518',
-            code: 'SAB-0653',
-            category: 'Dutos',
+            name: 'Porta de Inspeção - a cada 1,5 metro em Dutos de Exaustão NBR 14518',            category: 'Dutos',
             unit: 'unid',
             quantity: 12,
             defaultPrice: 250.00,
@@ -612,9 +597,7 @@ export class AIAnalysisService {
             reason: 'Portas de visita e limpeza interna estanques e incombustíveis a cada 1,5m conforme norma NBR 14518'
           },
           {
-            name: 'Grelha Simples Deflexão com Registro 1200x300mm e Difusores Tropical',
-            code: 'SAB-0652',
-            category: 'Dutos',
+            name: 'Grelha Simples Deflexão com Registro 1200x300mm e Difusores Tropical',            category: 'Dutos',
             unit: 'un',
             quantity: 6,
             defaultPrice: 420.00,
@@ -622,9 +605,7 @@ export class AIAnalysisService {
             reason: 'Grelhas de captação de ar exterior e difusores Tropical especificados em prancha'
           },
           {
-            name: 'Dutos Flexivéis - 250 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 10"',
-            code: 'SAB-0287',
-            category: 'Isolamento',
+            name: 'Dutos Flexivéis - 250 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 10"',            category: 'Isolamento',
             unit: 'pç',
             quantity: 8,
             defaultPrice: 228.00,
@@ -644,9 +625,7 @@ export class AIAnalysisService {
 
           // 2. Linhas Frigorígenas e Materiais de Climatização VRV
           {
-            name: '1 1/8" – 28,6mm – e=1/16" tubulação de cobre RÍGIDO',
-            code: 'SAB-0372',
-            category: 'Linha frigorígena',
+            name: '1 1/8" – 28,6mm – e=1/16" tubulação de cobre RÍGIDO',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 45,
             defaultPrice: 186.78,
@@ -654,9 +633,7 @@ export class AIAnalysisService {
             reason: 'Linha principal de sucção frigorígena para sistema VRV Daikin (3 condensadoras 8 HP)'
           },
           {
-            name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',
-            code: 'SAB-0382',
-            category: 'Linha frigorígena',
+            name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 35,
             defaultPrice: 142.91,
@@ -664,9 +641,7 @@ export class AIAnalysisService {
             reason: 'Linha intermediária de sucção e gás para ramais VRV Daikin'
           },
           {
-            name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',
-            code: 'SAB-0379',
-            category: 'Linha frigorígena',
+            name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 30,
             defaultPrice: 120.90,
@@ -674,9 +649,7 @@ export class AIAnalysisService {
             reason: 'Linha frigorígena de distribuição para evaporadoras VRV de 36.000 BTU/h'
           },
           {
-            name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',
-            code: 'SAB-0381',
-            category: 'Linha frigorígena',
+            name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 25,
             defaultPrice: 86.13,
@@ -684,9 +657,7 @@ export class AIAnalysisService {
             reason: 'Linha frigorígena para evaporadoras VRV de 19.000 BTU/h'
           },
           {
-            name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',
-            code: 'SAB-0380',
-            category: 'Linha frigorígena',
+            name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 60,
             defaultPrice: 47.92,
@@ -694,9 +665,7 @@ export class AIAnalysisService {
             reason: 'Linha de líquido frigorígeno para alimentação das evaporadoras VRV'
           },
           {
-            name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',
-            code: 'SAB-0378',
-            category: 'Linha frigorígena',
+            name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 40,
             defaultPrice: 28.75,
@@ -704,9 +673,7 @@ export class AIAnalysisService {
             reason: 'Linha de líquido para evaporadoras menores (Hi-Wall 7k e 9k)'
           },
           {
-            name: 'Isolamento Armaflex Especial para Tubulações VRV',
-            code: 'SAB-0650',
-            category: 'Isolamento',
+            name: 'Isolamento Armaflex Especial para Tubulações VRV',            category: 'Isolamento',
             unit: 'gl',
             quantity: 1,
             defaultPrice: 6850.00,
@@ -714,9 +681,7 @@ export class AIAnalysisService {
             reason: 'Tubos isolantes elastoméricos Armaflex alta densidade para linhas de sucção e líquido VRV'
           },
           {
-            name: 'Juntas de Derivação e Conexões Refnet Daikin para VRV',
-            code: 'SAB-0651',
-            category: 'Linha frigorígena',
+            name: 'Juntas de Derivação e Conexões Refnet Daikin para VRV',            category: 'Linha frigorígena',
             unit: 'cj',
             quantity: 8,
             defaultPrice: 680.00,
@@ -724,9 +689,7 @@ export class AIAnalysisService {
             reason: 'Juntas Refnet originais Daikin para distribuição simétrica de gás refrigerante'
           },
           {
-            name: 'QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 12.5CV ATE 15CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',
-            code: 'SAB-0050',
-            category: 'Elétrica',
+            name: 'QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 12.5CV ATE 15CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',            category: 'Elétrica',
             unit: 'unid',
             quantity: 1,
             defaultPrice: 8900.00,
@@ -734,9 +697,7 @@ export class AIAnalysisService {
             reason: 'Quadro elétrico de automação e força com inversor de frequência para exaustor de 4,5 kW (11.000 m³/h)'
           },
           {
-            name: 'QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',
-            code: 'SAB-0054',
-            category: 'Elétrica',
+            name: 'QUADRO ELÉTRICO PARA 01 MOTOR ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',            category: 'Elétrica',
             unit: 'unid',
             quantity: 1,
             defaultPrice: 6600.00,
@@ -744,9 +705,7 @@ export class AIAnalysisService {
             reason: 'Quadro elétrico com inversor de frequência para ventilador de ar exterior de 1,1 kW (9.900 m³/h)'
           },
           {
-            name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',
-            code: 'SAB-0637',
-            category: 'Outros',
+            name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',            category: 'Outros',
             unit: 'cj',
             quantity: 20,
             defaultPrice: 145.00,
@@ -754,9 +713,7 @@ export class AIAnalysisService {
             reason: 'Suportação pesada em perfilado #14 e tirantes para sustentação aérea de tubulações e equipamentos'
           },
           {
-            name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',
-            code: 'SAB-0389',
-            category: 'Linha frigorígena',
+            name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',            category: 'Linha frigorígena',
             unit: 'VB',
             quantity: 3,
             defaultPrice: 1600.00,
@@ -764,9 +721,7 @@ export class AIAnalysisService {
             reason: 'Carga de fluido refrigerante ecológico R-410A para o sistema VRV Daikin'
           },
           {
-            name: 'CABINHO PP 4x2,5mm²',
-            code: 'SAB-0383',
-            category: 'Linha frigorígena',
+            name: 'CABINHO PP 4x2,5mm²',            category: 'Linha frigorígena',
             unit: 'm',
             quantity: 70,
             defaultPrice: 13.37,
@@ -782,9 +737,7 @@ export class AIAnalysisService {
         if (eqData.hasACSystem) {
           const acItems = [
             {
-              name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',
-              code: 'SAB-0630',
-              category: 'Dutos',
+              name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',              category: 'Dutos',
               unit: 'm²',
               quantity: Math.max(80, Math.round((eqData.totalDuctAirflow || 5310) * 0.0264)),
               defaultPrice: 145.00,
@@ -792,9 +745,7 @@ export class AIAnalysisService {
               reason: `Rede de dutos MPU para insuflamento e retorno dos ${eqData.numBuiltIn} equipamentos Built-In (${(eqData.totalDuctAirflow || 5310).toLocaleString('pt-BR')} m³/h)`
             },
             {
-              name: 'Chapa Galvanizada - Matéria Prima e Fabricação',
-              code: 'SAB-0011',
-              category: 'Dutos',
+              name: 'Chapa Galvanizada - Matéria Prima e Fabricação',              category: 'Dutos',
               unit: 'kg',
               quantity: 600,
               defaultPrice: 30.00,
@@ -802,9 +753,7 @@ export class AIAnalysisService {
               reason: `Caixas plenum, colarinhos e transições de chapa para as evaporadoras Built-In (${eqData.numBuiltIn} máquinas)`
             },
             {
-              name: 'Dutos Flexivéis - 200 mm (unid c/ 6m) - ISODEC 8"',
-              code: 'SAB-0019',
-              category: 'Dutos',
+              name: 'Dutos Flexivéis - 200 mm (unid c/ 6m) - ISODEC 8"',              category: 'Dutos',
               unit: 'pç',
               quantity: 16,
               defaultPrice: 186.00,
@@ -812,9 +761,7 @@ export class AIAnalysisService {
               reason: 'Ramais flexíveis isolados acusticamente para caixas difusoras e grelhas'
             },
             {
-              name: 'Dutos Flexivéis - 150 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 06"',
-              code: 'SAB-0283',
-              category: 'Isolamento',
+              name: 'Dutos Flexivéis - 150 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 06"',              category: 'Isolamento',
               unit: 'pç',
               quantity: 6,
               defaultPrice: 143.00,
@@ -822,9 +769,7 @@ export class AIAnalysisService {
               reason: 'Ramais flexíveis em alumínio para difusão e interligação'
             },
             {
-              name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',
-              code: 'SAB-0378',
-              category: 'Linha frigorígena',
+              name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 95,
               defaultPrice: 28.75,
@@ -832,9 +777,7 @@ export class AIAnalysisService {
               reason: 'Linha de líquido para evaporadores Hi-Wall e Built-In 18.000 BTU/h'
             },
             {
-              name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',
-              code: 'SAB-0380',
-              category: 'Linha frigorígena',
+              name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 90,
               defaultPrice: 47.92,
@@ -842,9 +785,7 @@ export class AIAnalysisService {
               reason: 'Linha de líquido para evaporadores Built-In 30k, 36k, 60k e Cassete 48k'
             },
             {
-              name: '1/2" – 12,7mm – e=1/32" tubulação de cobre FLEXIVÉL',
-              code: 'SAB-0377',
-              category: 'Linha frigorígena',
+              name: '1/2" – 12,7mm – e=1/32" tubulação de cobre FLEXIVÉL',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 45,
               defaultPrice: 67.09,
@@ -852,9 +793,7 @@ export class AIAnalysisService {
               reason: 'Linha de sucção intermediária para Hi-Wall 12k/18k e Built-In 18k'
             },
             {
-              name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',
-              code: 'SAB-0381',
-              category: 'Linha frigorígena',
+              name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 60,
               defaultPrice: 86.13,
@@ -862,9 +801,7 @@ export class AIAnalysisService {
               reason: 'Linha de sucção para Built-In 30k e Cassete 48k'
             },
             {
-              name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',
-              code: 'SAB-0379',
-              category: 'Linha frigorígena',
+              name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 40,
               defaultPrice: 120.90,
@@ -872,9 +809,7 @@ export class AIAnalysisService {
               reason: 'Linha de sucção para evaporador Built-In 36.000 BTU/h'
             },
             {
-              name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',
-              code: 'SAB-0382',
-              category: 'Linha frigorígena',
+              name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 35,
               defaultPrice: 142.91,
@@ -882,9 +817,7 @@ export class AIAnalysisService {
               reason: 'Linha de sucção principal para evaporador Built-In 60.000 BTU/h'
             },
             {
-              name: '3/8" - ARMAFLEX M 19 MM',
-              code: 'SAB-0243',
-              category: 'Isolamento',
+              name: '3/8" - ARMAFLEX M 19 MM',              category: 'Isolamento',
               unit: 'm',
               quantity: 100,
               defaultPrice: 18.97,
@@ -892,9 +825,7 @@ export class AIAnalysisService {
               reason: 'Isolamento térmico elastomérico 19mm para linha de líquido 1/4" e 3/8"'
             },
             {
-              name: '5/8" - ARMAFLEX M 19 MM',
-              code: 'SAB-0254',
-              category: 'Isolamento',
+              name: '5/8" - ARMAFLEX M 19 MM',              category: 'Isolamento',
               unit: 'm',
               quantity: 80,
               defaultPrice: 21.14,
@@ -902,9 +833,7 @@ export class AIAnalysisService {
               reason: 'Isolamento térmico elastomérico 19mm para linhas 1/2" e 5/8"'
             },
             {
-              name: '3/4" - ARMAFLEX M 19 MM',
-              code: 'SAB-0231',
-              category: 'Isolamento',
+              name: '3/4" - ARMAFLEX M 19 MM',              category: 'Isolamento',
               unit: 'm',
               quantity: 50,
               defaultPrice: 22.68,
@@ -912,9 +841,7 @@ export class AIAnalysisService {
               reason: 'Isolamento térmico elastomérico 19mm para linhas de sucção 3/4"'
             },
             {
-              name: '7/8"- ARMAFLEX M 19 MM',
-              code: 'SAB-0271',
-              category: 'Isolamento',
+              name: '7/8"- ARMAFLEX M 19 MM',              category: 'Isolamento',
               unit: 'm',
               quantity: 40,
               defaultPrice: 26.44,
@@ -922,9 +849,7 @@ export class AIAnalysisService {
               reason: 'Isolamento térmico elastomérico 19mm para linha de sucção 7/8"'
             },
             {
-              name: 'Adesivo Armaflex 520 - 900ml',
-              code: 'SAB-0274',
-              category: 'Isolamento',
+              name: 'Adesivo Armaflex 520 - 900ml',              category: 'Isolamento',
               unit: 'unid.',
               quantity: 6,
               defaultPrice: 115.47,
@@ -932,9 +857,7 @@ export class AIAnalysisService {
               reason: 'Adesivo especial para colagem e estanqueidade de isolamento elastomérico'
             },
             {
-              name: 'Armafix - 3/4" - 28',
-              code: 'SAB-0080',
-              category: 'Hidráulica / acessórios',
+              name: 'Armafix - 3/4" - 28',              category: 'Hidráulica / acessórios',
               unit: 'unid',
               quantity: 32,
               defaultPrice: 35.59,
@@ -942,9 +865,7 @@ export class AIAnalysisService {
               reason: 'Calços isolantes com barreira antivibratória para evitar ponte térmica'
             },
             {
-              name: 'VALVULA GBC - 10s - 009L7051 - 3/8"',
-              code: 'SAB-0102',
-              category: 'Hidráulica / acessórios',
+              name: 'VALVULA GBC - 10s - 009L7051 - 3/8"',              category: 'Hidráulica / acessórios',
               unit: 'unid.',
               quantity: 8,
               defaultPrice: 119.20,
@@ -952,9 +873,7 @@ export class AIAnalysisService {
               reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de líquido'
             },
             {
-              name: 'VALVULA GBC - 18s - 009L7054 - 3/4"',
-              code: 'SAB-0105',
-              category: 'Hidráulica / acessórios',
+              name: 'VALVULA GBC - 18s - 009L7054 - 3/4"',              category: 'Hidráulica / acessórios',
               unit: 'unid.',
               quantity: 8,
               defaultPrice: 214.70,
@@ -962,9 +881,7 @@ export class AIAnalysisService {
               reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de sucção'
             },
             {
-              name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',
-              code: 'SAB-0389',
-              category: 'Linha frigorígena',
+              name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',              category: 'Linha frigorígena',
               unit: 'VB',
               quantity: 6,
               defaultPrice: 1600.00,
@@ -972,9 +889,7 @@ export class AIAnalysisService {
               reason: 'Carga inicial e complementação de fluido R-410A para os 8 circuitos frigorígenos'
             },
             {
-              name: 'Tubo PVC Soldável 25mm e 32mm para Dreno de Condensado',
-              code: 'SAB-0631',
-              category: 'Rede hidráulica',
+              name: 'Tubo PVC Soldável 25mm e 32mm para Dreno de Condensado',              category: 'Rede hidráulica',
               unit: 'm',
               quantity: 140,
               defaultPrice: 14.50,
@@ -982,9 +897,7 @@ export class AIAnalysisService {
               reason: 'Rede de drenagem de condensado embutida com caimento por gravidade e sifonamento'
             },
             {
-              name: 'CABINHO PP 4x2,5mm²',
-              code: 'SAB-0383',
-              category: 'Linha frigorígena',
+              name: 'CABINHO PP 4x2,5mm²',              category: 'Linha frigorígena',
               unit: 'm',
               quantity: 280,
               defaultPrice: 13.37,
@@ -992,9 +905,7 @@ export class AIAnalysisService {
               reason: 'Interligação elétrica de comando e sinal entre evaporadores e condensadores'
             },
             {
-              name: 'QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',
-              code: 'SAB-0062',
-              category: 'Elétrica',
+              name: 'QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',              category: 'Elétrica',
               unit: 'unid',
               quantity: 1,
               defaultPrice: 14600.00,
@@ -1002,9 +913,7 @@ export class AIAnalysisService {
               reason: 'Quadro elétrico geral de comando, proteção e força para sistema de climatização'
             },
             {
-              name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
-              code: 'SAB-0632',
-              category: 'Elétrica',
+              name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',              category: 'Elétrica',
               unit: 'm',
               quantity: 180,
               defaultPrice: 18.50,
@@ -1012,9 +921,7 @@ export class AIAnalysisService {
               reason: 'Alimentação elétrica principal dos quadros de climatização e condensadoras'
             },
             {
-              name: 'Difusor Linear de Teto 2 Vias em Alumínio c/ Pleno 1000mm',
-              code: 'SAB-0633',
-              category: 'Dutos',
+              name: 'Difusor Linear de Teto 2 Vias em Alumínio c/ Pleno 1000mm',              category: 'Dutos',
               unit: 'un',
               quantity: 18,
               defaultPrice: 285.00,
@@ -1022,9 +929,7 @@ export class AIAnalysisService {
               reason: 'Difusores lineares arquitetônicos de insuflamento embutidos no forro de gesso'
             },
             {
-              name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',
-              code: 'SAB-0634',
-              category: 'Dutos',
+              name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',              category: 'Dutos',
               unit: 'un',
               quantity: 6,
               defaultPrice: 340.00,
@@ -1032,9 +937,7 @@ export class AIAnalysisService {
               reason: 'Grelhas de captação e retorno de ar com filtro G4 lavável para máquinas Built-In'
             },
             {
-              name: 'Conexões, Curvas e Derivações em Cobre para Linhas Frigorígenas',
-              code: 'SAB-0635',
-              category: 'Linha frigorígena',
+              name: 'Conexões, Curvas e Derivações em Cobre para Linhas Frigorígenas',              category: 'Linha frigorígena',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 7500.00,
@@ -1042,9 +945,7 @@ export class AIAnalysisService {
               reason: 'Curvas 90°, luvas de redução, tês e conexões de cobre soldáveis para os circuitos frigorígenos'
             },
             {
-              name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',
-              code: 'SAB-0637',
-              category: 'Outros',
+              name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',              category: 'Outros',
               unit: 'cj',
               quantity: 45,
               defaultPrice: 145.00,
@@ -1052,9 +953,7 @@ export class AIAnalysisService {
               reason: 'Suportação e ancoragem mecânica aérea em laje para máquinas evaporadoras e dutos'
             },
             {
-              name: 'Selante Acrílico Mastic + Fita Alumínio + Fita Vitocel SMACNA',
-              code: 'SAB-0638',
-              category: 'Dutos',
+              name: 'Selante Acrílico Mastic + Fita Alumínio + Fita Vitocel SMACNA',              category: 'Dutos',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 3850.00,
@@ -1062,9 +961,7 @@ export class AIAnalysisService {
               reason: 'Kit de vedação e pressurização de juntas de dutos e conexões padrão SMACNA'
             },
             {
-              name: 'Varetas Silfoscoper + Nitrogênio N2 para Purga de Solda + Gases',
-              code: 'SAB-0639',
-              category: 'Outros',
+              name: 'Varetas Silfoscoper + Nitrogênio N2 para Purga de Solda + Gases',              category: 'Outros',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 4610.95,
@@ -1072,9 +969,7 @@ export class AIAnalysisService {
               reason: 'Consumíveis para brasagem oxicombustível com purga contínua de N2 (sem carepa)'
             },
             {
-              name: 'Termostato Digital de Parede Programável Touchscreen para Built-In',
-              code: 'SAB-0640',
-              category: 'Automação',
+              name: 'Termostato Digital de Parede Programável Touchscreen para Built-In',              category: 'Automação',
               unit: 'un',
               quantity: 4,
               defaultPrice: 1850.00,
@@ -1082,9 +977,7 @@ export class AIAnalysisService {
               reason: `Comando e controle individualizado de temperatura para as ${eqData.numBuiltIn} máquinas Built-In`
             },
             {
-              name: 'Caixa de Passagem Embutida para Linhas Frigorígenas com Saída de Dreno',
-              code: 'SAB-0641',
-              category: 'Outros',
+              name: 'Caixa de Passagem Embutida para Linhas Frigorígenas com Saída de Dreno',              category: 'Outros',
               unit: 'un',
               quantity: 8,
               defaultPrice: 480.00,
@@ -1092,9 +985,7 @@ export class AIAnalysisService {
               reason: 'Caixas de embutir para passagem e interligação técnica com saída de dreno'
             },
             {
-              name: 'Chave Seccionadora Rotativa Blindada 32A com Caixa IP65 (Área Técnica)',
-              code: 'SAB-0642',
-              category: 'Elétrica',
+              name: 'Chave Seccionadora Rotativa Blindada 32A com Caixa IP65 (Área Técnica)',              category: 'Elétrica',
               unit: 'un',
               quantity: 8,
               defaultPrice: 385.00,
@@ -1102,9 +993,7 @@ export class AIAnalysisService {
               reason: 'Proteção e seccionamento local individual por condensador na laje técnica conforme NR-10'
             },
             {
-              name: 'Amortecedores Antivibratórios de Borracha e Mola para Condensadoras',
-              code: 'SAB-0643',
-              category: 'Outros',
+              name: 'Amortecedores Antivibratórios de Borracha e Mola para Condensadoras',              category: 'Outros',
               unit: 'cj',
               quantity: 8,
               defaultPrice: 330.00,
@@ -1119,9 +1008,7 @@ export class AIAnalysisService {
         if (eqData.hasExhaustSystem && !eqData.isKitchenExhaust) {
           const exhaustItems = [
             {
-              name: 'Chapa Galvanizada #26 para Rede de Dutos de Exaustão e Ventilação',
-              code: 'SAB-0644',
-              category: 'Dutos',
+              name: 'Chapa Galvanizada #26 para Rede de Dutos de Exaustão e Ventilação',              category: 'Dutos',
               unit: 'kg',
               quantity: 145,
               defaultPrice: 12.00,
@@ -1129,9 +1016,7 @@ export class AIAnalysisService {
               reason: 'Dutos de chapa galvanizada para rede de exaustão e renovação de ar (garagem e áreas técnicas)'
             },
             {
-              name: 'Suportação Mecânica e Acessórios SMACNA para Dutos de Exaustão',
-              code: 'SAB-0645',
-              category: 'Fixação e Suportação',
+              name: 'Suportação Mecânica e Acessórios SMACNA para Dutos de Exaustão',              category: 'Fixação e Suportação',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 695.35,
@@ -1139,9 +1024,7 @@ export class AIAnalysisService {
               reason: 'Suportes perfilados, cantoneiras e tirantes de fixação aérea para dutos de exaustão'
             },
             {
-              name: 'Tubo PVC 100mm para Descarga de Exaustores Sanitários',
-              code: 'SAB-0646',
-              category: 'Rede hidráulica',
+              name: 'Tubo PVC 100mm para Descarga de Exaustores Sanitários',              category: 'Rede hidráulica',
               unit: 'm',
               quantity: 2,
               defaultPrice: 13.73,
@@ -1149,9 +1032,7 @@ export class AIAnalysisService {
               reason: 'Tubulação de descarga e saída estanque para exaustores em shafts técnicos'
             },
             {
-              name: 'Terminais de Difusão de Exaustão (Difusores DVK e Venezianas Autofechantes)',
-              code: 'SAB-0647',
-              category: 'Dutos',
+              name: 'Terminais de Difusão de Exaustão (Difusores DVK e Venezianas Autofechantes)',              category: 'Dutos',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 1197.91,
@@ -1159,9 +1040,7 @@ export class AIAnalysisService {
               reason: 'Difusores circulares DVK e venezianas de sobrepressão autofechantes especificadas em projeto'
             },
             {
-              name: 'Caixas de Comando Elétrico GSP até 1 CV com Proteção e Partida para Exaustores',
-              code: 'SAB-0648',
-              category: 'Elétrica',
+              name: 'Caixas de Comando Elétrico GSP até 1 CV com Proteção e Partida para Exaustores',              category: 'Elétrica',
               unit: 'un',
               quantity: 3,
               defaultPrice: 600.00,
@@ -1169,9 +1048,7 @@ export class AIAnalysisService {
               reason: 'Caixas elétricas de partida, comando e proteção individual dos motores dos 3 exaustores'
             },
             {
-              name: 'Cabos e Acessórios Elétricos de Comando para Rede de Exaustão',
-              code: 'SAB-0649',
-              category: 'Elétrica',
+              name: 'Cabos e Acessórios Elétricos de Comando para Rede de Exaustão',              category: 'Elétrica',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 360.00,
@@ -1179,9 +1056,7 @@ export class AIAnalysisService {
               reason: 'Infraestrutura de acionamento elétrico e comando para exaustores da garagem e lavabos'
             },
             {
-              name: 'Frete e Logística Dedicada para Equipamentos e Dutos de Exaustão',
-              code: 'SAB-0650',
-              category: 'Outros',
+              name: 'Frete e Logística Dedicada para Equipamentos e Dutos de Exaustão',              category: 'Outros',
               unit: 'vb',
               quantity: 1,
               defaultPrice: 480.00,
@@ -1189,9 +1064,7 @@ export class AIAnalysisService {
               reason: 'Transporte e entrega dos exaustores mecânicos e insumos de exaustão na obra'
             },
             {
-              name: 'Insumos Complementares de Montagem Mecânica, Apoios e Fixações de Exaustão',
-              code: 'SAB-0651',
-              category: 'Outros',
+              name: 'Insumos Complementares de Montagem Mecânica, Apoios e Fixações de Exaustão',              category: 'Outros',
               unit: 'cj',
               quantity: 1,
               defaultPrice: 882.91,
