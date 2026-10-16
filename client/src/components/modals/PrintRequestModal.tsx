@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { MaterialRequest } from '../../types';
 import { Printer, X, ClipboardCheck, Building2, User, Calendar, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { formatDateBR, formatDateTimeBR } from '../../utils/dateUtils';
 
 interface PrintRequestModalProps {
   isOpen: boolean;
@@ -95,7 +96,7 @@ export const PrintRequestModal: React.FC<PrintRequestModalProps> = ({
                     Nº {request.code}
                   </div>
                   <div style={{ color: '#475569' }} className="text-[11px] text-slate-600 mt-1 font-mono">
-                    Emissão: {new Date(request.created_at).toLocaleDateString('pt-BR')} às {new Date(request.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    Emissão: {formatDateTimeBR(request.created_at)}
                   </div>
                 </div>
               </div>
@@ -138,11 +139,7 @@ export const PrintRequestModal: React.FC<PrintRequestModalProps> = ({
                 </div>
                 <div style={{ color: '#065f46' }} className="font-extrabold text-emerald-800 text-sm mt-0.5 flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-emerald-600" />
-                  <span>
-                    {request.pickup_date
-                      ? new Date(request.pickup_date + 'T00:00:00').toLocaleDateString('pt-BR')
-                      : 'Data a Combinar / Imediata'}
-                  </span>
+                  <span>{formatDateBR(request.pickup_date)}</span>
                 </div>
                 <div style={{ color: '#475569' }} className="text-[11px] text-slate-600 mt-0.5">
                   Prioridade: <strong style={{ color: request.priority === 'Urgente' ? '#be123c' : '#0f172a' }} className={request.priority === 'Urgente' ? 'text-rose-700 font-bold' : 'text-slate-900'}>{request.priority}</strong>

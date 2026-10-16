@@ -25,6 +25,8 @@ import { Project, Material } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { AssignEngineersModal } from './AssignEngineersModal';
+import { formatDateBR, getTodayBR, addDaysBR, parseDateBRToISO, maskDateInput } from '../../utils/dateUtils';
+import { parsePackageInfo, getUnitOptions, convertQuantity, getUnitPriceForUnit, formatMoney, COMMON_UNITS } from '../../utils/unitConverter';
 
 interface NewRequestModalProps {
   isOpen: boolean;
@@ -44,7 +46,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [materials, setMaterials] = useState<Material[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | string>('');
   const [priority, setPriority] = useState<'Baixa' | 'Média' | 'Alta' | 'Urgente'>('Média');
-  const [pickupDate, setPickupDate] = useState<string>(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [pickupDate, setPickupDate] = useState<string>(() => getTodayBR());
+  const [pickupDateText, setPickupDateText] = useState<string>(() => formatDateBR(getTodayBR()));
+  const nativeDateInputRef = useRef<HTMLInputElement>(null);
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [loadingBudget, setLoadingBudget] = useState(false);
@@ -152,6 +156,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [customMaterialSearch, setCustomMaterialSearch] = useState('');
   const [customMaterialId, setCustomMaterialId] = useState<number | ''>('');
   const [customQuantity, setCustomQuantity] = useState<string>('1');
+  const [customSelectedUnit, setCustomSelectedUnit] = useState<string>('');
   const [customUncatalogedUnit, setCustomUncatalogedUnit] = useState<string>('un');
   const [customListFilter, setCustomListFilter] = useState('');
   const [customStockFilter, setCustomStockFilter] = useState<'todos' | 'com_estoque' | 'deficit'>('todos');
@@ -195,6 +200,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         setSelectedProjectId('');
       }
       setPriority('Média');
+      const today = getTodayBR();
+      setPickupDate(today);
+      setPickupDateText(formatDateBR(today));
       setNotes('');
       setError(null);
       setBudgetItems([]);
@@ -307,10 +315,23 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       };
       const physical = Number(mat.stock_physical ?? it.stock_physical ?? 0);
       const reserved = Number(mat.stock_reserved ?? it.stock_reserved ?? 0);
-      const available = Math.max(0, physical - reserved);
-      const requestedQty = Number(itemQuantities[it.id] ?? it.quantity ?? 1);
-      const reservable = Math.min(requestedQty, available);
-      const deficit = Math.max(0, requestedQty - available);
+      const availableStandard = Math.max(0, physical - reserved);
+
+      const pkgInfo = parsePackageInfo(it.material_id ? materials.find(m => m.id === it.material_id) : it);
+      const chosenUnit = budgetUnits[it.id] || it.unit || 'un';
+      const isFractional = Boolean(pkgInfo.hasPackage && pkgInfo.fractionalUnit && chosenUnit.toLowerCase() === pkgInfo.fractionalUnit.toLowerCase());
+      const multiplier = isFractional ? pkgInfo.packageMultiplier : 1;
+
+      const requestedQty = Number(itemQuantities[it.id] !== undefined ? itemQuantities[it.id] : (it.remainingQuota > 0 ? it.remainingQuota : (it.quantity ?? 1)));
+      const standardRequestedQty = isFractional && pkgInfo.packageMultiplier > 0 ? (requestedQty / pkgInfo.packageMultiplier) : requestedQty;
+
+      const reservableStandard = Math.min(standardRequestedQty, availableStandard);
+      const deficitStandard = Math.max(0, standardRequestedQty - availableStandard);
+
+      const availableInChosenUnit = Number((availableStandard * multiplier).toFixed(2));
+      const reservableInChosenUnit = Number((reservableStandard * multiplier).toFixed(2));
+      const deficitInChosenUnit = Number((deficitStandard * multiplier).toFixed(2));
+
       const isSelected = selectedItemIds.has(it.id);
 
       const quota = it.material_id ? quotasMap[it.material_id] : null;
@@ -318,15 +339,25 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : Math.max(0, budgetQuantity - previouslyRequested);
 
-      const isOverBudget = it.isExtra || it.isCustom || requestedQty > remainingQuota;
-      const extraQuantity = (it.isExtra || it.isCustom) ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = it.isExtra || it.isCustom || standardRequestedQty > remainingQuota;
+      const extraQuantity = (it.isExtra || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2)));
+
+      const unitPrice = getUnitPriceForUnit(chosenUnit, pkgInfo);
+      const totalPrice = Number((requestedQty * unitPrice).toFixed(2));
 
       return {
         ...it,
-        availableStock: available,
+        chosenUnit,
+        pkgInfo,
+        isFractional,
+        standardRequestedQty,
+        availableStock: availableInChosenUnit,
+        availableStockStandard: availableStandard,
         currentRequestedQty: requestedQty,
-        reservable,
-        deficit,
+        reservable: reservableInChosenUnit,
+        deficit: deficitInChosenUnit,
+        unitPrice,
+        totalPrice,
         isSelected,
         budgetQuantity,
         previouslyRequested,
@@ -335,7 +366,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         extraQuantity
       };
     });
-  }, [budgetItems, materials, itemQuantities, selectedItemIds, quotasMap]);
+  }, [budgetItems, materials, itemQuantities, selectedItemIds, quotasMap, budgetUnits]);
 
   const filteredBatchItems = useMemo(() => {
     return batchItemsWithMetrics.filter(it => {
@@ -395,6 +426,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     if (newQty > 0) {
       setSelectedItemIds(prev => new Set(prev).add(id));
     }
+  };
+
+  const handleBudgetUnitChange = (id: number, newUnit: string) => {
+    const it = budgetItems.find(b => b.id === id);
+    const matObj = it?.material_id ? materials.find(m => m.id === it.material_id) : null;
+    const pkgInfo = parsePackageInfo(matObj || it);
+    const oldUnit = budgetUnits[id] || it?.unit || 'un';
+    const currentQty = itemQuantities[id] !== undefined ? itemQuantities[id] : (it?.remainingQuota > 0 ? it.remainingQuota : (it?.quantity || 1));
+
+    const convertedQty = convertQuantity(currentQty, oldUnit, newUnit, pkgInfo);
+    setItemQuantities(prev => ({ ...prev, [id]: convertedQty }));
+    setBudgetUnits(prev => ({ ...prev, [id]: newUnit }));
   };
 
   const handleRemoveBudgetItem = (id: number) => {
@@ -494,10 +537,23 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       };
       const physical = Number(mat.stock_physical ?? 0);
       const reserved = Number(mat.stock_reserved ?? 0);
-      const available = Math.max(0, physical - reserved);
+      const availableStandard = Math.max(0, physical - reserved);
+
+      const pkgInfo = parsePackageInfo(it.material_id ? materials.find(m => m.id === it.material_id) : it);
+      const chosenUnit = customItemUnits[it.id] || it.unit || 'un';
+      const isFractional = Boolean(pkgInfo.hasPackage && pkgInfo.fractionalUnit && chosenUnit.toLowerCase() === pkgInfo.fractionalUnit.toLowerCase());
+      const multiplier = isFractional ? pkgInfo.packageMultiplier : 1;
+
       const requestedQty = Number(customQuantities[it.id] ?? it.quantity ?? 1);
-      const reservable = Math.min(requestedQty, available);
-      const deficit = Math.max(0, requestedQty - available);
+      const standardRequestedQty = isFractional && pkgInfo.packageMultiplier > 0 ? (requestedQty / pkgInfo.packageMultiplier) : requestedQty;
+
+      const reservableStandard = Math.min(standardRequestedQty, availableStandard);
+      const deficitStandard = Math.max(0, standardRequestedQty - availableStandard);
+
+      const availableInChosenUnit = Number((availableStandard * multiplier).toFixed(2));
+      const reservableInChosenUnit = Number((reservableStandard * multiplier).toFixed(2));
+      const deficitInChosenUnit = Number((deficitStandard * multiplier).toFixed(2));
+
       const isSelected = selectedCustomIds.has(it.id);
 
       const quota = it.material_id ? quotasMap[it.material_id] : null;
@@ -506,15 +562,25 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : 0;
 
-      const isOverBudget = !isInBudget || requestedQty > remainingQuota || it.isCustom;
-      const extraQuantity = (!isInBudget || it.isCustom) ? requestedQty : Math.max(0, Number((requestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = !isInBudget || standardRequestedQty > remainingQuota || it.isCustom;
+      const extraQuantity = (!isInBudget || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2)));
+
+      const unitPrice = getUnitPriceForUnit(chosenUnit, pkgInfo);
+      const totalPrice = Number((requestedQty * unitPrice).toFixed(2));
 
       return {
         ...it,
-        availableStock: available,
+        chosenUnit,
+        pkgInfo,
+        isFractional,
+        standardRequestedQty,
+        availableStock: availableInChosenUnit,
+        availableStockStandard: availableStandard,
         currentRequestedQty: requestedQty,
-        reservable,
-        deficit,
+        reservable: reservableInChosenUnit,
+        deficit: deficitInChosenUnit,
+        unitPrice,
+        totalPrice,
         isSelected,
         isInBudget,
         budgetQuantity,
@@ -524,7 +590,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         extraQuantity
       };
     });
-  }, [customItems, materials, customQuantities, selectedCustomIds, quotasMap]);
+  }, [customItems, materials, customQuantities, selectedCustomIds, quotasMap, customItemUnits]);
 
   const filteredCustomItems = useMemo(() => {
     return customItemsWithMetrics.filter(it => {
@@ -560,11 +626,19 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const mat = materials.find(m => m.id === Number(customMaterialId));
     if (!mat) return;
     const qty = Number(customQuantity);
+    const chosenUnit = customSelectedUnit || mat.unit;
 
     const existing = customItems.find(it => it.material_id === mat.id);
     if (existing) {
-      const nextQty = (customQuantities[existing.id] || existing.quantity) + qty;
-      setCustomQuantities(prev => ({ ...prev, [existing.id]: nextQty }));
+      const existingUnit = customItemUnits[existing.id] || existing.unit;
+      if (existingUnit === chosenUnit) {
+        const nextQty = (customQuantities[existing.id] || existing.quantity) + qty;
+        setCustomQuantities(prev => ({ ...prev, [existing.id]: nextQty }));
+      } else {
+        const nextQty = (customQuantities[existing.id] || existing.quantity) + qty;
+        setCustomQuantities(prev => ({ ...prev, [existing.id]: nextQty }));
+        setCustomItemUnits(prev => ({ ...prev, [existing.id]: chosenUnit }));
+      }
       setSelectedCustomIds(prev => new Set(prev).add(existing.id));
     } else {
       const newId = Date.now() + Math.floor(Math.random() * 1000);
@@ -573,16 +647,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         material_id: mat.id,
         material_name: mat.name,
         material_code: mat.code,
-        unit: mat.unit,
+        unit: chosenUnit,
         quantity: qty
       };
       setCustomItems(prev => [newItem, ...prev]);
       setSelectedCustomIds(prev => new Set(prev).add(newId));
       setCustomQuantities(prev => ({ ...prev, [newId]: qty }));
+      setCustomItemUnits(prev => ({ ...prev, [newId]: chosenUnit }));
     }
     setCustomMaterialId('');
     setCustomQuantity('1');
     setCustomMaterialSearch('');
+    setCustomSelectedUnit('');
   };
 
   // Inclusão de material avulso fora da base (Exclusivo Emily / Compras)
@@ -603,10 +679,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setCustomItems(prev => [newItem, ...prev]);
     setSelectedCustomIds(prev => new Set(prev).add(newId));
     setCustomQuantities(prev => ({ ...prev, [newId]: qty }));
+    setCustomItemUnits(prev => ({ ...prev, [newId]: unit || 'un' }));
     setCustomMaterialSearch('');
     setCustomMaterialId('');
     setCustomQuantity('1');
     setCustomUncatalogedUnit('un');
+    setCustomSelectedUnit('');
   };
 
   const handleRemoveCustomItem = (id: number) => {
@@ -643,6 +721,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       ...prev,
       [id]: isNaN(num) || num < 0 ? 0 : num
     }));
+  };
+
+  const handleCustomUnitChange = (id: number, newUnit: string) => {
+    const it = customItems.find(c => c.id === id);
+    const matObj = it?.material_id ? materials.find(m => m.id === it.material_id) : null;
+    const pkgInfo = parsePackageInfo(matObj || it);
+    const oldUnit = customItemUnits[id] || it?.unit || 'un';
+    const currentQty = customQuantities[id] ?? it?.quantity ?? 1;
+
+    const convertedQty = convertQuantity(currentQty, oldUnit, newUnit, pkgInfo);
+    setCustomQuantities(prev => ({ ...prev, [id]: convertedQty }));
+    setCustomItemUnits(prev => ({ ...prev, [id]: newUnit }));
   };
 
   // ==========================================
@@ -702,8 +792,58 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const selectedCustomMat = materials.find(m => m.id === Number(customMaterialId));
   const availableStockCustom = selectedCustomMat ? Math.max(0, selectedCustomMat.stock_physical - selectedCustomMat.stock_reserved) : 0;
 
+  const topBarUnitOptions = useMemo(() => {
+    if (!selectedCustomMat) return [];
+    return getUnitOptions(selectedCustomMat);
+  }, [selectedCustomMat]);
+
+  const topBarPkgInfo = useMemo(() => {
+    return parsePackageInfo(selectedCustomMat);
+  }, [selectedCustomMat]);
+
+  const topBarUnitPrice = useMemo(() => {
+    if (!selectedCustomMat) return 0;
+    return getUnitPriceForUnit(customSelectedUnit || selectedCustomMat.unit, topBarPkgInfo);
+  }, [selectedCustomMat, customSelectedUnit, topBarPkgInfo]);
+
+  const handleTopBarUnitChange = (newUnit: string) => {
+    const currentQty = parseFloat(customQuantity) || 1;
+    const oldUnit = customSelectedUnit || selectedCustomMat?.unit || 'un';
+    const convertedQty = convertQuantity(currentQty, oldUnit, newUnit, topBarPkgInfo);
+    setCustomQuantity(String(convertedQty));
+    setCustomSelectedUnit(newUnit);
+  };
+
+  useEffect(() => {
+    if (selectedCustomMat) {
+      const opts = getUnitOptions(selectedCustomMat);
+      if (!opts.some(o => o.value === customSelectedUnit)) {
+        setCustomSelectedUnit(opts[0]?.value || selectedCustomMat.unit);
+      }
+    } else {
+      setCustomSelectedUnit('');
+    }
+  }, [customMaterialId, selectedCustomMat]);
+
   const selectedExtraMat = materials.find(m => m.id === Number(extraMaterialId));
   const availableStockExtra = selectedExtraMat ? Math.max(0, selectedExtraMat.stock_physical - selectedExtraMat.stock_reserved) : 0;
+
+  // Handlers para Seleção e Digitação de Data no Mobile e Desktop
+  const handleSetPickupDate = (isoDate: string) => {
+    setPickupDate(isoDate);
+    setPickupDateText(formatDateBR(isoDate));
+  };
+
+  const handleDateTextChange = (val: string) => {
+    const masked = maskDateInput(val);
+    setPickupDateText(masked);
+    if (masked.length === 10) {
+      const iso = parseDateBRToISO(masked);
+      if (iso) {
+        setPickupDate(iso);
+      }
+    }
+  };
 
   // ==========================================
   // SUBMISSÃO DA SOLICITAÇÃO
@@ -1502,6 +1642,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
                                   <span>• Já Solicitado: <strong className="text-slate-300">{it.previouslyRequested} {it.unit}</strong></span>
                                   <span>• Saldo Disponível: <strong className={it.remainingQuota > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold'}>{it.remainingQuota} {it.unit}</strong></span>
+                                  {it.unitPrice > 0 && (
+                                    <span className="text-emerald-400 font-mono font-bold">
+                                      • R$ {formatMoney(it.unitPrice)}/{it.chosenUnit || it.unit} (Subtotal: R$ {formatMoney(it.totalPrice)})
+                                    </span>
+                                  )}
+                                  {it.isFractional && (
+                                    <span className="text-slate-400 text-[10px] italic">
+                                      (≈ {it.standardRequestedQty?.toFixed(2)} {it.pkgInfo?.standardUnit})
+                                    </span>
+                                  )}
                                   {it.remainingQuota <= 0 && !it.isCustom && (
                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-dark-750 text-slate-300">
                                       Cota 100% consumida
@@ -1510,7 +1660,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   {it.isOverBudget ? (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
                                       <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                      {it.isCustom ? 'Fora da Base (Aprovação Admin/Sabrina/Emily)' : `Excede cota em +${it.extraQuantity} ${it.unit} (Aprovação)`}
+                                      {it.isCustom ? 'Fora da Base (Aprovação Admin/Sabrina/Emily)' : `Excede cota em +${it.extraQuantity} ${it.chosenUnit || it.unit} (Aprovação)`}
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
@@ -1543,20 +1693,31 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   onChange={(e) => handleBudgetQuantityChange(it.id, e.target.value)}
                                   className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
                                 />
-                                {matObj?.converted_unit ? (
-                                  <select
-                                    disabled={!it.isSelected}
-                                    value={budgetUnits[it.id] || it.unit}
-                                    onChange={(e) => setBudgetUnits(prev => ({ ...prev, [it.id]: e.target.value }))}
-                                    className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40"
-                                    title="Unidade padrão ou fracionada"
-                                  >
-                                    <option value={it.unit}>{it.unit}</option>
-                                    <option value={matObj.converted_unit}>{matObj.converted_unit}</option>
-                                  </select>
-                                ) : (
-                                  <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
-                                )}
+                                {(() => {
+                                  const opts = getUnitOptions(matObj || it);
+                                  if (opts.length > 1) {
+                                    return (
+                                      <select
+                                        disabled={!it.isSelected}
+                                        value={budgetUnits[it.id] || it.unit}
+                                        onChange={(e) => handleBudgetUnitChange(it.id, e.target.value)}
+                                        className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40 cursor-pointer"
+                                        title="Selecione a unidade de medida (padrão ou fracionada)"
+                                      >
+                                        {opts.map((opt) => (
+                                          <option key={opt.value} value={opt.value}>
+                                            {opt.shortLabel}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[11px] text-slate-400 font-semibold px-1 w-8 truncate">
+                                      {it.chosenUnit || it.unit}
+                                    </span>
+                                  );
+                                })()}
                               </div>
 
                               {/* Status de Estoque */}
@@ -1564,12 +1725,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 {it.deficit === 0 ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40 text-[10px] font-bold">
                                     <CheckCircle className="w-3 h-3 text-sabrar-400" />
-                                    Disp: {it.availableStock}
+                                    Disp: {it.availableStock} {it.chosenUnit || it.unit}
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-700/60 text-[10px] font-bold">
                                     <ShoppingCart className="w-3 h-3 text-rose-400" />
-                                    Déficit: {it.deficit}
+                                    Déficit: {it.deficit} {it.chosenUnit || it.unit}
                                   </span>
                                 )}
                               </div>
@@ -1624,7 +1785,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                  <div className="sm:col-span-5 relative">
+                  <div className="sm:col-span-4 relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
@@ -1661,19 +1822,32 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       })}
                     </select>
                   </div>
-                  <div className="sm:col-span-2 flex items-center gap-1">
+                  <div className="sm:col-span-3 flex items-center gap-1.5">
                     <input
                       type="number"
                       step="any"
-                      min="0.1"
+                      min="0.01"
                       value={customQuantity}
                       onChange={(e) => setCustomQuantity(e.target.value)}
                       placeholder="Qtd"
-                      className="w-full text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white text-right focus:outline-none focus:border-sabrar-500"
+                      className="w-20 shrink-0 text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white text-right focus:outline-none focus:border-sabrar-500"
                     />
-                    <span className="text-[11px] text-slate-400 w-8 truncate">
-                      {selectedCustomMat?.unit || customUncatalogedUnit || 'un'}
-                    </span>
+                    {topBarUnitOptions.length > 1 ? (
+                      <select
+                        value={customSelectedUnit || selectedCustomMat?.unit}
+                        onChange={(e) => handleTopBarUnitChange(e.target.value)}
+                        className="flex-1 min-w-[70px] text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-amber-300 focus:outline-none focus:border-sabrar-500 cursor-pointer"
+                        title="Selecione a unidade de medida (padrão ou fracionada)"
+                      >
+                        {topBarUnitOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-[11px] text-slate-300 font-bold px-2.5 py-2.5 rounded-xl bg-dark-900 border border-dark-700 whitespace-nowrap">
+                        {selectedCustomMat?.unit || customUncatalogedUnit || 'un'}
+                      </span>
+                    )}
                   </div>
                   <div className="sm:col-span-1">
                     <button
@@ -1687,6 +1861,28 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Prévia de Conversão de Preço e Equivalência ao vivo */}
+                {selectedCustomMat && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] flex-wrap bg-dark-900/90 rounded-xl border border-dark-750">
+                    <div className="flex items-center gap-2 text-slate-400 flex-wrap">
+                      <span>Estoque Físico: <strong className="text-white">{selectedCustomMat.stock_physical} {selectedCustomMat.unit}</strong></span>
+                      <span>• Disponível: <strong className="text-emerald-400">{availableStockCustom} {selectedCustomMat.unit}</strong></span>
+                      {topBarPkgInfo.hasPackage && (
+                        <span className="text-amber-300 font-semibold bg-dark-950 px-2 py-0.5 rounded border border-dark-700">
+                          Equivalência: 1 {topBarPkgInfo.standardUnit} = {topBarPkgInfo.packageMultiplier} {topBarPkgInfo.fractionalUnit}
+                        </span>
+                      )}
+                    </div>
+                    {topBarUnitPrice > 0 && (
+                      <div className="text-emerald-300 font-mono font-bold bg-dark-950 px-2 py-0.5 rounded border border-dark-700">
+                        Preço Unit: R$ {formatMoney(topBarUnitPrice)}/{customSelectedUnit || selectedCustomMat.unit}
+                        {' • '}
+                        Subtotal: R$ {formatMoney(topBarUnitPrice * (parseFloat(customQuantity) || 0))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Lista interativa de resultados da busca flexível (clicar seleciona na hora) */}
                 {customMaterialSearch.trim().length > 0 && filteredCatalogForCustom.length > 0 && (
@@ -1941,7 +2137,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             </div>
                             <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-1 flex-wrap font-mono">
                               <span>{it.material_code || 'S/ Código'}</span>
-                              <span>• Unidade: <strong className="text-slate-200">{it.unit}</strong></span>
+                              <span>• Unidade: <strong className="text-slate-200">{it.chosenUnit || it.unit}</strong></span>
                               {it.isInBudget ? (
                                 <>
                                   <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
@@ -1950,7 +2146,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   {it.isOverBudget ? (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
                                       <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                      Excede cota em +{it.extraQuantity} {it.unit} (Aprovação Admin)
+                                      Excede cota em +{it.extraQuantity} {it.chosenUnit || it.unit} (Aprovação Admin)
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
@@ -1959,6 +2155,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   )}
                                 </>
                               ) : null}
+                              {it.unitPrice > 0 && (
+                                <span className="text-emerald-400 font-mono font-bold">
+                                  • R$ {formatMoney(it.unitPrice)}/{it.chosenUnit || it.unit} (Subtotal: R$ {formatMoney(it.totalPrice)})
+                                </span>
+                              )}
+                              {it.isFractional && (
+                                <span className="text-slate-400 text-[10px] italic">
+                                  (≈ {it.standardRequestedQty?.toFixed(2)} {it.pkgInfo?.standardUnit})
+                                </span>
+                              )}
                               {customMatObj?.availability_status === 'em_falta' ? (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3 text-rose-400" /> Em Falta
@@ -1979,26 +2185,37 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             <input
                               type="number"
                               step="any"
-                              min="0.1"
+                              min="0.01"
                               disabled={!it.isSelected}
                               value={customQuantities[it.id] ?? it.quantity}
                               onChange={(e) => handleCustomQuantityChange(it.id, e.target.value)}
                               className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
                             />
-                            {customMatObj?.converted_unit ? (
-                              <select
-                                disabled={!it.isSelected}
-                                value={customItemUnits[it.id] || it.unit}
-                                onChange={(e) => setCustomItemUnits(prev => ({ ...prev, [it.id]: e.target.value }))}
-                                className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40"
-                                title="Unidade padrão ou fracionada"
-                              >
-                                <option value={it.unit}>{it.unit}</option>
-                                <option value={customMatObj.converted_unit}>{customMatObj.converted_unit}</option>
-                              </select>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
-                            )}
+                            {(() => {
+                              const opts = getUnitOptions(customMatObj || it);
+                              if (opts.length > 1) {
+                                return (
+                                  <select
+                                    disabled={!it.isSelected}
+                                    value={customItemUnits[it.id] || it.unit}
+                                    onChange={(e) => handleCustomUnitChange(it.id, e.target.value)}
+                                    className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40 cursor-pointer"
+                                    title="Selecione a unidade de medida (padrão ou fracionada)"
+                                  >
+                                    {opts.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.shortLabel}
+                                      </option>
+                                    ))}
+                                  </select>
+                                );
+                              }
+                              return (
+                                <span className="text-[11px] text-slate-400 font-semibold px-1 w-8 truncate">
+                                  {it.chosenUnit || it.unit}
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           {/* Status de Estoque */}
@@ -2006,12 +2223,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             {it.deficit === 0 ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40 text-[10px] font-bold">
                                 <CheckCircle className="w-3 h-3 text-sabrar-400" />
-                                Disp: {it.availableStock}
+                                Disp: {it.availableStock} {it.chosenUnit || it.unit}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-700/60 text-[10px] font-bold">
                                 <ShoppingCart className="w-3 h-3 text-rose-400" />
-                                Déficit: {it.deficit}
+                                Déficit: {it.deficit} {it.chosenUnit || it.unit}
                               </span>
                             )}
                           </div>
@@ -2053,18 +2270,116 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           {/* Prioridade e Observações */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-sabrar-400" />
-                Data para Retirada *
-              </label>
-              <input
-                type="date"
-                value={pickupDate}
-                onChange={(e) => setPickupDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full text-xs sm:text-sm p-2.5 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-medium cursor-pointer"
-                required
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-sabrar-400" />
+                  Data para Retirada *
+                </label>
+                {/* Botões de atalho rápido (1 toque no celular ou desktop) */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSetPickupDate(getTodayBR())}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                      pickupDate === getTodayBR()
+                        ? 'bg-sabrar-600 border-sabrar-500 text-white shadow-sm'
+                        : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750 hover:text-white'
+                    }`}
+                    title="Definir para Hoje"
+                  >
+                    Hoje
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPickupDate(addDaysBR(1))}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                      pickupDate === addDaysBR(1)
+                        ? 'bg-sabrar-600 border-sabrar-500 text-white shadow-sm'
+                        : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750 hover:text-white'
+                    }`}
+                    title="Definir para Amanhã"
+                  >
+                    Amanhã
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPickupDate(addDaysBR(2))}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                      pickupDate === addDaysBR(2)
+                        ? 'bg-sabrar-600 border-sabrar-500 text-white shadow-sm'
+                        : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750 hover:text-white'
+                    }`}
+                    title="Definir para daqui a 2 dias"
+                  >
+                    +2d
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPickupDate(addDaysBR(7))}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                      pickupDate === addDaysBR(7)
+                        ? 'bg-sabrar-600 border-sabrar-500 text-white shadow-sm'
+                        : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750 hover:text-white'
+                    }`}
+                    title="Definir para daqui a 1 semana"
+                  >
+                    +7d
+                  </button>
+                </div>
+              </div>
+
+              {/* Input Híbrido: Campo formatado DD/MM/AAAA + Botão de Calendário nativo */}
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pickupDateText}
+                  onChange={(e) => handleDateTextChange(e.target.value)}
+                  placeholder="DD/MM/AAAA"
+                  maxLength={10}
+                  className="w-full text-xs sm:text-sm p-2.5 pr-10 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white font-mono font-bold tracking-wider"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = nativeDateInputRef.current;
+                    if (!el) return;
+                    try {
+                      if (typeof (el as any).showPicker === 'function') {
+                        (el as any).showPicker();
+                      } else {
+                        el.focus();
+                      }
+                    } catch {
+                      el.focus();
+                    }
+                  }}
+                  className="absolute right-2 p-1.5 rounded-xl text-slate-400 hover:text-sabrar-400 hover:bg-dark-800 transition-colors"
+                  title="Abrir calendário do sistema"
+                >
+                  <Calendar className="w-4 h-4 text-sabrar-400" />
+                </button>
+                {/* Input nativo invisível ancorado para acionar o calendário do sistema */}
+                <input
+                  ref={nativeDateInputRef}
+                  type="date"
+                  value={pickupDate}
+                  min={getTodayBR()}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleSetPickupDate(e.target.value);
+                    }
+                  }}
+                  className="absolute inset-0 opacity-0 pointer-events-none -z-10"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1 px-1">
+                <span>Digite <strong>DD/MM/AAAA</strong> ou toque nos botões</span>
+                <span className="text-emerald-400 font-mono font-semibold">Data: {formatDateBR(pickupDate)}</span>
+              </div>
             </div>
 
             <div>

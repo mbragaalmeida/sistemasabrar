@@ -12,7 +12,7 @@ purchasesRouter.get('/', async (req, res) => {
       SELECT p.*,
              COALESCE(m.name, p.custom_name, 'Material Fora da Base') as material_name,
              COALESCE(m.code, 'FORA-BASE') as material_code,
-             COALESCE(m.unit, p.custom_unit, 'un') as material_unit,
+             COALESCE(p.custom_unit, m.unit, 'un') as material_unit,
              s.name as supplier_name, pr.name as project_name, pr.code as project_code,
              u.name as buyer_name,
              mr.id as request_id,

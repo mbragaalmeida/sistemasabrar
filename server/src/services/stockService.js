@@ -1,5 +1,6 @@
 import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
+import { convertItemQuantityAndPrice, parsePackageInfo } from '../utils/unitConverter.js';
 
 export async function generateNextRequestCode() {
   const rows = await db.prepare("SELECT code FROM material_requests WHERE code LIKE 'SOL-%'").all();
@@ -231,18 +232,27 @@ export class StockService {
         continue;
       }
 
+      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
+      const conversion = convertItemQuantityAndPrice(mat, qty, customUnit);
+
       if (isInternal) {
         // Solicitações internas de materiais da base não possuem cota de obra
         itemsQuotaAnalysis.push({
           materialId,
           quantity: qty,
+          standardQuantity: conversion.standardQty,
+          unit: conversion.unit,
+          customUnit: conversion.unit,
+          standardUnit: conversion.standardUnit,
+          packageMultiplier: conversion.packageMultiplier,
+          unitPrice: conversion.unitPrice,
+          isFractional: conversion.isFractional,
           isExtra: false,
           budgetQuantity: 0,
           previouslyRequested: 0,
           extraQuantity: 0,
           isCustom: false,
-          customName: null,
-          customUnit
+          customName: null
         });
         continue;
       }
@@ -257,15 +267,15 @@ export class StockService {
         // Material não consta no orçamento da obra -> 100% Extra
         isExtra = true;
         budgetQuantity = 0;
-        extraQuantity = qty;
+        extraQuantity = conversion.standardQty;
         hasExtraItems = true;
       } else {
         budgetQuantity = Number(budgetItem.quantity || 0);
         const remainingQuota = Math.max(0, budgetQuantity - previouslyRequested);
-        if (qty > remainingQuota) {
-          // Solicitação ultrapassa o saldo disponível do orçamento
+        if (conversion.standardQty > remainingQuota) {
+          // Solicitação ultrapassa o saldo disponível do orçamento (comparado na unidade padrão)
           isExtra = true;
-          extraQuantity = Number((qty - remainingQuota).toFixed(2));
+          extraQuantity = Number((conversion.standardQty - remainingQuota).toFixed(4));
           hasExtraItems = true;
         }
       }
@@ -273,13 +283,19 @@ export class StockService {
       itemsQuotaAnalysis.push({
         materialId,
         quantity: qty,
+        standardQuantity: conversion.standardQty,
+        unit: conversion.unit,
+        customUnit: conversion.unit,
+        standardUnit: conversion.standardUnit,
+        packageMultiplier: conversion.packageMultiplier,
+        unitPrice: conversion.unitPrice,
+        isFractional: conversion.isFractional,
         isExtra,
         budgetQuantity,
         previouslyRequested,
         extraQuantity,
         isCustom: false,
-        customName: null,
-        customUnit
+        customName: null
       });
     }
 
@@ -349,8 +365,13 @@ export class StockService {
 
       // Fluxo normal (dentro do orçamento ou interno com material da base): Reserva e Déficit imediatos
       const available = mat ? Math.max(0, mat.stock_physical - mat.stock_reserved) : 0;
-      const deficit = Math.max(0, analysis.quantity - available);
-      const reservable = Math.min(analysis.quantity, available);
+      const standardQty = analysis.standardQuantity != null ? analysis.standardQuantity : analysis.quantity;
+      const reservableStandard = Math.min(standardQty, available);
+      const deficitStandard = Math.max(0, standardQty - available);
+
+      const multiplier = analysis.isFractional ? analysis.packageMultiplier : 1;
+      const reservableInChosenUnit = Number((reservableStandard * multiplier).toFixed(2));
+      const deficitInChosenUnit = Number((deficitStandard * multiplier).toFixed(2));
 
       const itemResult = await db.prepare(`
         INSERT INTO material_request_items (
@@ -359,52 +380,53 @@ export class StockService {
           is_custom, custom_name, custom_unit
         ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        requestId, analysis.materialId, analysis.quantity, reservable, deficit,
+        requestId, analysis.materialId, analysis.quantity, reservableInChosenUnit, deficitInChosenUnit,
         analysis.isExtra, analysis.budgetQuantity, analysis.previouslyRequested, analysis.extraQuantity,
         Boolean(analysis.isCustom), analysis.customName || null, matUnit
       );
 
       const requestItemId = itemResult.lastInsertRowid;
 
-      if (mat && reservable > 0) {
+      if (mat && reservableStandard > 0) {
         await db.prepare(`
           UPDATE materials 
           SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
           WHERE id = ?
-        `).run(reservable, analysis.materialId);
+        `).run(reservableStandard, analysis.materialId);
 
         await db.prepare(`
           INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
           VALUES (?, 'RESERVA', ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          analysis.materialId, reservable, mat.stock_physical, mat.stock_physical,
+          analysis.materialId, reservableStandard, mat.stock_physical, mat.stock_physical,
           projectId, requestId, userId,
-          `Reserva de ${reservable} ${matUnit} para obra ${project.name} (${reqCode})`
+          `Reserva de ${reservableInChosenUnit} ${matUnit} (≈ ${reservableStandard.toFixed(2)} ${mat.unit}) para obra ${project.name} (${reqCode})`
         );
         totalReservedItems++;
       }
 
-      if (deficit > 0) {
+      if (deficitInChosenUnit > 0) {
         const purchaseCode = await generateNextPurchaseCode();
-        const refPrice = mat ? Number(mat.reference_price || 0) : 0;
+        const unitPrice = analysis.unitPrice != null ? analysis.unitPrice : (mat ? Number(mat.reference_price || 0) : 0);
+        const totalPrice = Number((deficitInChosenUnit * unitPrice).toFixed(2));
 
         const purResult = await db.prepare(`
           INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
         `).run(
           purchaseCode, projectId, requestItemId, analysis.materialId,
-          mat ? null : matName, matUnit, deficit,
-          mat ? mat.supplier_id : null, refPrice,
-          Number((deficit * refPrice).toFixed(2)),
+          mat ? null : matName, matUnit, deficitInChosenUnit,
+          mat ? mat.supplier_id : null, unitPrice,
+          totalPrice,
           priority === 'Urgente' ? 'Alta' : priority,
-          `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${analysis.quantity}, Disponível: ${available}, Comprar: ${deficit}.`
+          `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${analysis.quantity} ${matUnit} (≈ ${standardQty.toFixed(2)} ${mat.unit || 'un'}), Disponível: ${available} ${mat.unit || 'un'}, Comprar: ${deficitInChosenUnit} ${matUnit}.`
         );
 
         purchasesCreated.push({
           id: purResult.lastInsertRowid,
           code: purchaseCode,
           materialName: matName,
-          deficitQuantity: deficit
+          deficitQuantity: deficitInChosenUnit
         });
         totalDeficitItems++;
       }
@@ -414,8 +436,8 @@ export class StockService {
         materialName: matName,
         materialUnit: matUnit,
         requestedQuantity: analysis.quantity,
-        reservedQuantity: reservable,
-        deficit,
+        reservedQuantity: reservableInChosenUnit,
+        deficit: deficitInChosenUnit,
         isExtra: analysis.isExtra,
         extraQuantity: analysis.extraQuantity,
         budgetQuantity: analysis.budgetQuantity,
@@ -539,51 +561,62 @@ export class StockService {
       const matName = mat ? mat.name : (it.custom_name || 'Material Fora da Base');
       const matUnit = it.custom_unit || (mat ? mat.unit : 'un');
       const qty = Number(it.quantity_requested);
+
+      const conversion = mat
+        ? convertItemQuantityAndPrice(mat, qty, matUnit)
+        : null;
+
+      const standardQty = conversion ? conversion.standardQty : qty;
       const available = mat ? Math.max(0, mat.stock_physical - mat.stock_reserved) : 0;
-      const deficit = Math.max(0, qty - available);
-      const reservable = Math.min(qty, available);
+      const reservableStandard = Math.min(standardQty, available);
+      const deficitStandard = Math.max(0, standardQty - available);
+
+      const multiplier = (conversion && conversion.isFractional) ? conversion.packageMultiplier : 1;
+      const reservableInChosenUnit = Number((reservableStandard * multiplier).toFixed(2));
+      const deficitInChosenUnit = Number((deficitStandard * multiplier).toFixed(2));
 
       await db.prepare(`
         UPDATE material_request_items 
         SET quantity_reserved = ?, deficit = ?
         WHERE id = ?
-      `).run(reservable, deficit, it.id);
+      `).run(reservableInChosenUnit, deficitInChosenUnit, it.id);
 
-      if (mat && reservable > 0) {
+      if (mat && reservableStandard > 0) {
         await db.prepare(`
           UPDATE materials 
           SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
           WHERE id = ?
-        `).run(reservable, mat.id);
+        `).run(reservableStandard, mat.id);
 
         await db.prepare(`
           INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
           VALUES (?, 'RESERVA', ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          mat.id, reservable, mat.stock_physical, mat.stock_physical,
+          mat.id, reservableStandard, mat.stock_physical, mat.stock_physical,
           project.id, requestId, adminUserId,
-          `Reserva autorizada (${reservable} ${matUnit}) para obra ${project.name} (${req.code})`
+          `Reserva autorizada (${reservableInChosenUnit} ${matUnit}) para obra ${project.name} (${req.code})`
         );
         totalReserved++;
       }
 
-      if (deficit > 0) {
+      if (deficitInChosenUnit > 0) {
         const purchaseCode = await generateNextPurchaseCode();
-        const refPrice = mat ? Number(mat.reference_price || 0) : 0;
+        const unitPrice = conversion ? conversion.unitPrice : (mat ? Number(mat.reference_price || 0) : 0);
+        const totalPrice = Number((deficitInChosenUnit * unitPrice).toFixed(2));
 
         await db.prepare(`
           INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
         `).run(
           purchaseCode, project.id, it.id, mat ? mat.id : null,
-          mat ? null : matName, matUnit, deficit,
-          mat ? mat.supplier_id : null, refPrice,
-          Number((deficit * refPrice).toFixed(2)),
+          mat ? null : matName, matUnit, deficitInChosenUnit,
+          mat ? mat.supplier_id : null, unitPrice,
+          totalPrice,
           req.priority === 'Urgente' ? 'Alta' : req.priority,
-          `Compra automática por déficit em solicitação autorizada (${req.code}) para a obra ${project.name}.`
+          `Compra automática por déficit em solicitação autorizada (${req.code}) para a obra ${project.name}. Solicitado: ${qty} ${matUnit}, Comprar: ${deficitInChosenUnit} ${matUnit}.`
         );
 
-        purchasesCreated.push({ code: purchaseCode, materialName: matName, deficitQuantity: deficit });
+        purchasesCreated.push({ code: purchaseCode, materialName: matName, deficitQuantity: deficitInChosenUnit });
         totalDeficit++;
       }
     }
@@ -704,9 +737,11 @@ export class StockService {
         if (!mat) continue;
 
         const deliveredQty = item.quantity_reserved > 0 ? item.quantity_reserved : item.quantity_requested;
+        const conv = convertItemQuantityAndPrice(mat, deliveredQty, item.custom_unit);
+        const deliveredStandard = conv.standardQty;
         const prevStock = mat.stock_physical;
-        const newStock = Math.max(0, prevStock - deliveredQty);
-        const newReserved = Math.max(0, mat.stock_reserved - deliveredQty);
+        const newStock = Math.max(0, prevStock - deliveredStandard);
+        const newReserved = Math.max(0, mat.stock_reserved - deliveredStandard);
 
         // Baixa no estoque físico e reservado do material
         await db.prepare(`
@@ -727,9 +762,9 @@ export class StockService {
           INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
           VALUES (?, 'SAIDA_OBRA', ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          mat.id, deliveredQty, prevStock, newStock,
+          mat.id, deliveredStandard, prevStock, newStock,
           project.id, requestId, userId,
-          `Separação/saída física confirmada pelo Almoxarifado para obra ${project.name} (${req.code})`
+          `Separação/saída física confirmada pelo Almoxarifado para obra ${project.name} (${req.code}) - ${deliveredQty} ${item.custom_unit || mat.unit} (≈ ${deliveredStandard.toFixed(2)} ${mat.unit})`
         );
       }
 
