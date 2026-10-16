@@ -109,9 +109,15 @@ export function convertItemQuantityAndPrice(material, requestedQty, requestedUni
   const qty = Number(requestedQty) || 0;
   const unit = (requestedUnit || pkgInfo.standardUnit || 'un').trim();
 
-  const isFractional = pkgInfo.hasPackage &&
-                       pkgInfo.fractionalUnit &&
-                       unit.toLowerCase() === pkgInfo.fractionalUnit.toLowerCase();
+  const normUnit = unit.toLowerCase().trim();
+  const normFrac = (pkgInfo.fractionalUnit || '').toLowerCase().trim();
+  const isFractional = Boolean(
+    pkgInfo.hasPackage && normFrac && (
+      normUnit === normFrac ||
+      (normFrac === 'm' && (normUnit === 'm' || normUnit === 'metro' || normUnit === 'metros')) ||
+      (normFrac === 'kg' && (normUnit === 'kg' || normUnit === 'quilo' || normUnit === 'quilos'))
+    )
+  );
 
   if (isFractional) {
     const standardQty = pkgInfo.packageMultiplier > 0 ? (qty / pkgInfo.packageMultiplier) : qty;

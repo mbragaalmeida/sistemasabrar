@@ -147,7 +147,7 @@ export function parsePackageInfo(material?: {
 }
 
 /**
- * Retorna as opções de unidade selecionáveis para o material
+ * Retorna as opções de unidade selecionáveis para o material (sempre com opções de troca)
  */
 export function getUnitOptions(material?: {
   name?: string;
@@ -158,23 +158,41 @@ export function getUnitOptions(material?: {
   converted_price?: number | null;
 } | null): UnitOption[] {
   const pkgInfo = parsePackageInfo(material);
+  const rawUnit = (material?.unit || pkgInfo.standardUnit || 'un').trim();
 
-  const options: UnitOption[] = [
-    {
+  const options: UnitOption[] = [];
+  const addedValues = new Set<string>();
+
+  // 1. Unidade padrão do item / embalagem inteira
+  options.push({
+    value: rawUnit,
+    label: pkgInfo.hasPackage
+      ? `${rawUnit} (embalagem inteira - R$ ${formatMoney(pkgInfo.standardPrice)})`
+      : `${rawUnit} (R$ ${formatMoney(pkgInfo.standardPrice)})`,
+    shortLabel: rawUnit,
+    isFractional: false,
+    multiplier: 1,
+    unitPrice: pkgInfo.standardPrice
+  });
+  addedValues.add(rawUnit.toLowerCase());
+
+  // Se o standardUnit for diferente do rawUnit (ex: "rolo" vs "rolo c/ 100 metros")
+  if (pkgInfo.standardUnit && !addedValues.has(pkgInfo.standardUnit.toLowerCase())) {
+    options.push({
       value: pkgInfo.standardUnit,
-      label: pkgInfo.hasPackage
-        ? `${pkgInfo.standardUnit} (emb. inteira - R$ ${formatMoney(pkgInfo.standardPrice)})`
-        : `${pkgInfo.standardUnit} (R$ ${formatMoney(pkgInfo.standardPrice)})`,
+      label: `${pkgInfo.standardUnit} (embalagem inteira)`,
       shortLabel: pkgInfo.standardUnit,
       isFractional: false,
       multiplier: 1,
       unitPrice: pkgInfo.standardPrice
-    }
-  ];
+    });
+    addedValues.add(pkgInfo.standardUnit.toLowerCase());
+  }
 
-  if (pkgInfo.hasPackage && pkgInfo.fractionalUnit && pkgInfo.fractionalUnit !== pkgInfo.standardUnit) {
-    const fracLabel = pkgInfo.fractionalUnit === 'm' ? 'metros (m)' :
-                      pkgInfo.fractionalUnit === 'kg' ? 'quilos (kg)' :
+  // 2. Unidade fracionada calculada (ex: rolo de 100m -> m; botijão 13,6kg -> kg)
+  if (pkgInfo.hasPackage && pkgInfo.fractionalUnit && !addedValues.has(pkgInfo.fractionalUnit.toLowerCase())) {
+    const fracLabel = pkgInfo.fractionalUnit === 'm' ? 'metro(s) (m)' :
+                      pkgInfo.fractionalUnit === 'kg' ? 'quilo(s) (kg)' :
                       pkgInfo.fractionalUnit;
 
     options.push({
@@ -185,13 +203,40 @@ export function getUnitOptions(material?: {
       multiplier: 1 / pkgInfo.packageMultiplier,
       unitPrice: pkgInfo.fractionalPrice || 0
     });
+    addedValues.add(pkgInfo.fractionalUnit.toLowerCase());
+  }
+
+  // 3. Unidades comuns para permitir troca de unidade em qualquer material
+  const commonToAdd = ['un', 'm', 'kg', 'rolo', 'cx', 'barra', 'L', 'par', 'kit', 'pç'];
+  for (const u of commonToAdd) {
+    if (!addedValues.has(u.toLowerCase())) {
+      const isFrac = Boolean(
+        pkgInfo.hasPackage &&
+        pkgInfo.fractionalUnit &&
+        u.toLowerCase() === pkgInfo.fractionalUnit.toLowerCase()
+      );
+      const uPrice = isFrac ? (pkgInfo.fractionalPrice || 0) : pkgInfo.standardPrice;
+      const mult = isFrac ? (1 / pkgInfo.packageMultiplier) : 1;
+
+      options.push({
+        value: u,
+        label: isFrac
+          ? `${u} (fracionado - R$ ${formatMoney(uPrice)}/${u})`
+          : u,
+        shortLabel: u,
+        isFractional: isFrac,
+        multiplier: mult,
+        unitPrice: uPrice
+      });
+      addedValues.add(u.toLowerCase());
+    }
   }
 
   return options;
 }
 
 /**
- * Converte a quantidade ao alternar de uma unidade para outra
+ * Converte a quantidade ao alternar de uma unidade para outra com suporte a apelidos flexíveis
  */
 export function convertQuantity(
   qty: number,
@@ -199,24 +244,40 @@ export function convertQuantity(
   toUnit: string,
   pkgInfo: PackageInfo
 ): number {
-  if (!qty || isNaN(qty) || fromUnit === toUnit || !pkgInfo.hasPackage) {
+  if (!qty || isNaN(qty) || fromUnit.toLowerCase().trim() === toUnit.toLowerCase().trim()) {
     return qty;
   }
 
-  const isFromStandard = fromUnit.toLowerCase().trim() === pkgInfo.standardUnit.toLowerCase().trim();
-  const isToStandard = toUnit.toLowerCase().trim() === pkgInfo.standardUnit.toLowerCase().trim();
+  if (!pkgInfo || !pkgInfo.hasPackage || !pkgInfo.fractionalUnit) {
+    return qty;
+  }
 
-  const isFromFractional = pkgInfo.fractionalUnit && fromUnit.toLowerCase().trim() === pkgInfo.fractionalUnit.toLowerCase().trim();
-  const isToFractional = pkgInfo.fractionalUnit && toUnit.toLowerCase().trim() === pkgInfo.fractionalUnit.toLowerCase().trim();
+  const normFrom = fromUnit.toLowerCase().trim();
+  const normTo = toUnit.toLowerCase().trim();
+  const normFrac = pkgInfo.fractionalUnit.toLowerCase().trim();
+  const normStd = (pkgInfo.standardUnit || '').toLowerCase().trim();
 
-  // De Padrão (ex: rolo) para Fracionada (ex: m) -> Multiplica pelo pacote (1 rolo = 100m)
-  if (isFromStandard && isToFractional) {
+  // Verifica se é a unidade fracionada (ex: "m" ou "kg")
+  const isFromFrac = normFrom === normFrac ||
+                     (normFrac === 'm' && (normFrom === 'm' || normFrom === 'metro' || normFrom === 'metros')) ||
+                     (normFrac === 'kg' && (normFrom === 'kg' || normFrom === 'quilo' || normFrom === 'quilos'));
+
+  const isToFrac = normTo === normFrac ||
+                   (normFrac === 'm' && (normTo === 'm' || normTo === 'metro' || normTo === 'metros')) ||
+                   (normFrac === 'kg' && (normTo === 'kg' || normTo === 'quilo' || normTo === 'quilos'));
+
+  // Verifica se é a unidade inteira de embalagem (ex: "rolo", "rolo c/ 100 metros", "botijão", "cx")
+  const isFromStd = normFrom === normStd || normFrom.includes('rolo') || normFrom.includes('botij') || normFrom.includes('cx') || normFrom === 'un' || normFrom === 'und';
+  const isToStd = normTo === normStd || normTo.includes('rolo') || normTo.includes('botij') || normTo.includes('cx') || normTo === 'un' || normTo === 'und';
+
+  // De Inteira (rolo) para Fracionada (m) -> 1 rolo = 100m
+  if (isFromStd && isToFrac) {
     const converted = qty * pkgInfo.packageMultiplier;
     return Number(converted.toFixed(2));
   }
 
-  // De Fracionada (ex: m) para Padrão (ex: rolo) -> Divide pelo pacote (10m = 0.1 rolo)
-  if (isFromFractional && isToStandard) {
+  // De Fracionada (m) para Inteira (rolo) -> 10m = 0.10 rolo
+  if (isFromFrac && isToStd) {
     const converted = qty / pkgInfo.packageMultiplier;
     return Number(converted.toFixed(4));
   }
@@ -228,9 +289,22 @@ export function convertQuantity(
  * Obtém o preço unitário para a unidade escolhida
  */
 export function getUnitPriceForUnit(unit: string, pkgInfo: PackageInfo): number {
-  if (pkgInfo.hasPackage && pkgInfo.fractionalUnit && unit.toLowerCase().trim() === pkgInfo.fractionalUnit.toLowerCase().trim()) {
-    return pkgInfo.fractionalPrice || 0;
+  if (!pkgInfo) return 0;
+  if (!unit) return pkgInfo.standardPrice;
+
+  const normUnit = unit.toLowerCase().trim();
+  const normFrac = (pkgInfo.fractionalUnit || '').toLowerCase().trim();
+
+  if (pkgInfo.hasPackage && normFrac) {
+    const isFrac = normUnit === normFrac ||
+                   (normFrac === 'm' && (normUnit === 'm' || normUnit === 'metro' || normUnit === 'metros')) ||
+                   (normFrac === 'kg' && (normUnit === 'kg' || normUnit === 'quilo' || normUnit === 'quilos'));
+
+    if (isFrac) {
+      return pkgInfo.fractionalPrice != null ? pkgInfo.fractionalPrice : (pkgInfo.standardPrice / pkgInfo.packageMultiplier);
+    }
   }
+
   return pkgInfo.standardPrice;
 }
 

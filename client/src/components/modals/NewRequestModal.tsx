@@ -438,6 +438,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const convertedQty = convertQuantity(currentQty, oldUnit, newUnit, pkgInfo);
     setItemQuantities(prev => ({ ...prev, [id]: convertedQty }));
     setBudgetUnits(prev => ({ ...prev, [id]: newUnit }));
+    setSelectedItemIds(prev => new Set(prev).add(id));
   };
 
   const handleRemoveBudgetItem = (id: number) => {
@@ -717,10 +718,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
   const handleCustomQuantityChange = (id: number, val: string) => {
     const num = parseFloat(val);
+    const newQty = isNaN(num) || num < 0 ? 0 : num;
     setCustomQuantities(prev => ({
       ...prev,
-      [id]: isNaN(num) || num < 0 ? 0 : num
+      [id]: newQty
     }));
+    if (newQty > 0) {
+      setSelectedCustomIds(prev => new Set(prev).add(id));
+    }
   };
 
   const handleCustomUnitChange = (id: number, newUnit: string) => {
@@ -733,6 +738,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const convertedQty = convertQuantity(currentQty, oldUnit, newUnit, pkgInfo);
     setCustomQuantities(prev => ({ ...prev, [id]: convertedQty }));
     setCustomItemUnits(prev => ({ ...prev, [id]: newUnit }));
+    setSelectedCustomIds(prev => new Set(prev).add(id));
   };
 
   // ==========================================
@@ -793,9 +799,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const availableStockCustom = selectedCustomMat ? Math.max(0, selectedCustomMat.stock_physical - selectedCustomMat.stock_reserved) : 0;
 
   const topBarUnitOptions = useMemo(() => {
-    if (!selectedCustomMat) return [];
-    return getUnitOptions(selectedCustomMat);
-  }, [selectedCustomMat]);
+    return getUnitOptions(selectedCustomMat || { unit: customUncatalogedUnit || 'un' });
+  }, [selectedCustomMat, customUncatalogedUnit]);
 
   const topBarPkgInfo = useMemo(() => {
     return parsePackageInfo(selectedCustomMat);
@@ -821,7 +826,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         setCustomSelectedUnit(opts[0]?.value || selectedCustomMat.unit);
       }
     } else {
-      setCustomSelectedUnit('');
+      setCustomSelectedUnit('un');
     }
   }, [customMaterialId, selectedCustomMat]);
 
@@ -1688,34 +1693,25 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   type="number"
                                   step="any"
                                   min="0"
-                                  disabled={!it.isSelected}
                                   value={itemQuantities[it.id] !== undefined ? itemQuantities[it.id] : (it.remainingQuota > 0 ? it.remainingQuota : 0)}
                                   onChange={(e) => handleBudgetQuantityChange(it.id, e.target.value)}
-                                  className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
+                                  className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right"
                                 />
                                 {(() => {
                                   const opts = getUnitOptions(matObj || it);
-                                  if (opts.length > 1) {
-                                    return (
-                                      <select
-                                        disabled={!it.isSelected}
-                                        value={budgetUnits[it.id] || it.unit}
-                                        onChange={(e) => handleBudgetUnitChange(it.id, e.target.value)}
-                                        className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40 cursor-pointer"
-                                        title="Selecione a unidade de medida (padrão ou fracionada)"
-                                      >
-                                        {opts.map((opt) => (
-                                          <option key={opt.value} value={opt.value}>
-                                            {opt.shortLabel}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    );
-                                  }
                                   return (
-                                    <span className="text-[11px] text-slate-400 font-semibold px-1 w-8 truncate">
-                                      {it.chosenUnit || it.unit}
-                                    </span>
+                                    <select
+                                      value={budgetUnits[it.id] || it.unit}
+                                      onChange={(e) => handleBudgetUnitChange(it.id, e.target.value)}
+                                      className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 cursor-pointer"
+                                      title="Selecione a unidade de medida (padrão ou fracionada)"
+                                    >
+                                      {opts.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.shortLabel}
+                                        </option>
+                                      ))}
+                                    </select>
                                   );
                                 })()}
                               </div>
@@ -1832,22 +1828,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       placeholder="Qtd"
                       className="w-20 shrink-0 text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white text-right focus:outline-none focus:border-sabrar-500"
                     />
-                    {topBarUnitOptions.length > 1 ? (
-                      <select
-                        value={customSelectedUnit || selectedCustomMat?.unit}
-                        onChange={(e) => handleTopBarUnitChange(e.target.value)}
-                        className="flex-1 min-w-[70px] text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-amber-300 focus:outline-none focus:border-sabrar-500 cursor-pointer"
-                        title="Selecione a unidade de medida (padrão ou fracionada)"
-                      >
-                        {topBarUnitOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-[11px] text-slate-300 font-bold px-2.5 py-2.5 rounded-xl bg-dark-900 border border-dark-700 whitespace-nowrap">
-                        {selectedCustomMat?.unit || customUncatalogedUnit || 'un'}
-                      </span>
-                    )}
+                    <select
+                      value={customSelectedUnit || selectedCustomMat?.unit || customUncatalogedUnit || 'un'}
+                      onChange={(e) => handleTopBarUnitChange(e.target.value)}
+                      className="flex-1 min-w-[70px] text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-amber-300 focus:outline-none focus:border-sabrar-500 cursor-pointer"
+                      title="Selecione a unidade de medida (padrão ou fracionada)"
+                    >
+                      {topBarUnitOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="sm:col-span-1">
                     <button
@@ -2186,34 +2176,25 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                               type="number"
                               step="any"
                               min="0.01"
-                              disabled={!it.isSelected}
                               value={customQuantities[it.id] ?? it.quantity}
                               onChange={(e) => handleCustomQuantityChange(it.id, e.target.value)}
-                              className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
+                              className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right"
                             />
                             {(() => {
                               const opts = getUnitOptions(customMatObj || it);
-                              if (opts.length > 1) {
-                                return (
-                                  <select
-                                    disabled={!it.isSelected}
-                                    value={customItemUnits[it.id] || it.unit}
-                                    onChange={(e) => handleCustomUnitChange(it.id, e.target.value)}
-                                    className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40 cursor-pointer"
-                                    title="Selecione a unidade de medida (padrão ou fracionada)"
-                                  >
-                                    {opts.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.shortLabel}
-                                      </option>
-                                    ))}
-                                  </select>
-                                );
-                              }
                               return (
-                                <span className="text-[11px] text-slate-400 font-semibold px-1 w-8 truncate">
-                                  {it.chosenUnit || it.unit}
-                                </span>
+                                <select
+                                  value={customItemUnits[it.id] || it.unit}
+                                  onChange={(e) => handleCustomUnitChange(it.id, e.target.value)}
+                                  className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 cursor-pointer"
+                                  title="Selecione a unidade de medida (padrão ou fracionada)"
+                                >
+                                  {opts.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.shortLabel}
+                                    </option>
+                                  ))}
+                                </select>
                               );
                             })()}
                           </div>
