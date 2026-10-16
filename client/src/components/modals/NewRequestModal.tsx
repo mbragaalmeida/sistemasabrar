@@ -178,8 +178,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       });
       api.getMaterials().then(setMaterials);
 
+      const isInternalOnlyUser =
+        currentUser?.email?.toLowerCase() === 'vinicius.gomes@sabrar.com.br' ||
+        (currentUser?.department || '').toLowerCase().includes('uso interno');
+
       if (preselectedProjectId) {
         setSelectedProjectId(preselectedProjectId);
+      } else if (isInternalOnlyUser) {
+        setSelectedProjectId('internal');
       } else {
         setSelectedProjectId('');
       }

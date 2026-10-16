@@ -8,12 +8,12 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'ducts': ['admin', 'orcamento', 'orcamento_engenharia'],
-  'materials': ['admin', 'almoxarifado'],
+  'materials': ['admin', 'almoxarifado', 'compras'],
   'stock': ['admin', 'almoxarifado'],
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
-  'suppliers': ['admin', 'compras', 'compras_solicitacoes'],
+  'suppliers': ['admin', 'compras_solicitacoes'],
   'reports': ['admin'],
   'audit': ['admin'],
   'users': ['admin'],
@@ -53,6 +53,16 @@ export function canUserViewPrices(user: { role?: string; email?: string; name?: 
   if (!user) return false;
   if (user.role === 'engenharia' || user.role === 'almoxarifado') return false;
   return true;
+}
+
+/**
+ * Permissão para cadastrar novo produto na Base de Materiais:
+ * Usuários de 'compras' podem apenas dar entrada em materiais já cadastrados, sem cadastrar novo produto.
+ */
+export function canCreateMaterial(user: { role?: string; email?: string; name?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.role === 'compras') return false;
+  return user.role === 'admin' || user.role === 'almoxarifado';
 }
 
 /**
@@ -100,7 +110,7 @@ export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
     case 'compras':
       return [
         { id: 'purchases', label: 'Compras', iconName: 'purchases' },
-        { id: 'suppliers', label: 'Fornecedores', iconName: 'suppliers' }
+        { id: 'materials', label: 'Base Materiais', iconName: 'materials' }
       ];
     case 'compras_solicitacoes':
       return [

@@ -8,11 +8,12 @@ import { NewMaterialModal } from '../components/modals/NewMaterialModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
-import { canUserViewPrices } from '../utils/permissions';
+import { canUserViewPrices, canCreateMaterial } from '../utils/permissions';
 
 export const MaterialsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
+  const allowCreateMaterial = canCreateMaterial(currentUser);
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
@@ -145,32 +146,36 @@ export const MaterialsPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* BOTÃO ENTRADA VIA NF-E (XML) */}
-          <button
-            onClick={() => setIsXmlModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all shadow-md shadow-teal-600/30 active:scale-95"
-          >
-            <FileCode className="w-4 h-4" />
-            <span>Entrada via NF-e (XML)</span>
-          </button>
+          {allowCreateMaterial && (
+            <>
+              {/* BOTÃO ENTRADA VIA NF-E (XML) */}
+              <button
+                onClick={() => setIsXmlModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all shadow-md shadow-teal-600/30 active:scale-95"
+              >
+                <FileCode className="w-4 h-4" />
+                <span>Entrada via NF-e (XML)</span>
+              </button>
 
-          {/* BOTÃO CADASTRAR NOVO PRODUTO (Solicitação 2 do usuário) */}
-          <button
-            onClick={() => setIsNewMaterialModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Cadastrar Novo Produto</span>
-          </button>
+              {/* BOTÃO CADASTRAR NOVO PRODUTO (Solicitação 2 do usuário) */}
+              <button
+                onClick={() => setIsNewMaterialModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Cadastrar Novo Produto</span>
+              </button>
 
-          {/* BOTÃO REGISTRAR DEVOLUÇÃO */}
-          <button
-            onClick={() => setIsReturnModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Registrar Devolução</span>
-          </button>
+              {/* BOTÃO REGISTRAR DEVOLUÇÃO */}
+              <button
+                onClick={() => setIsReturnModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Registrar Devolução</span>
+              </button>
+            </>
+          )}
 
           {/* BOTÃO ENTRADA RÁPIDA DE ESTOQUE */}
           <button

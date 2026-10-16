@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { FolderPlus, FileUp, FileText, X, AlertCircle, Check, Sparkles, UploadCloud, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { FolderPlus, FileUp, FileText, X, AlertCircle, Check, Sparkles, UploadCloud, Trash2, ChevronDown, ChevronUp, HardHat } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { extractTextFromPDF } from '../../utils/pdfExtractor';
+import { User } from '../../types';
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -33,6 +34,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
+  const [availableEngineers, setAvailableEngineers] = useState<User[]>([]);
+  const [selectedEngineerIds, setSelectedEngineerIds] = useState<number[]>([]);
+  const [isEngineerDropdownOpen, setIsEngineerDropdownOpen] = useState(false);
   const [estimatedArea, setEstimatedArea] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -44,6 +48,42 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      api.getUsers()
+        .then((usersList) => {
+          const engineers = usersList.filter((u: any) => {
+            const email = String(u.email || '').toLowerCase();
+            const dept = String(u.department || '').toLowerCase();
+            if (email === 'vinicius.gomes@sabrar.com.br' || dept.includes('uso interno')) {
+              return false;
+            }
+            return (
+              u.role === 'engenharia' ||
+              u.role_name === 'engenharia' ||
+              u.role === 'orcamento_engenharia' ||
+              u.role_name === 'orcamento_engenharia' ||
+              u.role === 'compras_solicitacoes' ||
+              u.role_name === 'compras_solicitacoes' ||
+              u.role === 'admin' ||
+              u.role_name === 'admin'
+            );
+          });
+          setAvailableEngineers(engineers.length > 0 ? engineers : usersList);
+        })
+        .catch(console.error);
+    }
+  }, [isOpen]);
+
+  const toggleEngineerSelection = (eng: User) => {
+    setSelectedEngineerIds((prev) => {
+      const next = prev.includes(eng.id) ? prev.filter(id => id !== eng.id) : [...prev, eng.id];
+      const names = availableEngineers.filter(e => next.includes(e.id)).map(e => e.name);
+      setResponsibleEngineer(names.join(', '));
+      return next;
+    });
+  };
 
   if (!isOpen) return null;
 
@@ -111,6 +151,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         address: address.trim(),
         project_type: projectType,
         responsible_engineer: responsibleEngineer,
+        engineerIds: selectedEngineerIds,
         notes: estimatedArea ? `[Área da Obra: ${estimatedArea} m²] ${notes.trim()}` : notes.trim(),
         initial_spec_text: optionalText.trim(),
         uploadedDocuments: uploadedFiles.map(d => ({
@@ -225,21 +266,62 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               </select>
             </div>
 
-            <div>
+            <div className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Engenheiro Responsável <span className="text-[10px] text-amber-400/90 font-normal lowercase">(opcional no orçamento)</span>
+                  Engenheiro(s) Responsável(is) <span className="text-[10px] text-amber-400/90 font-normal lowercase">(opcional)</span>
                 </label>
               </div>
-              <input
-                type="text"
-                value={responsibleEngineer}
-                onChange={(e) => setResponsibleEngineer(e.target.value)}
-                placeholder="Ex: A definir pelo administrador ou digite um nome..."
-                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500"
-              />
+              <button
+                type="button"
+                onClick={() => setIsEngineerDropdownOpen(!isEngineerDropdownOpen)}
+                className="w-full text-xs p-2.5 rounded-2xl border border-dark-700 bg-dark-850 text-white flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-left"
+              >
+                <span className={responsibleEngineer ? 'text-white font-semibold truncate' : 'text-slate-500 truncate'}>
+                  {responsibleEngineer || 'Selecionar engenheiro(s) responsável(is)...'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+
+              {isEngineerDropdownOpen && availableEngineers.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl p-2 max-h-56 overflow-y-auto space-y-1">
+                  <div className="flex items-center justify-between px-2 py-1 text-[10px] text-slate-400 border-b border-dark-800 mb-1">
+                    <span>Selecione um ou mais engenheiros ({availableEngineers.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEngineerDropdownOpen(false)}
+                      className="text-sabrar-400 font-bold hover:underline"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                  {availableEngineers.map((eng) => {
+                    const isSelected = selectedEngineerIds.includes(eng.id);
+                    return (
+                      <div
+                        key={eng.id}
+                        onClick={() => toggleEngineerSelection(eng)}
+                        className={`p-2 rounded-xl cursor-pointer flex items-center justify-between text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-sabrar-950/60 border border-sabrar-500/50 text-white font-bold'
+                            : 'hover:bg-dark-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <HardHat className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-sabrar-400' : 'text-slate-500'}`} />
+                          <div className="truncate">
+                            <div>{eng.name}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">{eng.email}</div>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-sabrar-400 shrink-0" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <p className="text-[10px] text-slate-500 mt-1">
-                Não é obrigatório na fase de orçamento. O administrador poderá designar um ou mais engenheiros após aprovação.
+                Você pode designar qualquer engenheiro agora ou atribuir/alterar posteriormente na página da obra.
               </p>
             </div>
           </div>

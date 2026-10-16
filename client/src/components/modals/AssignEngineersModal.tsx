@@ -38,15 +38,25 @@ export const AssignEngineersModal: React.FC<AssignEngineersModalProps> = ({
 
       api.getUsers()
         .then((usersList) => {
-          // Filtra usuários com papel de engenharia, orcamento_engenharia ou administradores
+          // Filtra usuários com papel de engenharia, orcamento_engenharia, compras_solicitacoes ou administradores (excluindo solicitantes exclusivos de uso interno)
           const engineers = usersList.filter(
-            (u: any) =>
-              u.role === 'engenharia' ||
-              u.role_name === 'engenharia' ||
-              u.role === 'orcamento_engenharia' ||
-              u.role_name === 'orcamento_engenharia' ||
-              u.role === 'admin' ||
-              u.role_name === 'admin'
+            (u: any) => {
+              const email = String(u.email || '').toLowerCase();
+              const dept = String(u.department || '').toLowerCase();
+              if (email === 'vinicius.gomes@sabrar.com.br' || dept.includes('uso interno')) {
+                return false;
+              }
+              return (
+                u.role === 'engenharia' ||
+                u.role_name === 'engenharia' ||
+                u.role === 'orcamento_engenharia' ||
+                u.role_name === 'orcamento_engenharia' ||
+                u.role === 'compras_solicitacoes' ||
+                u.role_name === 'compras_solicitacoes' ||
+                u.role === 'admin' ||
+                u.role_name === 'admin'
+              );
+            }
           );
           setAvailableEngineers(engineers.length > 0 ? engineers : usersList);
         })

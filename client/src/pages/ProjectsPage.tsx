@@ -290,7 +290,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                     </span>
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={p.status} size="sm" />
-                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento' || currentUser?.role === 'orcamento_engenharia') && (
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento' || currentUser?.role === 'orcamento_engenharia' || currentUser?.role === 'compras_solicitacoes') && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -343,7 +343,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                           </span>
                         )}
                       </div>
-                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento_engenharia') && (
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'orcamento_engenharia' || currentUser?.role === 'compras_solicitacoes' || currentUser?.role === 'orcamento') && (
                         <button
                           type="button"
                           onClick={(e) => {

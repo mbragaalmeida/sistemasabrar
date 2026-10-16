@@ -181,6 +181,13 @@ materialsRouter.get('/:id', async (req, res) => {
 // Cadastra novo material na Base Central (Seção 11)
 materialsRouter.post('/', async (req, res) => {
   try {
+    const userRole = req.headers['x-user-role'];
+    if (userRole === 'compras') {
+      return res.status(403).json({
+        error: 'Seu perfil permite apenas dar entrada em materiais já cadastrados, não sendo permitido cadastrar um novo produto.'
+      });
+    }
+
     const { 
       name, description, category, unit, brand, reference_price, supplier_id, 
       stock_physical, stock_minimum, status, userId,

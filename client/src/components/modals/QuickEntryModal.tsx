@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Package, Check, X, AlertCircle } from 'lucide-react';
+import { PlusCircle, Package, Check, X, AlertCircle, Search } from 'lucide-react';
 import { Material } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | ''>('');
   const [quantity, setQuantity] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -33,6 +34,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       } else {
         setSelectedMaterialId('');
       }
+      setSearchTerm('');
       setQuantity('');
       setNotes('');
       setError(null);
@@ -42,6 +44,13 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   if (!isOpen) return null;
 
   const selectedMat = materials.find(m => m.id === Number(selectedMaterialId));
+  const filteredMaterials = materials.filter(m =>
+    !searchTerm.trim() ||
+    m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.id === Number(selectedMaterialId)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,18 +102,32 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Selecionar Material
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+              Selecionar Material Cadastrado
             </label>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Filtrar material por nome ou código..."
+                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white placeholder-slate-500"
+              />
+            </div>
             <select
               value={selectedMaterialId}
               onChange={(e) => setSelectedMaterialId(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white"
               required
             >
-              <option value="">Selecione o material...</option>
-              {materials.map((m) => (
+              <option value="">
+                {filteredMaterials.length === 0
+                  ? 'Nenhum material encontrado para a busca...'
+                  : `Selecione o material (${filteredMaterials.length} disponíveis)...`}
+              </option>
+              {filteredMaterials.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.code} — {m.name} ({m.stock_physical} {m.unit} em estoque)
                 </option>

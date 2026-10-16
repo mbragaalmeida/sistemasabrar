@@ -55,9 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadUsers = async () => {
     try {
       const user = currentUser;
-      // Se não há usuário logado ou se o usuário NÃO é admin/orçamento_engenharia (e não está simulando), não carrega lista geral
+      // Se não há usuário logado ou se o usuário NÃO possui permissão de gestão de obras (e não está simulando), não carrega lista geral
       if (!user) return;
-      if (user.role !== 'admin' && user.role !== 'orcamento_engenharia' && !originalAdmin) {
+      if (user.role !== 'admin' && user.role !== 'orcamento_engenharia' && user.role !== 'compras_solicitacoes' && user.role !== 'orcamento' && !originalAdmin) {
         setUsers([user]);
         return;
       }
@@ -206,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser.role === 'orcamento_engenharia' && (allowedRoles.includes('orcamento') || allowedRoles.includes('engenharia'))) {
       return true;
     }
-    if (currentUser.role === 'compras_solicitacoes' && (allowedRoles.includes('compras') || allowedRoles.includes('orcamento') || allowedRoles.includes('engenharia'))) {
+    if (currentUser.role === 'compras_solicitacoes' && (allowedRoles.includes('compras') || allowedRoles.includes('orcamento') || allowedRoles.includes('engenharia') || allowedRoles.includes('orcamento_engenharia'))) {
       return true;
     }
     return allowedRoles.includes(currentUser.role);
