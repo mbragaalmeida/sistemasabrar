@@ -58,6 +58,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     (currentUser?.name && /emily/i.test(currentUser.name))
   );
 
+  // Usuários com permissão estrita exclusivamente para solicitações de uso interno
+  const isInternalOnlyUser = Boolean(
+    currentUser?.role === 'compras' ||
+    currentUser?.email?.toLowerCase() === 'vinicius.gomes@sabrar.com.br' ||
+    (currentUser?.department || '').toLowerCase().includes('uso interno')
+  );
+
   const selectedProject = useMemo(() => {
     if (selectedProjectId === 'internal') {
       return {
@@ -119,6 +126,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [budgetItems, setBudgetItems] = useState<any[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set());
   const [itemQuantities, setItemQuantities] = useState<Record<number, number>>({});
+  const [budgetUnits, setBudgetUnits] = useState<Record<number, string>>({});
   const [searchFilter, setSearchFilter] = useState('');
   const [stockTabFilter, setStockTabFilter] = useState<'todos' | 'com_estoque' | 'deficit'>('todos');
 
@@ -140,6 +148,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [customItems, setCustomItems] = useState<any[]>([]);
   const [selectedCustomIds, setSelectedCustomIds] = useState<Set<number>>(new Set());
   const [customQuantities, setCustomQuantities] = useState<Record<number, number>>({});
+  const [customItemUnits, setCustomItemUnits] = useState<Record<number, string>>({});
   const [customMaterialSearch, setCustomMaterialSearch] = useState('');
   const [customMaterialId, setCustomMaterialId] = useState<number | ''>('');
   const [customQuantity, setCustomQuantity] = useState<string>('1');
@@ -178,10 +187,6 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       });
       api.getMaterials().then(setMaterials);
 
-      const isInternalOnlyUser =
-        currentUser?.email?.toLowerCase() === 'vinicius.gomes@sabrar.com.br' ||
-        (currentUser?.department || '').toLowerCase().includes('uso interno');
-
       if (preselectedProjectId) {
         setSelectedProjectId(preselectedProjectId);
       } else if (isInternalOnlyUser) {
@@ -195,6 +200,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       setBudgetItems([]);
       setSelectedItemIds(new Set());
       setItemQuantities({});
+      setBudgetUnits({});
+      setCustomItemUnits({});
       setSearchFilter('');
       setStockTabFilter('todos');
 
@@ -258,19 +265,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           setRequestMode('batch');
 
           const initialQtys: Record<number, number> = {};
-          const selected = new Set<number>();
           budgetData.items.forEach((it: any) => {
             const q = qMap[it.material_id];
             // Se houver cota calculada, usa o saldo remanescente; caso contrário, usa o previsto
             const remaining = q !== undefined && q !== null ? Number(q.remainingQuota) : Number(it.quantity || 0);
             const qty = Math.max(0, remaining);
             initialQtys[it.id] = qty;
-            // Só seleciona por padrão os itens que ainda têm cota disponível (> 0)
-            if (qty > 0) {
-              selected.add(it.id);
-            }
           });
-          setSelectedItemIds(selected);
+          // Item 7: Deixar por padrão todos os itens não selecionados
+          setSelectedItemIds(new Set());
           setItemQuantities(initialQtys);
         } else {
           setBudgetItems([]);
@@ -719,13 +722,17 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       if (requestMode === 'batch') {
         const itemsToSubmit = batchItemsWithMetrics
           .filter(it => it.isSelected && it.currentRequestedQty > 0)
-          .map(it => ({
-            materialId: it.material_id || null,
-            quantity: it.currentRequestedQty,
-            isCustom: Boolean(it.isCustom || !it.material_id),
-            customName: it.customName || it.material_name,
-            unit: it.unit || 'un'
-          }));
+          .map(it => {
+            const chosenUnit = budgetUnits[it.id] || it.unit || 'un';
+            return {
+              materialId: it.material_id || null,
+              quantity: it.currentRequestedQty,
+              isCustom: Boolean(it.isCustom || !it.material_id),
+              customName: it.customName || it.material_name,
+              unit: chosenUnit,
+              customUnit: chosenUnit
+            };
+          });
 
         if (itemsToSubmit.length === 0) {
           setError('Nenhum material selecionado com quantidade válida.');
@@ -744,13 +751,17 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       } else {
         const itemsToSubmit = customItemsWithMetrics
           .filter(it => it.isSelected && it.currentRequestedQty > 0 && (it.material_id || it.isCustom))
-          .map(it => ({
-            materialId: it.material_id || null,
-            quantity: it.currentRequestedQty,
-            isCustom: Boolean(it.isCustom),
-            customName: it.customName || it.material_name,
-            unit: it.unit || 'un'
-          }));
+          .map(it => {
+            const chosenUnit = customItemUnits[it.id] || it.unit || 'un';
+            return {
+              materialId: it.material_id || null,
+              quantity: it.currentRequestedQty,
+              isCustom: Boolean(it.isCustom),
+              customName: it.customName || it.material_name,
+              unit: chosenUnit,
+              customUnit: chosenUnit
+            };
+          });
 
         if (itemsToSubmit.length === 0) {
           setError('Nenhum material adicionado ou selecionado na lista avulsa.');
@@ -821,8 +832,28 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </div>
             {/* Seletor Inteligente com Busca */}
             <div ref={projectDropdownRef} className="relative">
-              {/* Se uma obra está selecionada e o dropdown está fechado */}
-              {selectedProject && !isProjectDropdownOpen ? (
+              {isInternalOnlyUser ? (
+                <div className="w-full p-3.5 rounded-2xl border border-purple-500/50 bg-purple-950/40 flex items-center justify-between gap-3 shadow-md">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-purple-900/80 border border-purple-500/50 text-purple-300">
+                      <ClipboardList className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-black bg-purple-900/80 text-purple-200 border border-purple-700">
+                          SAB-INTERNO
+                        </span>
+                        <strong className="text-white text-xs sm:text-sm font-bold truncate">
+                          Solicitações Internas - SABRAR (Uso Interno)
+                        </strong>
+                      </div>
+                      <p className="text-[11px] text-purple-300/80 mt-0.5">
+                        🔒 Usuários de compras e uso interno realizam solicitações exclusivamente para fins internos da SABRAR.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedProject && !isProjectDropdownOpen ? (
                 <div 
                   onClick={() => setIsProjectDropdownOpen(true)}
                   className="w-full p-3 rounded-2xl border border-emerald-600/60 bg-dark-850 hover:bg-dark-800 transition-all cursor-pointer flex items-center justify-between gap-3 group shadow-md"
@@ -1486,6 +1517,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                       ✓ Cota respeitada
                                     </span>
                                   )}
+                                  {matObj?.availability_status === 'em_falta' ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 text-rose-400" /> Em Falta
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                                      ✓ Disponível
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1503,7 +1543,20 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   onChange={(e) => handleBudgetQuantityChange(it.id, e.target.value)}
                                   className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
                                 />
-                                <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
+                                {matObj?.converted_unit ? (
+                                  <select
+                                    disabled={!it.isSelected}
+                                    value={budgetUnits[it.id] || it.unit}
+                                    onChange={(e) => setBudgetUnits(prev => ({ ...prev, [it.id]: e.target.value }))}
+                                    className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40"
+                                    title="Unidade padrão ou fracionada"
+                                  >
+                                    <option value={it.unit}>{it.unit}</option>
+                                    <option value={matObj.converted_unit}>{matObj.converted_unit}</option>
+                                  </select>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
+                                )}
                               </div>
 
                               {/* Status de Estoque */}
@@ -1906,6 +1959,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   )}
                                 </>
                               ) : null}
+                              {customMatObj?.availability_status === 'em_falta' ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-rose-400" /> Em Falta
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                                  ✓ Disponível
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1923,7 +1985,20 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                               onChange={(e) => handleCustomQuantityChange(it.id, e.target.value)}
                               className="w-20 text-xs font-bold p-1.5 rounded-xl border border-dark-700 bg-dark-900 focus:outline-none focus:border-sabrar-500 text-white text-right disabled:opacity-40"
                             />
-                            <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
+                            {customMatObj?.converted_unit ? (
+                              <select
+                                disabled={!it.isSelected}
+                                value={customItemUnits[it.id] || it.unit}
+                                onChange={(e) => setCustomItemUnits(prev => ({ ...prev, [it.id]: e.target.value }))}
+                                className="text-[11px] font-bold p-1 rounded-lg border border-dark-700 bg-dark-900 text-amber-300 focus:outline-none focus:border-sabrar-500 disabled:opacity-40"
+                                title="Unidade padrão ou fracionada"
+                              >
+                                <option value={it.unit}>{it.unit}</option>
+                                <option value={customMatObj.converted_unit}>{customMatObj.converted_unit}</option>
+                              </select>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 w-8 truncate">{it.unit}</span>
+                            )}
                           </div>
 
                           {/* Status de Estoque */}

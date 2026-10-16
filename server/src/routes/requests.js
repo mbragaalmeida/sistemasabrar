@@ -70,9 +70,10 @@ requestsRouter.get('/', async (req, res) => {
       SELECT mri.*,
              COALESCE(m.name, mri.custom_name, 'Material Fora da Base') as material_name,
              COALESCE(m.code, 'FORA-BASE') as material_code,
-             COALESCE(m.unit, mri.custom_unit, 'un') as material_unit,
+             COALESCE(mri.custom_unit, m.unit, 'un') as material_unit,
              COALESCE(m.stock_physical, 0) as stock_physical,
              COALESCE(m.stock_reserved, 0) as stock_reserved,
+             COALESCE(m.availability_status, 'disponivel') as availability_status,
              m.image_url
       FROM material_request_items mri
       LEFT JOIN materials m ON mri.material_id = m.id

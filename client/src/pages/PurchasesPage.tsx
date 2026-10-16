@@ -17,7 +17,8 @@ import {
   Layers,
   ArrowRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  ClipboardList
 } from 'lucide-react';
 import { Purchase } from '../types';
 import { api } from '../services/api';
@@ -414,126 +415,205 @@ export const PurchasesPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Lista Expansiva com Todos os Itens desta Obra */}
+                  {/* Lista Expansiva com Todos os Itens desta Obra Agrupados por Pedido/Solicitação */}
                   {isExpanded && (
-                    <div className="p-3 sm:p-5 border-t border-dark-750 bg-dark-900 space-y-3 animate-in fade-in duration-150">
-                      {/* Tabela Responsiva de Materiais da Obra */}
-                      <div className="overflow-x-auto rounded-2xl border border-dark-750 bg-dark-850">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-dark-800 text-slate-400 font-bold border-b border-dark-700">
-                            <tr>
-                              <th className="p-3">Código</th>
-                              <th className="p-3">Material Solicitado</th>
-                              <th className="p-3 text-right">Qtd. Solicitada</th>
-                              <th className="p-3 text-right">Preço Estimado</th>
-                              <th className="p-3">Fornecedor</th>
-                              <th className="p-3">Previsão</th>
-                              <th className="p-3 text-center">Status</th>
-                              <th className="p-3 text-right">Ações</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-dark-750">
-                            {group.items.map((p) => {
-                              const isReceived = p.status === 'Recebido';
-                              const subtotal = Number(p.quantity || 0) * Number(p.unit_price || 0);
+                    <div className="p-3 sm:p-5 border-t border-dark-750 bg-dark-900 space-y-4 animate-in fade-in duration-150">
+                      {(() => {
+                        // Agrupamento dos itens da obra por Solicitação de Material (SOL-...)
+                        const requestMap = new Map<string, {
+                          requestCode: string;
+                          requestId: number | null;
+                          requesterName: string | null;
+                          requestDate: string | null;
+                          items: Purchase[];
+                        }>();
 
-                              return (
-                                <tr key={p.id} className="hover:bg-dark-800/50 transition-colors">
-                                  {/* Código da Demanda */}
-                                  <td className="p-3 whitespace-nowrap font-mono font-bold text-sabrar-400">
-                                    {p.code}
-                                  </td>
+                        group.items.forEach(p => {
+                          const codeKey = p.request_code || 'AVULSO';
+                          if (!requestMap.has(codeKey)) {
+                            requestMap.set(codeKey, {
+                              requestCode: codeKey,
+                              requestId: p.request_id || null,
+                              requesterName: p.requester_name || null,
+                              requestDate: p.request_created_at || null,
+                              items: []
+                            });
+                          }
+                          requestMap.get(codeKey)!.items.push(p);
+                        });
 
-                                  {/* Nome do Material */}
-                                  <td className="p-3 min-w-[200px]">
-                                    <div className="font-extrabold text-white">{p.material_name}</div>
-                                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                                      {p.material_code ? `Código: ${p.material_code}` : 'Item Solicitado'}
-                                    </div>
-                                  </td>
+                        const subGroups = Array.from(requestMap.values()).sort((a, b) => {
+                          if (a.requestCode === 'AVULSO') return 1;
+                          if (b.requestCode === 'AVULSO') return -1;
+                          return b.requestCode.localeCompare(a.requestCode);
+                        });
 
-                                  {/* Quantidade */}
-                                  <td className="p-3 text-right whitespace-nowrap font-bold text-white">
-                                    {p.quantity} {p.material_unit}
-                                  </td>
+                        return subGroups.map((subGroup) => {
+                          const subTotalEstimated = subGroup.items.reduce(
+                            (acc, it) => acc + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0
+                          );
 
-                                  {/* Preço Unitário & Subtotal */}
-                                  <td className="p-3 text-right whitespace-nowrap">
-                                    {p.unit_price ? (
-                                      <div>
-                                        <div className="font-extrabold text-white">
-                                          R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </div>
-                                        <div className="text-[10px] text-slate-400">
-                                          R$ {p.unit_price.toFixed(2)}/{p.material_unit}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-slate-500 italic text-[11px]">A cotar</span>
+                          return (
+                            <div key={subGroup.requestCode} className="space-y-2.5 bg-dark-850/50 p-3 sm:p-4 rounded-2xl border border-dark-750/90 shadow-sm">
+                              {/* Cabeçalho do Pedido / Solicitação de Material */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-dark-700/60">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-7 h-7 rounded-lg bg-sabrar-950/90 border border-sabrar-500/40 flex items-center justify-center text-sabrar-400 shrink-0">
+                                    <ClipboardList className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    <span className={`px-2 py-0.5 rounded font-mono font-bold text-xs ${
+                                      subGroup.requestCode === 'AVULSO'
+                                        ? 'bg-dark-750 text-slate-300 border border-dark-650'
+                                        : 'bg-sabrar-950 text-sabrar-400 border border-sabrar-500/40'
+                                    }`}>
+                                      {subGroup.requestCode === 'AVULSO' ? 'Demandas Diretas / Sem Pedido Vinculado' : `Pedido: ${subGroup.requestCode}`}
+                                    </span>
+                                    {subGroup.requesterName && (
+                                      <span className="text-xs text-slate-300">
+                                        Solicitado por: <strong className="text-white">{subGroup.requesterName}</strong>
+                                      </span>
                                     )}
-                                  </td>
+                                    {subGroup.requestDate && (
+                                      <span className="text-[11px] text-slate-400">
+                                        • {new Date(subGroup.requestDate).toLocaleDateString('pt-BR')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs self-end sm:self-center">
+                                  <span className="font-bold text-slate-400 bg-dark-800 px-2 py-0.5 rounded-lg border border-dark-700">
+                                    {subGroup.items.length} {subGroup.items.length === 1 ? 'material' : 'materiais'}
+                                  </span>
+                                  {subTotalEstimated > 0 && (
+                                    <span className="text-emerald-400 font-bold bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-600/30">
+                                      Subtotal: R$ {subTotalEstimated.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
 
-                                  {/* Fornecedor */}
-                                  <td className="p-3 whitespace-nowrap text-slate-300">
-                                    {p.supplier_name || <span className="text-slate-500 italic">Em cotação</span>}
-                                  </td>
+                              {/* Tabela Responsiva de Materiais deste Pedido */}
+                              <div className="overflow-x-auto rounded-xl border border-dark-750 bg-dark-900/70">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-dark-800/90 text-slate-400 font-bold border-b border-dark-700">
+                                    <tr>
+                                      <th className="p-3">Código Compra</th>
+                                      <th className="p-3">Material Solicitado</th>
+                                      <th className="p-3 text-right">Qtd. Solicitada</th>
+                                      <th className="p-3 text-right">Preço Estimado</th>
+                                      <th className="p-3">Fornecedor</th>
+                                      <th className="p-3">Previsão</th>
+                                      <th className="p-3 text-center">Status</th>
+                                      <th className="p-3 text-right">Ações</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-dark-750/70">
+                                    {subGroup.items.map((p) => {
+                                      const isReceived = p.status === 'Recebido';
+                                      const subtotal = Number(p.quantity || 0) * Number(p.unit_price || 0);
 
-                                  {/* Previsão de Entrega */}
-                                  <td className="p-3 whitespace-nowrap text-slate-400 text-[11px]">
-                                    {p.expected_delivery_date
-                                      ? new Date(p.expected_delivery_date).toLocaleDateString('pt-BR')
-                                      : <span className="italic text-slate-500">Aguardando</span>}
-                                  </td>
+                                      return (
+                                        <tr key={p.id} className="hover:bg-dark-800/50 transition-colors">
+                                          {/* Código da Demanda */}
+                                          <td className="p-3 whitespace-nowrap font-mono font-bold text-sabrar-400">
+                                            {p.code}
+                                          </td>
 
-                                  {/* Status & Prioridade */}
-                                  <td className="p-3 text-center whitespace-nowrap">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <StatusBadge status={p.priority || 'Normal'} size="sm" />
-                                      <StatusBadge status={p.status} size="sm" />
-                                    </div>
-                                  </td>
+                                          {/* Nome do Material */}
+                                          <td className="p-3 min-w-[200px]">
+                                            <div className="font-extrabold text-white">{p.material_name}</div>
+                                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                              {p.material_code ? `Código: ${p.material_code}` : 'Item Solicitado'}
+                                            </div>
+                                          </td>
 
-                                  {/* Botões de Ação */}
-                                  <td className="p-3 text-right whitespace-nowrap">
-                                    <div className="flex items-center justify-end gap-1.5">
-                                      {!isReceived ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setSelectedPurchase(p);
-                                              setIsEditModalOpen(true);
-                                            }}
-                                            className="px-2.5 py-1 rounded-lg border border-dark-700 bg-dark-800 hover:bg-dark-750 text-slate-200 text-xs font-bold transition-colors"
-                                            title="Atualizar cotação, fornecedor ou data de entrega"
-                                          >
-                                            Cotar
-                                          </button>
+                                          {/* Quantidade */}
+                                          <td className="p-3 text-right whitespace-nowrap font-bold text-white">
+                                            {p.quantity} {p.material_unit}
+                                          </td>
 
-                                          <button
-                                            type="button"
-                                            onClick={() => handleConfirmReceipt(p.id)}
-                                            className="flex items-center gap-1 px-3 py-1 rounded-lg bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
-                                            title="Confirmar chegada do material e entrada no almoxarifado"
-                                          >
-                                            <PackageCheck className="w-3.5 h-3.5" />
-                                            <span>Receber</span>
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <span className="flex items-center gap-1 text-emerald-400 font-bold text-[11px] bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/40">
-                                          <Check className="w-3.5 h-3.5" />
-                                          <span>Recebido</span>
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                                          {/* Preço Unitário & Subtotal */}
+                                          <td className="p-3 text-right whitespace-nowrap">
+                                            {p.unit_price ? (
+                                              <div>
+                                                <div className="font-extrabold text-white">
+                                                  R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </div>
+                                                <div className="text-[10px] text-slate-400">
+                                                  R$ {p.unit_price.toFixed(2)}/{p.material_unit}
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-slate-500 italic text-[11px]">A cotar</span>
+                                            )}
+                                          </td>
+
+                                          {/* Fornecedor */}
+                                          <td className="p-3 whitespace-nowrap text-slate-300">
+                                            {p.supplier_name || <span className="text-slate-500 italic">Em cotação</span>}
+                                          </td>
+
+                                          {/* Previsão de Entrega */}
+                                          <td className="p-3 whitespace-nowrap text-slate-400 text-[11px]">
+                                            {p.expected_delivery_date
+                                              ? new Date(p.expected_delivery_date).toLocaleDateString('pt-BR')
+                                              : <span className="italic text-slate-500">Aguardando</span>}
+                                          </td>
+
+                                          {/* Status & Prioridade */}
+                                          <td className="p-3 text-center whitespace-nowrap">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <StatusBadge status={p.priority || 'Normal'} size="sm" />
+                                              <StatusBadge status={p.status} size="sm" />
+                                            </div>
+                                          </td>
+
+                                          {/* Botões de Ação */}
+                                          <td className="p-3 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                              {!isReceived ? (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setSelectedPurchase(p);
+                                                      setIsEditModalOpen(true);
+                                                    }}
+                                                    className="px-2.5 py-1 rounded-lg border border-dark-700 bg-dark-800 hover:bg-dark-750 text-slate-200 text-xs font-bold transition-colors"
+                                                    title="Atualizar cotação, fornecedor ou data de entrega"
+                                                  >
+                                                    Cotar
+                                                  </button>
+
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleConfirmReceipt(p.id)}
+                                                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                                                    title="Confirmar chegada do material e entrada no almoxarifado"
+                                                  >
+                                                    <PackageCheck className="w-3.5 h-3.5" />
+                                                    <span>Receber</span>
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <span className="flex items-center gap-1 text-emerald-400 font-bold text-[11px] bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/40">
+                                                  <Check className="w-3.5 h-3.5" />
+                                                  <span>Recebido</span>
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
 
                       {/* Rodapé da Obra com Totais */}
                       <div className="p-3 bg-dark-850 rounded-2xl border border-dark-750 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">

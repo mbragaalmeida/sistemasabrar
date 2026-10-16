@@ -105,6 +105,7 @@ export interface Material {
   stock_available: number;
   stock_minimum: number;
   status: 'Ativo' | 'Inativo';
+  availability_status?: 'disponivel' | 'em_falta';
   isBelowMinimum?: boolean;
   isCritical?: boolean;
 }
@@ -208,6 +209,30 @@ export interface Purchase {
   received_date?: string;
   buyer_name?: string;
   notes?: string;
+  request_id?: number;
+  request_code?: string;
+  request_created_at?: string;
+  requester_name?: string;
+  created_at: string;
+}
+
+export interface StockAdjustment {
+  id: number;
+  material_id: number;
+  material_name?: string;
+  material_code?: string;
+  material_unit?: string;
+  previous_stock: number;
+  requested_stock: number;
+  difference: number;
+  reason: string;
+  requested_by?: number;
+  requested_by_name?: string;
+  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  reviewed_by?: number;
+  reviewed_by_name?: string;
+  reviewed_at?: string;
+  review_notes?: string;
   created_at: string;
 }
 

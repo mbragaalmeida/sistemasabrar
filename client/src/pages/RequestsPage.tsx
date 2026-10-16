@@ -465,6 +465,15 @@ export const RequestsPage: React.FC = () => {
                         (+{it.extra_quantity} acima da cota orçada de {it.budget_quantity})
                       </span>
                     )}
+                    {it.availability_status === 'em_falta' ? (
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                        Disponível
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="text-slate-300">

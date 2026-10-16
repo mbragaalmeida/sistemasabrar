@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from '../db/connection.js';
-import { StockService } from '../services/stockService.js';
+import { StockService, generateNextPurchaseCode } from '../services/stockService.js';
 
 export const purchasesRouter = express.Router();
 
@@ -14,12 +14,19 @@ purchasesRouter.get('/', async (req, res) => {
              COALESCE(m.code, 'FORA-BASE') as material_code,
              COALESCE(m.unit, p.custom_unit, 'un') as material_unit,
              s.name as supplier_name, pr.name as project_name, pr.code as project_code,
-             u.name as buyer_name
+             u.name as buyer_name,
+             mr.id as request_id,
+             mr.code as request_code,
+             mr.created_at as request_created_at,
+             requester.name as requester_name
       FROM purchases p
       LEFT JOIN materials m ON p.material_id = m.id
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN users u ON p.buyer_id = u.id
+      LEFT JOIN material_request_items mri ON p.request_item_id = mri.id
+      LEFT JOIN material_requests mr ON mri.request_id = mr.id
+      LEFT JOIN users requester ON mr.requested_by = requester.id
       WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
     `;
     const params = [];
@@ -69,8 +76,7 @@ purchasesRouter.post('/', async (req, res) => {
     const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(material_id);
     if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
 
-    const nextPurchaseCount = ((await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count || 0) + 1;
-    const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+    const purchaseCode = await generateNextPurchaseCode();
 
     const price = (unit_price !== undefined && unit_price !== null && unit_price !== '') ? Number(unit_price) : mat.reference_price;
     const totalPrice = Number((Number(quantity) * price).toFixed(2));

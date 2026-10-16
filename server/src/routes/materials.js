@@ -362,3 +362,30 @@ materialsRouter.post('/aliases', async (req, res) => {
   }
 });
 
+// Atualiza o status manual de disponibilidade (Disponível ou Em Falta - Item 10)
+materialsRouter.patch('/:id/availability', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { availability_status } = req.body;
+
+    if (!['disponivel', 'em_falta'].includes(availability_status)) {
+      return res.status(400).json({ error: "Status inválido. Use 'disponivel' ou 'em_falta'." });
+    }
+
+    const mat = await db.prepare('SELECT id, name FROM materials WHERE id = ?').get(id);
+    if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
+
+    await db.prepare('UPDATE materials SET availability_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(availability_status, id);
+
+    res.json({
+      success: true,
+      material_id: Number(id),
+      availability_status,
+      message: `Status de disponibilidade de "${mat.name}" atualizado para ${availability_status === 'disponivel' ? 'Disponível' : 'Em Falta'}.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+

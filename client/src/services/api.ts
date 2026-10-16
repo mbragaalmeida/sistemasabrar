@@ -315,11 +315,23 @@ export const api = {
     fetchJson<any>(`/materials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateMaterialImage: (id: number | string, image_url: string) =>
     fetchJson<any>(`/materials/${id}/image`, { method: 'PATCH', body: JSON.stringify({ image_url }) }),
+  updateMaterialAvailability: (id: number | string, availability_status: 'disponivel' | 'em_falta') =>
+    fetchJson<any>(`/materials/${id}/availability`, { method: 'PATCH', body: JSON.stringify({ availability_status }) }),
   quickStockEntry: (materialId: number, quantity: number, notes?: string, userId?: number) =>
     fetchJson<any>('/materials/quick-entry', { method: 'POST', body: JSON.stringify({ materialId, quantity, notes, userId }) }),
   getMaterialAliases: () => fetchJson<any[]>('/materials/aliases'),
   saveMaterialAliases: (mappings: Array<{ alias: string; materialId: number }>) =>
     fetchJson<any>('/materials/aliases', { method: 'POST', body: JSON.stringify({ mappings }) }),
+  getStockAdjustments: (status?: string) => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    return fetchJson<any[]>(`/stock/adjustments${qs}`);
+  },
+  requestStockAdjustment: (data: { material_id: number; requested_stock: number; reason: string; user_id?: number }) =>
+    fetchJson<any>('/stock/adjustments', { method: 'POST', body: JSON.stringify(data) }),
+  approveStockAdjustment: (id: number | string, user_id?: number, notes?: string) =>
+    fetchJson<any>(`/stock/adjustments/${id}/approve`, { method: 'POST', body: JSON.stringify({ user_id, notes }) }),
+  rejectStockAdjustment: (id: number | string, user_id?: number, notes?: string) =>
+    fetchJson<any>(`/stock/adjustments/${id}/reject`, { method: 'POST', body: JSON.stringify({ user_id, notes }) }),
 
   // Solicitações
   getRequests: (params?: Record<string, string>) => {

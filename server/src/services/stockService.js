@@ -1,6 +1,63 @@
 import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
 
+export async function generateNextRequestCode() {
+  const rows = await db.prepare("SELECT code FROM material_requests WHERE code LIKE 'SOL-%'").all();
+  let maxNum = 0;
+  for (const r of rows) {
+    const m = r.code ? r.code.match(/SOL-\d{4}-(\d+)/) : null;
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+  let nextNum = maxNum + 1;
+  let code = `SOL-2026-${String(nextNum).padStart(4, '0')}`;
+  while (await db.prepare('SELECT id FROM material_requests WHERE code = ?').get(code)) {
+    nextNum++;
+    code = `SOL-2026-${String(nextNum).padStart(4, '0')}`;
+  }
+  return code;
+}
+
+export async function generateNextPurchaseCode() {
+  const rows = await db.prepare("SELECT code FROM purchases WHERE code LIKE 'COM-%'").all();
+  let maxNum = 0;
+  for (const r of rows) {
+    const m = r.code ? r.code.match(/COM-\d{4}-(\d+)/) : null;
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+  let nextNum = maxNum + 1;
+  let code = `COM-2026-${String(nextNum).padStart(4, '0')}`;
+  while (await db.prepare('SELECT id FROM purchases WHERE code = ?').get(code)) {
+    nextNum++;
+    code = `COM-2026-${String(nextNum).padStart(4, '0')}`;
+  }
+  return code;
+}
+
+export async function generateNextReturnCode() {
+  const rows = await db.prepare("SELECT code FROM returns WHERE code LIKE 'DEV-%'").all();
+  let maxNum = 0;
+  for (const r of rows) {
+    const m = r.code ? r.code.match(/DEV-\d{4}-(\d+)/) : null;
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+  let nextNum = maxNum + 1;
+  let code = `DEV-2026-${String(nextNum).padStart(4, '0')}`;
+  while (await db.prepare('SELECT id FROM returns WHERE code = ?').get(code)) {
+    nextNum++;
+    code = `DEV-2026-${String(nextNum).padStart(4, '0')}`;
+  }
+  return code;
+}
+
 export class StockService {
   /**
    * Retorna os níveis de estoque calculados com a regra:
@@ -100,8 +157,7 @@ export class StockService {
       throw new Error('Não é possível solicitar novos materiais para uma obra já concluída.');
     }
 
-    const nextReqCount = (await db.prepare('SELECT COUNT(*) as count FROM material_requests WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
-    const reqCode = `SOL-2026-${String(nextReqCount).padStart(4, '0')}`;
+    const reqCode = await generateNextRequestCode();
 
     // 1. Identifica se é Solicitação Interna (SABRAR)
     const isInternal = project.code === 'SAB-INTERNO';
@@ -133,6 +189,10 @@ export class StockService {
 
     // Busca perfil do usuário solicitante para validação de materiais avulsos
     const reqUser = await db.prepare('SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?').get(userId);
+    if (reqUser && reqUser.role_name === 'compras' && !isInternal) {
+      throw new Error('Usuários do setor de compras podem solicitar materiais exclusivamente para uso interno (SAB-INTERNO).');
+    }
+
     const isEmilyOrAdmin = reqUser && (
       reqUser.role_name === 'admin' || 
       reqUser.email === 'emily@sabrar.com.br' || 
@@ -254,7 +314,7 @@ export class StockService {
       if (!mat && !analysis.isCustom) continue;
 
       const matName = mat ? mat.name : (analysis.customName || 'Material Fora da Base');
-      const matUnit = mat ? mat.unit : (analysis.customUnit || 'un');
+      const matUnit = analysis.customUnit || (mat ? mat.unit : 'un');
 
       // Se requer aprovação (Admin, Sabrina ou Emily), NÃO reserva estoque nem cria compras até aprovação
       if (requiresAdminApproval) {
@@ -325,8 +385,7 @@ export class StockService {
       }
 
       if (deficit > 0) {
-        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
-        const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+        const purchaseCode = await generateNextPurchaseCode();
         const refPrice = mat ? Number(mat.reference_price || 0) : 0;
 
         const purResult = await db.prepare(`
@@ -478,7 +537,7 @@ export class StockService {
       if (!mat && !it.is_custom && !it.custom_name) continue;
 
       const matName = mat ? mat.name : (it.custom_name || 'Material Fora da Base');
-      const matUnit = mat ? mat.unit : (it.custom_unit || 'un');
+      const matUnit = it.custom_unit || (mat ? mat.unit : 'un');
       const qty = Number(it.quantity_requested);
       const available = mat ? Math.max(0, mat.stock_physical - mat.stock_reserved) : 0;
       const deficit = Math.max(0, qty - available);
@@ -509,8 +568,7 @@ export class StockService {
       }
 
       if (deficit > 0) {
-        const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
-        const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+        const purchaseCode = await generateNextPurchaseCode();
         const refPrice = mat ? Number(mat.reference_price || 0) : 0;
 
         await db.prepare(`
@@ -726,8 +784,7 @@ export class StockService {
     `).run(newStock, materialId);
 
     // Gera código de devolução
-    const nextDevCount = (await db.prepare('SELECT COUNT(*) as count FROM returns').get())?.count + 1 || 1;
-    const devCode = `DEV-2026-${String(nextDevCount).padStart(4, '0')}`;
+    const devCode = await generateNextReturnCode();
 
     // Cria registro de devolução
     const devResult = await db.prepare(`

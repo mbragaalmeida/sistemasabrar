@@ -8,9 +8,9 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'ducts': ['admin', 'orcamento', 'orcamento_engenharia'],
-  'materials': ['admin', 'almoxarifado', 'compras'],
+  'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes'],
   'stock': ['admin', 'almoxarifado'],
-  'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes'],
+  'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
   'suppliers': ['admin', 'compras_solicitacoes'],
@@ -110,14 +110,16 @@ export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
     case 'compras':
       return [
         { id: 'purchases', label: 'Compras', iconName: 'purchases' },
-        { id: 'materials', label: 'Base Materiais', iconName: 'materials' }
+        { id: 'materials', label: 'Base Materiais', iconName: 'materials' },
+        { id: 'requests', label: 'Solicitar', iconName: 'requests' }
       ];
     case 'compras_solicitacoes':
       return [
         { id: 'dashboard', label: 'Início', iconName: 'dashboard' },
         { id: 'projects', label: 'Obras', iconName: 'projects' },
         { id: 'requests', label: 'Solicitações', iconName: 'requests' },
-        { id: 'purchases', label: 'Compras', iconName: 'purchases' }
+        { id: 'purchases', label: 'Compras', iconName: 'purchases' },
+        { id: 'materials', label: 'Base Materiais', iconName: 'materials' }
       ];
     case 'admin':
     default:

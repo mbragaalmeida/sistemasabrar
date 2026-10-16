@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera, Layers, Check, X } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -8,12 +8,21 @@ import { NewMaterialModal } from '../components/modals/NewMaterialModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
+import { AdjustStockModal } from '../components/modals/AdjustStockModal';
 import { canUserViewPrices, canCreateMaterial } from '../utils/permissions';
 
 export const MaterialsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
   const allowCreateMaterial = canCreateMaterial(currentUser);
+
+  const canApproveAdjustment = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'orcamento_engenharia' ||
+    currentUser?.role === 'compras_solicitacoes' ||
+    /sabrina|emily/i.test(currentUser?.name || '') ||
+    /sabrina|emily/i.test(currentUser?.email || '')
+  );
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
@@ -32,6 +41,10 @@ export const MaterialsPage: React.FC = () => {
   const [isQuickEntryOpen, setIsQuickEntryOpen] = useState(false);
   const [isNewMaterialModalOpen, setIsNewMaterialModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [selectedMaterialForAdjust, setSelectedMaterialForAdjust] = useState<Material | null>(null);
+  const [pendingAdjustments, setPendingAdjustments] = useState<any[]>([]);
+  const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<number | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | undefined>(undefined);
   const [selectedMaterialForPhoto, setSelectedMaterialForPhoto] = useState<Material | null>(null);
   const [photoFilter, setPhotoFilter] = useState<'todos' | 'com_foto' | 'sem_foto'>('todos');
@@ -63,8 +76,56 @@ export const MaterialsPage: React.FC = () => {
     }
   };
 
+  const fetchPendingAdjustments = async () => {
+    if (!canApproveAdjustment) return;
+    try {
+      const data = await api.getStockAdjustments('pendente');
+      setPendingAdjustments(data);
+    } catch (err) {
+      console.error('Erro ao buscar ajustes pendentes:', err);
+    }
+  };
+
+  const handleToggleAvailability = async (m: Material) => {
+    const nextStatus = m.availability_status === 'em_falta' ? 'disponivel' : 'em_falta';
+    setTogglingAvailabilityId(m.id);
+    try {
+      await api.updateMaterialAvailability(m.id, nextStatus);
+      setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, availability_status: nextStatus } : item));
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar disponibilidade');
+    } finally {
+      setTogglingAvailabilityId(null);
+    }
+  };
+
+  const handleApproveAdjustment = async (id: number) => {
+    if (!window.confirm('Confirma a aprovação deste ajuste de quantidade de estoque?')) return;
+    try {
+      await api.approveStockAdjustment(id, currentUser?.id);
+      await fetchMaterials();
+      await fetchPendingAdjustments();
+      alert('Ajuste de estoque aprovado com sucesso!');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao aprovar ajuste');
+    }
+  };
+
+  const handleRejectAdjustment = async (id: number) => {
+    const reason = window.prompt('Informe o motivo da recusa do ajuste:');
+    if (!reason) return;
+    try {
+      await api.rejectStockAdjustment(id, currentUser?.id, reason);
+      await fetchPendingAdjustments();
+      alert('Ajuste de estoque recusado.');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao recusar ajuste');
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
+    fetchPendingAdjustments();
   }, []);
 
   useEffect(() => {
@@ -190,6 +251,63 @@ export const MaterialsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Banner de Ajustes de Saldo de Estoque Aguardando Aprovação */}
+      {pendingAdjustments.length > 0 && canApproveAdjustment && (
+        <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3 text-xs shadow-lg">
+          <div className="flex items-center justify-between font-bold text-amber-300">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+              <span className="text-sm font-black">{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
+            </div>
+            <span className="text-[10px] bg-amber-900/60 text-amber-200 px-2.5 py-1 rounded-full border border-amber-600/40">
+              Aprovação Restrita (Admins, Sabrina ou Emily)
+            </span>
+          </div>
+          <div className="divide-y divide-dark-800">
+            {pendingAdjustments.map((adj) => (
+              <div key={adj.id} className="pt-2.5 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-300">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-white text-sm">{adj.material_name}</span>
+                    <span className="font-mono text-xs font-bold text-amber-400 bg-dark-900 px-1.5 py-0.5 rounded border border-dark-750">
+                      {adj.material_code}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                    <span>Estoque Atual: <strong className="text-white">{adj.previous_stock}</strong></span>
+                    <span>➔</span>
+                    <span>Novo Saldo: <strong className="text-amber-300 font-bold">{adj.requested_stock}</strong></span>
+                    <span className={`font-bold ${adj.difference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      ({adj.difference > 0 ? `+${adj.difference}` : adj.difference})
+                    </span>
+                    <span>• Solicitado por: <strong className="text-slate-200">{adj.requester_name || 'Almoxarifado'}</strong></span>
+                    <span>• Motivo: <em className="text-slate-300 font-medium">"{adj.reason}"</em></span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleApproveAdjustment(adj.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Aprovar Ajuste</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectAdjustment(adj.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Recusar</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters & Search */}
       <div className="bg-dark-900 p-3.5 sm:p-4 rounded-3xl border border-dark-750 shadow-md space-y-3">
@@ -454,17 +572,44 @@ export const MaterialsPage: React.FC = () => {
                         <span className="text-xs font-mono font-bold text-sabrar-400 bg-dark-800 border border-dark-700 px-2 py-0.5 rounded">
                           {m.code}
                         </span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            isZero
-                              ? 'bg-rose-950/60 text-rose-400 border-rose-800/60'
-                              : isBelow
-                              ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
-                              : 'bg-sabrar-950/70 text-sabrar-400 border-sabrar-500/40'
-                          }`}
-                        >
-                          {isZero ? 'Sem Estoque' : isBelow ? 'Estoque Baixo' : 'Normal'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Toggle de Disponibilidade Almoxarifado (Item 10) */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAvailability(m)}
+                            disabled={togglingAvailabilityId === m.id}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all active:scale-95 flex items-center gap-1 cursor-pointer ${
+                              m.availability_status === 'em_falta'
+                                ? 'bg-rose-950/80 text-rose-300 border-rose-700/60 hover:bg-rose-900'
+                                : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/40 hover:bg-emerald-900'
+                            }`}
+                            title="Clique para alternar disponibilidade (Disponível / Em Falta)"
+                          >
+                            {m.availability_status === 'em_falta' ? (
+                              <>
+                                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                <span>Em Falta</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                <span>Disponível</span>
+                              </>
+                            )}
+                          </button>
+
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              isZero
+                                ? 'bg-rose-950/60 text-rose-400 border-rose-800/60'
+                                : isBelow
+                                ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
+                                : 'bg-sabrar-950/70 text-sabrar-400 border-sabrar-500/40'
+                            }`}
+                          >
+                            {isZero ? 'Sem Estoque' : isBelow ? 'Estoque Baixo' : 'Normal'}
+                          </span>
+                        </div>
                       </div>
 
                       <h3 
@@ -565,16 +710,31 @@ export const MaterialsPage: React.FC = () => {
                     </div>
                   )}
 
-                  <button
-                    onClick={() => {
-                      setSelectedMaterialId(m.id);
-                      setIsQuickEntryOpen(true);
-                    }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-sabrar-950/80 hover:bg-sabrar-900 border border-sabrar-500/40 text-sabrar-300 text-xs font-bold transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-sabrar-400" />
-                    <span>+ Entrada</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMaterialForAdjust(m);
+                        setIsAdjustModalOpen(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/50 text-amber-300 text-xs font-bold transition-colors active:scale-95"
+                      title="Corrigir quantidade deste material no estoque"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Ajustar</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSelectedMaterialId(m.id);
+                        setIsQuickEntryOpen(true);
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-sabrar-950/80 hover:bg-sabrar-900 border border-sabrar-500/40 text-sabrar-300 text-xs font-bold transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-sabrar-400" />
+                      <span>+ Entrada</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -617,6 +777,20 @@ export const MaterialsPage: React.FC = () => {
         isOpen={isXmlModalOpen}
         onClose={() => setIsXmlModalOpen(false)}
         onSuccess={() => fetchMaterials()}
+      />
+
+      {/* Modal de Ajuste de Saldo de Estoque */}
+      <AdjustStockModal
+        isOpen={isAdjustModalOpen}
+        onClose={() => {
+          setIsAdjustModalOpen(false);
+          setSelectedMaterialForAdjust(null);
+        }}
+        material={selectedMaterialForAdjust}
+        onSuccess={() => {
+          fetchMaterials();
+          fetchPendingAdjustments();
+        }}
       />
     </div>
   );

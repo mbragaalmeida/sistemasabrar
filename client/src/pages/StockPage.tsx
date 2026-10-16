@@ -23,7 +23,8 @@ import {
   Minimize2,
   Search,
   RefreshCw,
-  ArrowRight
+  ArrowRight,
+  X
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -31,11 +32,12 @@ import { canUserViewPrices } from '../utils/permissions';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
+import { AdjustStockModal } from '../components/modals/AdjustStockModal';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
-  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
+  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato' | 'disponibilidade_ajustes'>('separacao');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
@@ -50,8 +52,25 @@ export const StockPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
   const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
 
+  // Gestão de Disponibilidade e Ajustes de Estoque
+  const [stockMaterials, setStockMaterials] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [pendingAdjustments, setPendingAdjustments] = useState<any[]>([]);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [selectedMaterialForAdjust, setSelectedMaterialForAdjust] = useState<any | null>(null);
+  const [materialFilterSearch, setMaterialFilterSearch] = useState('');
+  const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<number | null>(null);
+
   const canApproveSubstitution = Boolean(
     currentUser?.role === 'admin' ||
+    /sabrina|emily/i.test(currentUser?.name || '') ||
+    /sabrina|emily/i.test(currentUser?.email || '')
+  );
+
+  const canApproveAdjustment = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'orcamento_engenharia' ||
+    currentUser?.role === 'compras_solicitacoes' ||
     /sabrina|emily/i.test(currentUser?.name || '') ||
     /sabrina|emily/i.test(currentUser?.email || '')
   );
@@ -83,22 +102,63 @@ export const StockPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, reqs, rets, moves, subs] = await Promise.all([
+      const [sumData, reqs, rets, moves, subs, mats, adjs] = await Promise.all([
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
         api.getStockMovements(),
-        api.getSubstitutions()
+        api.getSubstitutions(),
+        api.getMaterials().catch(() => []),
+        api.getStockAdjustments().catch(() => [])
       ]);
       setSummary(sumData);
       setPendingRequests(reqs);
       setReturns(rets);
       setMovements(moves);
       setSubstitutions(subs || []);
+      setStockMaterials(mats || []);
+      setAdjustments(adjs || []);
+      setPendingAdjustments((adjs || []).filter((a: any) => a.status === 'pendente'));
     } catch (err) {
       console.error('Erro ao carregar dados do estoque:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleAvailability = async (m: any) => {
+    const nextStatus = m.availability_status === 'em_falta' ? 'disponivel' : 'em_falta';
+    setTogglingAvailabilityId(m.id);
+    try {
+      await api.updateMaterialAvailability(m.id, nextStatus);
+      setStockMaterials(prev => prev.map(item => item.id === m.id ? { ...item, availability_status: nextStatus } : item));
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar disponibilidade');
+    } finally {
+      setTogglingAvailabilityId(null);
+    }
+  };
+
+  const handleApproveAdjustment = async (id: number) => {
+    if (!window.confirm('Confirma a aprovação deste ajuste de quantidade de estoque?')) return;
+    try {
+      await api.approveStockAdjustment(id, currentUser?.id);
+      await loadData();
+      alert('Ajuste de estoque aprovado com sucesso!');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao aprovar ajuste');
+    }
+  };
+
+  const handleRejectAdjustment = async (id: number) => {
+    const reason = window.prompt('Informe o motivo da recusa do ajuste:');
+    if (!reason) return;
+    try {
+      await api.rejectStockAdjustment(id, currentUser?.id, reason);
+      await loadData();
+      alert('Ajuste de estoque recusado.');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao recusar ajuste');
     }
   };
 
@@ -222,6 +282,20 @@ export const StockPage: React.FC = () => {
           }`}
         >
           Extrato Completo de Movimentações (Auditoria)
+        </button>
+        <button
+          onClick={() => setActiveTab('disponibilidade_ajustes')}
+          className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'disponibilidade_ajustes' ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30 font-bold' : 'hover:text-white'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Disponibilidade & Ajustes de Estoque</span>
+          {pendingAdjustments.length > 0 && (
+            <span className="bg-amber-500 text-black px-1.5 py-0.2 rounded-full text-[10px] font-black">
+              {pendingAdjustments.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -446,6 +520,11 @@ export const StockPage: React.FC = () => {
                                 {it.is_extra && (
                                   <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
                                     Extra Obra
+                                  </span>
+                                )}
+                                {it.availability_status === 'em_falta' && (
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
                                   </span>
                                 )}
                               </div>
@@ -1067,6 +1146,184 @@ export const StockPage: React.FC = () => {
         </div>
       )}
 
+      {/* TAB 4: DISPONIBILIDADE & AJUSTES DE ESTOQUE */}
+      {!loading && activeTab === 'disponibilidade_ajustes' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Banner de Ajustes de Saldo Aguardando Aprovação */}
+          {pendingAdjustments.length > 0 && canApproveAdjustment && (
+            <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3 text-xs shadow-lg">
+              <div className="flex items-center justify-between font-bold text-amber-300">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-sm font-black">{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
+                </div>
+                <span className="text-[10px] bg-amber-900/60 text-amber-200 px-2.5 py-1 rounded-full border border-amber-600/40">
+                  Aprovação Restrita (Admins, Sabrina ou Emily)
+                </span>
+              </div>
+              <div className="divide-y divide-dark-800">
+                {pendingAdjustments.map((adj) => (
+                  <div key={adj.id} className="pt-2.5 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-300">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-white text-sm">{adj.material_name}</span>
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-dark-900 px-1.5 py-0.5 rounded border border-dark-750">
+                          {adj.material_code}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                        <span>Estoque Atual: <strong className="text-white">{adj.previous_stock}</strong></span>
+                        <span>➔</span>
+                        <span>Novo Saldo: <strong className="text-amber-300 font-bold">{adj.requested_stock}</strong></span>
+                        <span className={`font-bold ${adj.difference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          ({adj.difference > 0 ? `+${adj.difference}` : adj.difference})
+                        </span>
+                        <span>• Solicitado por: <strong className="text-slate-200">{adj.requester_name || 'Almoxarifado'}</strong></span>
+                        <span>• Motivo: <em className="text-slate-300 font-medium">"{adj.reason}"</em></span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => handleApproveAdjustment(adj.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Aprovar Ajuste</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectAdjustment(adj.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Recusar</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Painel de Controle de Disponibilidade dos Materiais */}
+          <div className="bg-dark-900 rounded-3xl border border-dark-750 p-4 sm:p-5 space-y-4 shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-sabrar-400" />
+                  Status de Disponibilidade no Almoxarifado
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Atualize o status dos materiais para orientar a equipe de obras e compras em tempo real
+                </p>
+              </div>
+
+              {/* Busca Rápida de Materiais */}
+              <div className="relative sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={materialFilterSearch}
+                  onChange={(e) => setMaterialFilterSearch(e.target.value)}
+                  placeholder="Buscar material ou código..."
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-dark-850 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500"
+                />
+              </div>
+            </div>
+
+            {/* Tabela de Materiais com 1-Click Toggle e Ajuste */}
+            <div className="overflow-x-auto rounded-2xl border border-dark-750 bg-dark-850 max-h-[500px] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-dark-800 text-slate-400 font-bold border-b border-dark-700 sticky top-0 z-10">
+                  <tr>
+                    <th className="p-3">Código</th>
+                    <th className="p-3">Material</th>
+                    <th className="p-3 text-center">Físico</th>
+                    <th className="p-3 text-center">Reservado</th>
+                    <th className="p-3 text-center">Disponível</th>
+                    <th className="p-3 text-center">Disponibilidade Manual (Almoxarifado)</th>
+                    <th className="p-3 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-750">
+                  {stockMaterials
+                    .filter(m => {
+                      if (!materialFilterSearch.trim()) return true;
+                      const q = materialFilterSearch.toLowerCase();
+                      return (m.name || '').toLowerCase().includes(q) || (m.code || '').toLowerCase().includes(q);
+                    })
+                    .slice(0, 100)
+                    .map((m) => {
+                      const disp = Math.max(0, Number(m.stock_physical || 0) - Number(m.stock_reserved || 0));
+                      const isFalta = m.availability_status === 'em_falta';
+
+                      return (
+                        <tr key={m.id} className="hover:bg-dark-800/50 transition-colors">
+                          <td className="p-3 font-mono font-bold text-sabrar-400 whitespace-nowrap">
+                            {m.code}
+                          </td>
+                          <td className="p-3 min-w-[200px]">
+                            <div className="font-extrabold text-white">{m.name}</div>
+                            <div className="text-[11px] text-slate-400">{m.category} • {m.unit}</div>
+                          </td>
+                          <td className="p-3 text-center font-bold text-white whitespace-nowrap">
+                            {m.stock_physical} {m.unit}
+                          </td>
+                          <td className="p-3 text-center font-bold text-amber-400 whitespace-nowrap">
+                            {m.stock_reserved} {m.unit}
+                          </td>
+                          <td className="p-3 text-center font-extrabold text-sabrar-400 whitespace-nowrap">
+                            {disp} {m.unit}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAvailability(m)}
+                              disabled={togglingAvailabilityId === m.id}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition-all active:scale-95 flex items-center gap-1.5 mx-auto cursor-pointer ${
+                                isFalta
+                                  ? 'bg-rose-950/80 text-rose-300 border-rose-700 hover:bg-rose-900 shadow-sm'
+                                  : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900 shadow-sm'
+                              }`}
+                              title="Clique para alternar disponibilidade imediatamente"
+                            >
+                              {isFalta ? (
+                                <>
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                                  <span>Em Falta</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Disponível</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedMaterialForAdjust(m);
+                                setIsAdjustModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/50 text-amber-300 text-xs font-bold transition-colors active:scale-95"
+                              title="Ajustar quantidade em estoque"
+                            >
+                              Ajustar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Impressão do Romaneio */}
       <PrintRequestModal
         isOpen={!!selectedRequestForPrint}
@@ -1087,6 +1344,19 @@ export const StockPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* Modal de Ajuste de Saldo de Estoque */}
+      <AdjustStockModal
+        isOpen={isAdjustModalOpen}
+        onClose={() => {
+          setIsAdjustModalOpen(false);
+          setSelectedMaterialForAdjust(null);
+        }}
+        material={selectedMaterialForAdjust}
+        onSuccess={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 };
