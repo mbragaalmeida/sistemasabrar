@@ -9,11 +9,14 @@ purchasesRouter.get('/', async (req, res) => {
   try {
     const { status, priority, project_id } = req.query;
     let query = `
-      SELECT p.*, m.name as material_name, m.code as material_code, m.unit as material_unit,
+      SELECT p.*,
+             COALESCE(m.name, p.custom_name, 'Material Fora da Base') as material_name,
+             COALESCE(m.code, 'FORA-BASE') as material_code,
+             COALESCE(m.unit, p.custom_unit, 'un') as material_unit,
              s.name as supplier_name, pr.name as project_name, pr.code as project_code,
              u.name as buyer_name
       FROM purchases p
-      JOIN materials m ON p.material_id = m.id
+      LEFT JOIN materials m ON p.material_id = m.id
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN users u ON p.buyer_id = u.id

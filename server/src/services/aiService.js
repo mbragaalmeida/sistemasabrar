@@ -426,37 +426,30 @@ export class AIAnalysisService {
   }
 
   /**
-   * Encontra ou cria material correspondente na Base Central SABRAR (materials)
+   * Encontra material correspondente na Base Central SABRAR (materials) sem poluir a base oficial
    */
   static async findOrCreateMaterial(itemDef, systemContext = '') {
     // 1. Tenta buscar por código oficial na base se informado (ex: SAB-0378, SAB-0011, etc.)
     if (itemDef.code) {
       const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
       if (byCode) {
-        // Base oficial de materiais preservada: nunca sobrescrever reference_price
         return byCode;
-      }
-      // Se possui código específico e defaultPrice, cadastra com o código e preço definidos
-      if (itemDef.defaultPrice !== undefined && itemDef.defaultPrice !== null) {
-        const insertMat = db.prepare(`
-          INSERT INTO materials (code, name, category, unit, reference_price, status)
-          VALUES (?, ?, ?, ?, ?, 'Ativo')
-        `);
-        const res = await insertMat.run(
-          itemDef.code,
-          itemDef.name,
-          itemDef.category || 'Climatização',
-          itemDef.unit || 'un',
-          itemDef.defaultPrice
-        );
-        return await db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
       }
     }
 
-    // 2. Tenta buscar por nome exato na base
+    // 2. Tenta buscar por nome exato ou via alias na base oficial
     let byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
     if (byName) {
       return byName;
+    }
+
+    const byAlias = await db.prepare(`
+      SELECT m.* FROM material_aliases ma
+      JOIN materials m ON m.id = ma.material_id
+      WHERE LOWER(ma.alias_name) = ?
+    `).get(itemDef.name.toLowerCase());
+    if (byAlias) {
+      return byAlias;
     }
 
     // 3. Consulta a Base Econômica Oficial Sabrar para precificação e regras
@@ -470,21 +463,15 @@ export class AIAnalysisService {
     const officialUnit = economic.matched ? economic.unit : (itemDef.unit || 'un');
     const officialCategory = economic.matched ? economic.category : (itemDef.category || 'Climatização');
 
-    // 4. Se não existe, cadastra material físico oficial na Base Central SABRAR com código SAB
-    const autoCode = itemDef.code || `SAB-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`;
-    const insertMat = db.prepare(`
-      INSERT INTO materials (code, name, category, unit, reference_price, status)
-      VALUES (?, ?, ?, ?, ?, 'Ativo')
-    `);
-    const res = await insertMat.run(
-      autoCode,
-      itemDef.name,
-      officialCategory,
-      officialUnit,
-      officialPrice
-    );
-
-    return await db.prepare('SELECT * FROM materials WHERE id = ?').get(res.lastInsertRowid);
+    // 4. NUNCA insere na tabela materials (apenas materiais oficiais com foto devem existir na base)
+    return {
+      id: null,
+      code: null,
+      name: itemDef.name,
+      category: officialCategory,
+      unit: officialUnit,
+      reference_price: officialPrice
+    };
   }
 
   /**
@@ -533,11 +520,15 @@ export class AIAnalysisService {
     const pendingItems = [];
     const documentConflicts = [];
 
-    // Detecção especializada de sistema VRV + Exaustão Industrial de Cozinha / Restaurante
-    const isBibiSucos = (
-      eqData.isKitchenExhaust && (eqData.isVRV || eqData.hasMeltingHoods || eqData.totalIndustrialAirflow >= 5000)
-    ) || (
-      (project.name && /bibi/i.test(project.name)) || (project.client && /bibi/i.test(project.client))
+    const isMaintenanceProject = Boolean(
+      (project.name && /manuten/i.test(project.name)) ||
+      (project.project_type && /manuten/i.test(project.project_type))
+    );
+
+    // Detecção especializada de sistema VRV + Exaustão Industrial de Cozinha / Restaurante (excluindo manutenções)
+    const isBibiSucos = !isMaintenanceProject && (
+      (eqData.isKitchenExhaust && (eqData.isVRV || eqData.hasMeltingHoods || eqData.totalIndustrialAirflow >= 5000)) ||
+      ((project.name && /bibi/i.test(project.name)) && documentContent.length > 200)
     );
 
     // Definição técnica dos itens necessários conforme Modo A ou B

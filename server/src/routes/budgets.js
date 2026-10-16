@@ -133,7 +133,7 @@ budgetsRouter.post('/save', async (req, res) => {
     // Calcula o total de equipamentos / faturamento direto
     const validEquipment = [];
     let equipmentTotal = 0;
-    if (equipment && equipment.length > 0) {
+    if (Array.isArray(equipment)) {
       for (const eq of equipment) {
         const desc = String(eq.description || eq.name || '').trim();
         if (!desc) continue;
@@ -205,28 +205,31 @@ budgetsRouter.post('/save', async (req, res) => {
     }
 
     // Salva itens da 3ª sessão: Máquinas & Equipamentos (Faturamento Direto)
-    if (validEquipment && validEquipment.length > 0) {
+    // Limpa equipamentos anteriores sempre que o array equipment for enviado (mesmo vazio)
+    if (Array.isArray(equipment)) {
       await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
-      const insertEquipment = db.prepare(`
-        INSERT INTO budget_equipment (
-          budget_id, category, description, brand, model,
-          quantity, unit, unit_price, subtotal, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      if (validEquipment.length > 0) {
+        const insertEquipment = db.prepare(`
+          INSERT INTO budget_equipment (
+            budget_id, category, description, brand, model,
+            quantity, unit, unit_price, subtotal, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
-      for (const eq of validEquipment) {
-        await insertEquipment.run(
-          budgetId,
-          eq.category,
-          eq.description,
-          eq.brand,
-          eq.model,
-          eq.quantity,
-          eq.unit,
-          eq.unitPrice,
-          eq.subtotal,
-          eq.notes
-        );
+        for (const eq of validEquipment) {
+          await insertEquipment.run(
+            budgetId,
+            eq.category,
+            eq.description,
+            eq.brand,
+            eq.model,
+            eq.quantity,
+            eq.unit,
+            eq.unitPrice,
+            eq.subtotal,
+            eq.notes
+          );
+        }
       }
     }
 

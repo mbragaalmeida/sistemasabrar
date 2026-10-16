@@ -203,6 +203,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const hasPermission = (allowedRoles: UserRole[]) => {
     if (!currentUser) return false;
     if (currentUser.role === 'admin') return true;
+    if (currentUser.role === 'orcamento_engenharia' && (allowedRoles.includes('orcamento') || allowedRoles.includes('engenharia'))) {
+      return true;
+    }
+    if (currentUser.role === 'compras_solicitacoes' && (allowedRoles.includes('compras') || allowedRoles.includes('orcamento') || allowedRoles.includes('engenharia'))) {
+      return true;
+    }
     return allowedRoles.includes(currentUser.role);
   };
 

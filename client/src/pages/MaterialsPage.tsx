@@ -8,16 +8,11 @@ import { NewMaterialModal } from '../components/modals/NewMaterialModal';
 import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
+import { canUserViewPrices } from '../utils/permissions';
 
 export const MaterialsPage: React.FC = () => {
   const { currentUser } = useAuth();
-
-  const canViewPrices = Boolean(
-    currentUser?.role === 'admin' ||
-    currentUser?.email === 'sabrina@sabrar.com.br' ||
-    currentUser?.email === 'emily@sabrar.com.br' ||
-    (currentUser?.name && /sabrina|emily/i.test(currentUser.name))
-  );
+  const canViewPrices = canUserViewPrices(currentUser);
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
@@ -558,9 +553,9 @@ export const MaterialsPage: React.FC = () => {
                     </div>
                   ) : (
                     <div>
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Preço Referência</div>
-                      <div className="font-semibold text-xs text-slate-500 italic mt-0.5">
-                        Restrito à Diretoria
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Unidade Padrão</div>
+                      <div className="font-bold text-xs text-slate-300 mt-0.5">
+                        {m.unit} {m.stock_minimum > 0 ? `• Mín: ${m.stock_minimum}` : ''}
                       </div>
                     </div>
                   )}

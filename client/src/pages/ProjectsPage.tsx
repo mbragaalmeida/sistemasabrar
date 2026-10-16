@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
-import { canDeleteProject } from '../utils/permissions';
+import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -362,14 +362,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
 
                 {/* Bottom Card Info */}
                 <div className="mt-4 pt-3 border-t border-dark-750 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Orçamento Final</span>
-                    <span className="font-black text-white text-sm">
-                      {hasBudget
-                        ? `R$ ${p.budget.total_final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                        : 'Aguardando'}
-                    </span>
-                  </div>
+                  {canUserViewPrices(currentUser) ? (
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Orçamento Final</span>
+                      <span className="font-black text-white text-sm">
+                        {hasBudget
+                          ? `R$ ${p.budget.total_final.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                          : 'Aguardando'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Status Orçamento</span>
+                      <span className="font-bold text-slate-300 text-xs">
+                        {hasBudget ? 'Orçamento Cadastrado' : 'Aguardando'}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-1 text-sabrar-400 font-bold group-hover:translate-x-1 transition-transform">
                     <span>Abrir</span>

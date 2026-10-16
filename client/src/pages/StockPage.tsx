@@ -27,14 +27,16 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { canUserViewPrices } from '../utils/permissions';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
+  const canViewPrices = canUserViewPrices(currentUser);
   const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'aguardando' | 'separacao' | 'separado' | 'entregue'>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -164,20 +166,22 @@ export const StockPage: React.FC = () => {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-2 ${canViewPrices ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3`}>
           <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Total Itens Ativos</div>
             <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">{summary.totalItems}</div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Cadastrados na SABRAR</div>
           </div>
 
-          <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
-            <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Valuation em Estoque</div>
-            <div className="text-2xl font-black text-emerald-700 dark:text-sabrar-400 mt-1">
-              R$ {summary.totalPhysicalValuation.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+          {canViewPrices && (
+            <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+              <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Valuation em Estoque</div>
+              <div className="text-2xl font-black text-emerald-700 dark:text-sabrar-400 mt-1">
+                R$ {summary.totalPhysicalValuation.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+              </div>
+              <div className="text-xs text-emerald-800 dark:text-sabrar-300 font-bold mt-0.5">Preço médio de referência</div>
             </div>
-            <div className="text-xs text-emerald-800 dark:text-sabrar-300 font-bold mt-0.5">Preço médio de referência</div>
-          </div>
+          )}
 
           <div className="p-4 bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
             <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Materiais Reservados</div>
@@ -201,7 +205,7 @@ export const StockPage: React.FC = () => {
             activeTab === 'separacao' ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30 font-bold' : 'hover:text-white'
           }`}
         >
-          Fila de Separação & Entregas ({pendingRequests.filter(r => r.status !== 'Entregue').length})
+          Fila de Separação ({pendingRequests.filter(r => r.status !== 'Separado' && r.status !== 'Cancelado').length} pendentes / {pendingRequests.length} total)
         </button>
         <button
           onClick={() => setActiveTab('devolucoes')}
@@ -230,22 +234,22 @@ export const StockPage: React.FC = () => {
       {/* TAB 1: FILA DE SEPARAÇÃO & ENTREGA */}
       {!loading && activeTab === 'separacao' && (() => {
         const awaitingApprovalCount = pendingRequests.filter(r => r.status === 'Aguardando aprovação').length;
-        const waitingCount = pendingRequests.filter(r => ['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(r.status)).length;
-        const inProgressCount = pendingRequests.filter(r => r.status === 'Em separação').length;
-        const separatedCount = pendingRequests.filter(r => r.status === 'Separado').length;
-        const deliveredCount = pendingRequests.filter(r => r.status === 'Entregue').length;
+        const solicitadoCount = pendingRequests.filter(r => ['Solicitado', 'Reservado'].includes(r.status)).length;
+        const emSeparacaoCount = pendingRequests.filter(r => ['Em Separação', 'Em separação'].includes(r.status)).length;
+        const separadoParcialCount = pendingRequests.filter(r => ['Separado Parcial', 'Parcialmente Atendido'].includes(r.status)).length;
+        const separadoCount = pendingRequests.filter(r => ['Separado', 'Entregue'].includes(r.status)).length;
 
         const filteredRequests = pendingRequests.filter(req => {
           if (statusFilter === 'aguardando_aprovacao') {
             if (req.status !== 'Aguardando aprovação') return false;
-          } else if (statusFilter === 'aguardando') {
-            if (!['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status)) return false;
-          } else if (statusFilter === 'separacao') {
-            if (req.status !== 'Em separação') return false;
+          } else if (statusFilter === 'solicitado') {
+            if (!['Solicitado', 'Reservado'].includes(req.status)) return false;
+          } else if (statusFilter === 'em_separacao') {
+            if (!['Em Separação', 'Em separação'].includes(req.status)) return false;
+          } else if (statusFilter === 'separado_parcial') {
+            if (!['Separado Parcial', 'Parcialmente Atendido'].includes(req.status)) return false;
           } else if (statusFilter === 'separado') {
-            if (req.status !== 'Separado') return false;
-          } else if (statusFilter === 'entregue') {
-            if (req.status !== 'Entregue') return false;
+            if (!['Separado', 'Entregue'].includes(req.status)) return false;
           }
 
           if (searchQuery.trim()) {
@@ -528,27 +532,27 @@ export const StockPage: React.FC = () => {
                     <div className="flex items-start gap-2.5">
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">Aguardando Aprovação de Administrador:</span> Esta solicitação contém materiais que excedem as cotas orçadas da obra. O fluxo de separação física e reservas de estoque só poderão ser executados após aprovação por um Administrador.
+                        <span className="font-bold">Aguardando Aprovação (Admins, Sabrina ou Emily):</span> Esta solicitação contém materiais fora da base ou que excedem as cotas orçadas da obra. O fluxo de separação física e reservas de estoque só poderão ser executados após aprovação.
                       </div>
                     </div>
-                    {currentUser?.role === 'admin' && (
+                    {canApproveSubstitution && (
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         <button
                           type="button"
                           onClick={async () => {
-                            if (window.confirm(`Aprovar liberação dos materiais extras da solicitação ${req.code}?`)) {
-                              await api.approveExtraRequest(req.id, currentUser?.id, 'Aprovado pelo Almoxarifado');
+                            if (window.confirm(`Aprovar liberação dos materiais extras/fora da base da solicitação ${req.code}?`)) {
+                              await api.approveExtraRequest(req.id, currentUser?.id, 'Aprovado');
                               await loadData();
                             }
                           }}
                           className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition-colors"
                         >
-                          Aprovar Extras
+                          Aprovar Solicitação
                         </button>
                         <button
                           type="button"
                           onClick={async () => {
-                            const note = prompt('Motivo da recusa do material extra:');
+                            const note = prompt('Motivo da recusa do material:');
                             if (note) {
                               await api.rejectExtraRequest(req.id, currentUser?.id, note);
                               await loadData();
@@ -572,16 +576,16 @@ export const StockPage: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
                       {[
-                        { key: 'solicitado', label: '1. Solicitado / Reservado', statuses: ['Solicitado', 'Reservado', 'Parcialmente Atendido'], targetStatus: 'Reservado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
-                        { key: 'separacao', label: '2. Em Separação', statuses: ['Em separação'], targetStatus: 'Em separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
-                        { key: 'separado', label: '3. Separado', statuses: ['Separado'], targetStatus: 'Separado', color: 'border-teal-500/50 bg-teal-950/40 text-teal-300' },
-                        { key: 'entregue', label: '4. Entregue no Canteiro', statuses: ['Entregue'], targetStatus: 'Entregue', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
+                        { key: 'solicitado', label: '1. Solicitado', statuses: ['Solicitado', 'Reservado'], targetStatus: 'Solicitado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
+                        { key: 'em_separacao', label: '2. Em Separação', statuses: ['Em Separação', 'Em separação'], targetStatus: 'Em Separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
+                        { key: 'separado_parcial', label: '3. Separado Parcial', statuses: ['Separado Parcial', 'Parcialmente Atendido'], targetStatus: 'Separado Parcial', color: 'border-indigo-500/50 bg-indigo-950/40 text-indigo-300' },
+                        { key: 'separado', label: '4. Separado', statuses: ['Separado', 'Entregue'], targetStatus: 'Separado', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
                       ].map((step, idx) => {
                         const isCurrent = step.statuses.includes(req.status);
                         const isCompleted = (
-                          (step.key === 'solicitado' && ['Em separação', 'Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'separacao' && ['Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'separado' && req.status === 'Entregue')
+                          (step.key === 'solicitado' && ['Em Separação', 'Em separação', 'Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
+                          (step.key === 'em_separacao' && ['Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
+                          (step.key === 'separado_parcial' && ['Separado', 'Entregue'].includes(req.status))
                         );
 
                         return (
@@ -616,18 +620,17 @@ export const StockPage: React.FC = () => {
                         onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
                         className="bg-dark-800 text-white text-xs border border-dark-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sabrar-500 font-semibold cursor-pointer disabled:opacity-50"
                       >
-                        <option value="Reservado">Reservado</option>
                         <option value="Solicitado">Solicitado</option>
-                        <option value="Em separação">Em separação</option>
+                        <option value="Em Separação">Em Separação</option>
+                        <option value="Separado Parcial">Separado Parcial</option>
                         <option value="Separado">Separado</option>
-                        <option value="Entregue">Entregue</option>
                       </select>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {['Solicitado', 'Reservado', 'Parcialmente Atendido'].includes(req.status) && (
+                      {['Solicitado', 'Reservado'].includes(req.status) && (
                         <button
-                          onClick={() => handleUpdateStatus(req.id, 'Em separação')}
+                          onClick={() => handleUpdateStatus(req.id, 'Em Separação')}
                           disabled={updatingId === req.id}
                           className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50"
                         >
@@ -636,32 +639,41 @@ export const StockPage: React.FC = () => {
                         </button>
                       )}
 
-                      {req.status === 'Em separação' && (
+                      {['Em Separação', 'Em separação'].includes(req.status) && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleUpdateStatus(req.id, 'Separado Parcial')}
+                            disabled={updatingId === req.id}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition-all active:scale-95 disabled:opacity-50"
+                          >
+                            <span>{updatingId === req.id ? 'Atualizando...' : 'Separado Parcial'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateStatus(req.id, 'Separado')}
+                            disabled={updatingId === req.id}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {['Separado Parcial', 'Parcialmente Atendido'].includes(req.status) && (
                         <button
                           onClick={() => handleUpdateStatus(req.id, 'Separado')}
                           disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
-                        </button>
-                      )}
-
-                      {req.status === 'Separado' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Entregue')}
-                          disabled={updatingId === req.id}
                           className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
                         >
-                          <Truck className="w-4 h-4" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Confirmar Entrega na Obra'}</span>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{updatingId === req.id ? 'Atualizando...' : 'Concluir Separação Total'}</span>
                         </button>
                       )}
 
-                      {req.status === 'Entregue' && (
+                      {['Separado', 'Entregue'].includes(req.status) && (
                         <span className="flex items-center gap-1 text-xs text-sabrar-300 font-bold bg-sabrar-950 px-3 py-1 rounded-xl border border-sabrar-500/40">
                           <CheckCircle className="w-4 h-4 text-sabrar-400" />
-                          <span>Entregue no Canteiro</span>
+                          <span>Separado</span>
                         </span>
                       )}
                     </div>
@@ -737,11 +749,11 @@ export const StockPage: React.FC = () => {
 
               {[
                 { id: 'todos', label: 'Todos', count: pendingRequests.length },
-                { id: 'aguardando_aprovacao', label: 'Aguardando Aprovação Admin', count: awaitingApprovalCount },
-                { id: 'aguardando', label: 'Aguardando Separação', count: waitingCount },
-                { id: 'separacao', label: 'Em Separação', count: inProgressCount },
-                { id: 'separado', label: 'Separados / Prontos', count: separatedCount },
-                { id: 'entregue', label: 'Entregues no Canteiro', count: deliveredCount },
+                { id: 'aguardando_aprovacao', label: 'Aguardando Aprovação', count: awaitingApprovalCount },
+                { id: 'solicitado', label: 'Solicitado', count: solicitadoCount },
+                { id: 'em_separacao', label: 'Em Separação', count: emSeparacaoCount },
+                { id: 'separado_parcial', label: 'Separado Parcial', count: separadoParcialCount },
+                { id: 'separado', label: 'Separado', count: separadoCount },
               ].map(f => (
                 <button
                   key={f.id}

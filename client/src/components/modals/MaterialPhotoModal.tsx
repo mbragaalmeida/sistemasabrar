@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Image as ImageIcon, Upload, Save, Tag, DollarSign, Package, Check, AlertCircle } from 'lucide-react';
 import { Material } from '../../types';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { canUserViewPrices } from '../../utils/permissions';
 
 interface MaterialPhotoModalProps {
   isOpen: boolean;
@@ -16,6 +18,8 @@ export const MaterialPhotoModal: React.FC<MaterialPhotoModalProps> = ({
   material,
   onSuccess
 }) => {
+  const { currentUser } = useAuth();
+  const canViewPrices = canUserViewPrices(currentUser);
   const [imageUrl, setImageUrl] = useState('');
   const [synonyms, setSynonyms] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -177,12 +181,14 @@ export const MaterialPhotoModal: React.FC<MaterialPhotoModalProps> = ({
                 <Package className="w-3.5 h-3.5 text-sabrar-400" />
                 <span>Dados de Catálogo</span>
               </div>
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-slate-400">Preço de Referência:</span>
-                <span className="font-extrabold text-white">
-                  R$ {Number(material.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} /{material.unit}
-                </span>
-              </div>
+              {canViewPrices && (
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-slate-400">Preço de Referência:</span>
+                  <span className="font-extrabold text-white">
+                    R$ {Number(material.reference_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} /{material.unit}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400">Estoque Físico:</span>
                 <span className="font-bold text-white">{material.stock_physical} {material.unit}</span>

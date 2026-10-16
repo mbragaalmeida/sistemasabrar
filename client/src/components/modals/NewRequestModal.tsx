@@ -637,24 +637,57 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   };
 
   // ==========================================
-  // FILTRAGEM DO CATÁLOGO DE MATERIAIS
+  // FILTRAGEM FLEXÍVEL DO CATÁLOGO DE MATERIAIS
   // ==========================================
+  const filterMaterialsCatalog = (list: Material[], rawQuery: string) => {
+    const trimmed = rawQuery.trim();
+    if (!trimmed) return list.slice(0, 150);
+
+    const normQ = normalizeStr(trimmed);
+    const stopWords = new Set(['de', 'da', 'do', 'das', 'dos', 'para', 'com', 'em', 'por', 'no', 'na']);
+    const allTokens = normQ.split(/[\s,;/+-]+/).filter(Boolean);
+    const tokens = allTokens.filter(t => !stopWords.has(t));
+    const searchTokens = tokens.length > 0 ? tokens : allTokens;
+
+    const scored: { mat: Material; score: number }[] = [];
+
+    for (const m of list) {
+      const normName = normalizeStr(m.name || '');
+      const normCode = normalizeStr(m.code || '');
+      const normSyn = normalizeStr(m.synonyms || '');
+      const normCat = normalizeStr(m.category || '');
+      const normDesc = normalizeStr(m.description || '');
+      const normBrand = normalizeStr(m.brand || '');
+      const fullText = `${normCode} ${normName} ${normSyn} ${normCat} ${normDesc} ${normBrand}`;
+
+      // Todos os tokens digitados devem constar em algum campo do material (em qualquer ordem)
+      const matchesAll = searchTokens.every(tok => fullText.includes(tok));
+      if (!matchesAll) continue;
+
+      let score = 10;
+      if (normCode === normQ || normName === normQ) score += 100;
+      else if (normName.startsWith(normQ) || normCode.startsWith(normQ)) score += 60;
+      else if (normName.includes(normQ)) score += 40;
+      else if (normSyn.includes(normQ)) score += 30;
+      if (searchTokens.every(tok => normName.includes(tok))) score += 20;
+
+      scored.push({ mat: m, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score || a.mat.name.localeCompare(b.mat.name));
+    return scored.slice(0, 150).map(s => s.mat);
+  };
+
   const filteredCatalogForExtra = useMemo(() => {
-    if (!extraSearch.trim()) return materials.slice(0, 100);
-    const q = extraSearch.toLowerCase();
-    return materials.filter(m => m.name.toLowerCase().includes(q) || (m.code && m.code.toLowerCase().includes(q))).slice(0, 100);
+    return filterMaterialsCatalog(materials, extraSearch);
   }, [materials, extraSearch]);
 
   const filteredCatalogForReplace = useMemo(() => {
-    if (!replaceSearch.trim()) return materials.slice(0, 100);
-    const q = replaceSearch.toLowerCase();
-    return materials.filter(m => m.name.toLowerCase().includes(q) || (m.code && m.code.toLowerCase().includes(q))).slice(0, 100);
+    return filterMaterialsCatalog(materials, replaceSearch);
   }, [materials, replaceSearch]);
 
   const filteredCatalogForCustom = useMemo(() => {
-    if (!customMaterialSearch.trim()) return materials.slice(0, 100);
-    const q = customMaterialSearch.toLowerCase();
-    return materials.filter(m => m.name.toLowerCase().includes(q) || (m.code && m.code.toLowerCase().includes(q))).slice(0, 100);
+    return filterMaterialsCatalog(materials, customMaterialSearch);
   }, [materials, customMaterialSearch]);
 
   const selectedCustomMat = materials.find(m => m.id === Number(customMaterialId));
@@ -679,11 +712,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     try {
       if (requestMode === 'batch') {
         const itemsToSubmit = batchItemsWithMetrics
-          .filter(it => it.isSelected && it.currentRequestedQty > 0 && (it.material_id || it.isCustom))
+          .filter(it => it.isSelected && it.currentRequestedQty > 0)
           .map(it => ({
             materialId: it.material_id || null,
             quantity: it.currentRequestedQty,
-            isCustom: Boolean(it.isCustom),
+            isCustom: Boolean(it.isCustom || !it.material_id),
             customName: it.customName || it.material_name,
             unit: it.unit || 'un'
           }));
@@ -1167,28 +1200,38 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
                         <div className="flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4 text-emerald-400" />
-                          <span>Adicionar Material Extra (Não Previsto no Orçamento Inicial)</span>
+                          <span>Adicionar Material Extra (Da Base ou Fora da Base)</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-normal">Base de {materials.length} Materiais SABRAR</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Base Oficial: {materials.length} Materiais com Foto</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                        <div className="sm:col-span-4">
+                        <div className="sm:col-span-5 relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                           <input
                             type="text"
                             value={extraSearch}
                             onChange={(e) => setExtraSearch(e.target.value)}
-                            placeholder="Pesquisar material por nome..."
-                            className="w-full text-xs p-2 rounded-xl bg-dark-900 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                            placeholder="Pesquisar na base ou digite o nome do material..."
+                            className="w-full text-xs pl-8 pr-7 py-2 rounded-xl bg-dark-900 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                           />
+                          {extraSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setExtraSearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
-                        <div className="sm:col-span-5">
+                        <div className="sm:col-span-4">
                           <select
                             value={extraMaterialId}
                             onChange={(e) => setExtraMaterialId(e.target.value ? Number(e.target.value) : '')}
                             className="w-full text-xs p-2 rounded-xl bg-dark-900 border border-dark-700 text-white focus:outline-none focus:border-emerald-500"
                           >
-                            <option value="">Selecione o material da base ({filteredCatalogForExtra.length})...</option>
+                            <option value="">Selecione da base ({filteredCatalogForExtra.length})...</option>
                             {filteredCatalogForExtra.map((m) => {
                               const disp = Math.max(0, m.stock_physical - m.stock_reserved);
                               return (
@@ -1210,7 +1253,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             className="w-full text-xs font-bold p-2 rounded-xl bg-dark-900 border border-dark-700 text-white text-right focus:outline-none focus:border-emerald-500"
                           />
                           <span className="text-[11px] text-slate-400 w-8 truncate">
-                            {selectedExtraMat?.unit || 'un'}
+                            {selectedExtraMat?.unit || extraCustomUnit || 'un'}
                           </span>
                         </div>
                         <div className="sm:col-span-1">
@@ -1219,58 +1262,88 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             onClick={handleAddExtraBudgetItem}
                             disabled={!extraMaterialId || Number(extraQuantity) <= 0}
                             className="w-full p-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-sm"
-                            title="Incluir na lista de materiais"
+                            title="Incluir material da base na lista"
                           >
                             <Plus className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
 
-                      {/* Notificação / Ação quando busca não encontra na base */}
-                      {filteredCatalogForExtra.length === 0 && extraSearch.trim().length > 0 && (
-                        isEmilyOrAdmin ? (
-                          <div className="p-3 bg-purple-950/70 border border-purple-500/50 rounded-xl space-y-2 text-xs">
-                            <div className="flex items-center gap-2 text-purple-300 font-bold">
-                              <Sparkles className="w-4 h-4 text-purple-400" />
-                              <span>Material não cadastrado na base</span>
-                            </div>
-                            <p className="text-[11px] text-slate-300">
-                              Como usuário autorizado de Compras ({currentUser?.name || 'Emily Bueno'}), você pode solicitar <strong>"{extraSearch}"</strong> como material avulso fora da base:
-                            </p>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-slate-400">Unidade:</span>
-                                <input
-                                  type="text"
-                                  value={extraCustomUnit}
-                                  onChange={(e) => setExtraCustomUnit(e.target.value)}
-                                  placeholder="un, m, kg..."
-                                  className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleAddCustomUncatalogedExtra(extraSearch, Number(extraQuantity) || 1, extraCustomUnit || 'un')}
-                                disabled={Number(extraQuantity) <= 0}
-                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                      {/* Resultados interativos da busca flexível */}
+                      {extraSearch.trim().length > 0 && filteredCatalogForExtra.length > 0 && (
+                        <div className="bg-dark-900 border border-dark-700 rounded-xl max-h-48 overflow-y-auto divide-y divide-dark-800">
+                          <div className="px-3 py-1.5 bg-dark-850 text-[10px] font-bold text-slate-400 flex justify-between">
+                            <span>{filteredCatalogForExtra.length} opções encontradas na base (clique para selecionar)</span>
+                            <span>Estoque Disponível</span>
+                          </div>
+                          {filteredCatalogForExtra.slice(0, 25).map((m) => {
+                            const disp = Math.max(0, m.stock_physical - m.stock_reserved);
+                            const isSelected = Number(extraMaterialId) === m.id;
+                            return (
+                              <div
+                                key={m.id}
+                                onClick={() => setExtraMaterialId(m.id)}
+                                className={`px-3 py-2 flex items-center justify-between gap-2 cursor-pointer text-xs transition-colors ${
+                                  isSelected ? 'bg-emerald-950/70 text-emerald-200' : 'hover:bg-dark-800 text-slate-200'
+                                }`}
                               >
-                                <Plus className="w-3.5 h-3.5 !text-white" />
-                                <span className="!text-white">Adicionar "{extraSearch.toUpperCase()}" Fora da Base</span>
-                              </button>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {m.image_url && (
+                                    <img src={m.image_url} alt="" className="w-7 h-7 rounded bg-dark-950 object-contain p-0.5 border border-dark-700 shrink-0" />
+                                  )}
+                                  <div className="truncate">
+                                    <span className="font-mono text-[10px] text-emerald-400 mr-1.5">{m.code}</span>
+                                    <span className="font-bold">{m.name}</span>
+                                    <span className="text-[10px] text-slate-400 ml-1">({m.unit})</span>
+                                  </div>
+                                </div>
+                                <span className={`text-[10px] font-bold shrink-0 ${disp > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                  Disp: {disp} {m.unit}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Opção para TODOS os usuários solicitarem material fora da base escrevendo o nome à sua maneira */}
+                      {extraSearch.trim().length > 0 && (
+                        <div className="p-3 bg-purple-950/60 border border-purple-500/50 rounded-xl space-y-2 text-xs">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 text-purple-300 font-bold">
+                              <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                              <span>
+                                {filteredCatalogForExtra.length === 0
+                                  ? `Nenhum item na base com "${extraSearch}". Solicitar fora da base:`
+                                  : `Não é nenhum dos itens acima? Solicitar "${extraSearch}" fora da base:`}
+                              </span>
                             </div>
+                            <span className="text-[10px] text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-600/40 font-semibold">
+                              Sujeito à aprovação (Admins, Sabrina ou Emily)
+                            </span>
                           </div>
-                        ) : (
-                          <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs space-y-1">
-                            <div className="flex items-center gap-2 text-amber-300 font-bold">
-                              <AlertTriangle className="w-4 h-4 text-amber-400" />
-                              <span>Nenhum material encontrado com "{extraSearch}"</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-slate-300">Unidade:</span>
+                              <input
+                                type="text"
+                                value={extraCustomUnit}
+                                onChange={(e) => setExtraCustomUnit(e.target.value)}
+                                placeholder="un, m, kg..."
+                                className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white font-bold text-center"
+                              />
                             </div>
-                            <p className="text-[11px] text-slate-400">
-                              A Engenharia pode solicitar apenas materiais cadastrados no catálogo.
-                              A inclusão de itens fora da base é restrita exclusivamente ao setor de Compras (Emily Bueno).
-                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleAddCustomUncatalogedExtra(extraSearch, Number(extraQuantity) || 1, extraCustomUnit || 'un')}
+                              disabled={Number(extraQuantity) <= 0}
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/30 active:scale-95"
+                            >
+                              <Plus className="w-3.5 h-3.5 !text-white" />
+                              <span className="!text-white">Solicitar "{extraSearch.toUpperCase()}" (Fora da Base)</span>
+                            </button>
                           </div>
-                        )
+                        </div>
                       )}
 
                       {selectedExtraMat && (
@@ -1371,7 +1444,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
-                                  {it.isExtra && (
+                                  {it.isCustom && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                                      <Sparkles className="w-3 h-3 text-purple-400" /> Fora da Base
+                                    </span>
+                                  )}
+                                  {it.isExtra && !it.isCustom && (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                                       <Sparkles className="w-3 h-3 text-emerald-400" /> Extra Engenharia
                                     </span>
@@ -1383,11 +1461,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   )}
                                 </div>
                                 <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-1 flex-wrap">
-                                  <span className="font-mono text-slate-300">{it.material_code || 'S/ Código'}</span>
+                                  <span className="font-mono text-slate-300">{it.material_code || 'FORA-BASE'}</span>
                                   <span>• Orçado: <strong className="text-slate-200">{it.budgetQuantity} {it.unit}</strong></span>
                                   <span>• Já Solicitado: <strong className="text-slate-300">{it.previouslyRequested} {it.unit}</strong></span>
                                   <span>• Saldo Disponível: <strong className={it.remainingQuota > 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold'}>{it.remainingQuota} {it.unit}</strong></span>
-                                  {it.remainingQuota <= 0 && (
+                                  {it.remainingQuota <= 0 && !it.isCustom && (
                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-dark-750 text-slate-300">
                                       Cota 100% consumida
                                     </span>
@@ -1395,7 +1473,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                   {it.isOverBudget ? (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1">
                                       <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                      Excede cota em +{it.extraQuantity} {it.unit} (Aprovação Admin)
+                                      {it.isCustom ? 'Fora da Base (Aprovação Admin/Sabrina/Emily)' : `Excede cota em +${it.extraQuantity} ${it.unit} (Aprovação)`}
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
@@ -1481,22 +1559,33 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-white flex items-center gap-1.5">
                     <Plus className="w-4 h-4 text-sabrar-400" />
-                    Selecionar Material da Base para a Lista Avulsa
+                    Buscar Material na Base ou Solicitar Fora da Base
                   </span>
-                  <span className="text-[10px] text-slate-400">{materials.length} materiais cadastrados</span>
+                  <span className="text-[10px] text-slate-400">{materials.length} materiais oficiais na base</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                  <div className="sm:col-span-4">
+                  <div className="sm:col-span-5 relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={customMaterialSearch}
                       onChange={(e) => setCustomMaterialSearch(e.target.value)}
-                      placeholder="Pesquisar material por nome ou código..."
-                      className="w-full text-xs p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500"
+                      placeholder="Digite qualquer palavra, sinônimo ou código (ex: tubo cobre 3/8)..."
+                      className="w-full text-xs pl-8 pr-7 py-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500"
                     />
+                    {customMaterialSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomMaterialSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                        title="Limpar busca"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className="sm:col-span-5">
+                  <div className="sm:col-span-4">
                     <select
                       value={customMaterialId}
                       onChange={(e) => setCustomMaterialId(e.target.value ? Number(e.target.value) : '')}
@@ -1524,7 +1613,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       className="w-full text-xs font-bold p-2.5 rounded-xl bg-dark-900 border border-dark-700 text-white text-right focus:outline-none focus:border-sabrar-500"
                     />
                     <span className="text-[11px] text-slate-400 w-8 truncate">
-                      {selectedCustomMat?.unit || 'un'}
+                      {selectedCustomMat?.unit || customUncatalogedUnit || 'un'}
                     </span>
                   </div>
                   <div className="sm:col-span-1">
@@ -1533,58 +1622,112 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       onClick={handleAddCustomItem}
                       disabled={!customMaterialId || Number(customQuantity) <= 0}
                       className="w-full p-2.5 bg-sabrar-600 hover:bg-sabrar-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-md shadow-sabrar-600/20 active:scale-95"
-                      title="Adicionar material à lista"
+                      title="Adicionar material selecionado à lista"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                {/* Notificação / Ação quando busca não encontra na base */}
-                {filteredCatalogForCustom.length === 0 && customMaterialSearch.trim().length > 0 && (
-                  isEmilyOrAdmin ? (
-                    <div className="p-3 bg-purple-950/70 border border-purple-500/50 rounded-xl space-y-2 text-xs">
-                      <div className="flex items-center gap-2 text-purple-300 font-bold">
-                        <Sparkles className="w-4 h-4 text-purple-400" />
-                        <span>Material não cadastrado no catálogo</span>
-                      </div>
-                      <p className="text-[11px] text-slate-300">
-                        Como usuário autorizado de Compras ({currentUser?.name || 'Emily Bueno'}), você pode solicitar <strong>"{customMaterialSearch}"</strong> como material avulso fora da base:
-                      </p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[11px] text-slate-400">Unidade:</span>
-                          <input
-                            type="text"
-                            value={customUncatalogedUnit}
-                            onChange={(e) => setCustomUncatalogedUnit(e.target.value)}
-                            placeholder="un, m, kg..."
-                            className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleAddUncatalogedCustomItem(customMaterialSearch, Number(customQuantity) || 1, customUncatalogedUnit || 'un')}
-                          disabled={Number(customQuantity) <= 0}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-purple-600/30"
+                {/* Lista interativa de resultados da busca flexível (clicar seleciona na hora) */}
+                {customMaterialSearch.trim().length > 0 && filteredCatalogForCustom.length > 0 && (
+                  <div className="bg-dark-900 border border-dark-700 rounded-2xl max-h-56 overflow-y-auto divide-y divide-dark-800 shadow-inner">
+                    <div className="px-3 py-1.5 bg-dark-850 text-[10px] font-bold text-slate-400 flex items-center justify-between">
+                      <span>{filteredCatalogForCustom.length} material(is) encontrado(s) na base oficial — clique para selecionar</span>
+                      <span>Estoque Disponível</span>
+                    </div>
+                    {filteredCatalogForCustom.slice(0, 30).map((m) => {
+                      const disp = Math.max(0, m.stock_physical - m.stock_reserved);
+                      const isSelected = Number(customMaterialId) === m.id;
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => setCustomMaterialId(m.id)}
+                          className={`p-2.5 flex items-center justify-between gap-3 cursor-pointer text-xs transition-colors ${
+                            isSelected ? 'bg-sabrar-950/80 border-l-4 border-sabrar-500 text-white' : 'hover:bg-dark-800 text-slate-200'
+                          }`}
                         >
-                          <Plus className="w-3.5 h-3.5 !text-white" />
-                          <span className="!text-white">Adicionar "{customMaterialSearch.toUpperCase()}" Fora da Base</span>
-                        </button>
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {m.image_url ? (
+                              <img src={m.image_url} alt="" className="w-8 h-8 rounded-lg bg-dark-950 object-contain p-0.5 border border-dark-700 shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-dark-800 border border-dark-700 flex items-center justify-center shrink-0">
+                                <Package className="w-4 h-4 text-slate-500" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono text-[10px] font-bold text-sabrar-400 bg-dark-800 px-1.5 py-0.2 rounded border border-dark-700">
+                                  {m.code}
+                                </span>
+                                <span className="font-bold text-white truncate">{m.name}</span>
+                                <span className="text-[10px] text-emerald-400 font-semibold">({m.unit})</span>
+                              </div>
+                              {m.synonyms && (
+                                <div className="text-[10px] text-slate-400 italic truncate">
+                                  Sinônimos: {m.synonyms}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`text-[10px] font-bold ${disp > 0 ? 'text-sabrar-400' : 'text-slate-500'}`}>
+                              Disp: {disp} {m.unit}
+                            </span>
+                            {isSelected && (
+                              <span className="text-[10px] bg-sabrar-600 text-white px-2 py-0.5 rounded-lg font-bold">
+                                Selecionado
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Opção liberada para TODOS solicitarem material fora da base escrevendo o nome à sua maneira */}
+                {customMaterialSearch.trim().length > 0 && (
+                  <div className="p-3 bg-purple-950/60 border border-purple-500/50 rounded-xl space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 text-purple-300 font-bold">
+                        <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                        <span>
+                          {filteredCatalogForCustom.length === 0
+                            ? `Material não consta na base oficial. Solicitar "${customMaterialSearch}" fora da base:`
+                            : `Não encontrou o material exato na lista acima? Solicite "${customMaterialSearch}" fora da base:`}
+                        </span>
                       </div>
+                      <span className="text-[10px] text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-600/40 font-semibold">
+                        Aprovação: Admins, Sabrina ou Emily
+                      </span>
                     </div>
-                  ) : (
-                    <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs space-y-1">
-                      <div className="flex items-center gap-2 text-amber-300 font-bold">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <span>Nenhum material encontrado com "{customMaterialSearch}"</span>
+                    <p className="text-[11px] text-slate-300">
+                      Você pode solicitar este material escrevendo o nome à sua maneira. Ele não alterará a base oficial e será enviado para aprovação dos administradores, Sabrina ou Emily:
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-300">Unidade:</span>
+                        <input
+                          type="text"
+                          value={customUncatalogedUnit}
+                          onChange={(e) => setCustomUncatalogedUnit(e.target.value)}
+                          placeholder="un, m, kg..."
+                          className="w-20 p-1.5 rounded-lg bg-dark-900 border border-dark-700 text-xs text-white font-bold text-center"
+                        />
                       </div>
-                      <p className="text-[11px] text-slate-400">
-                        A Engenharia pode solicitar apenas materiais previamente cadastrados no catálogo da Sabrar.
-                        A solicitação de materiais fora da base é restrita exclusivamente ao setor de Compras (Emily Bueno).
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleAddUncatalogedCustomItem(customMaterialSearch, Number(customQuantity) || 1, customUncatalogedUnit || 'un')}
+                        disabled={Number(customQuantity) <= 0}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 !text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/30 active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5 !text-white" />
+                        <span className="!text-white">Adicionar "{customMaterialSearch.toUpperCase()}" Fora da Base</span>
+                      </button>
                     </div>
-                  )
+                  </div>
                 )}
 
                 {selectedCustomMat && (
@@ -1811,16 +1954,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </div>
           )}
 
-          {/* Banner de Aviso de Aprovação de Administrador */}
+          {/* Banner de Aviso de Aprovação */}
           {((requestMode === 'batch' && selectedBatchStats.requiresAdminApproval) ||
             (requestMode === 'custom' && selectedCustomStats.requiresAdminApproval)) && (
             <div className="p-3.5 bg-amber-950/40 border border-amber-500/50 rounded-2xl flex items-start gap-3 text-amber-200 text-xs">
               <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
-                <div className="font-bold text-amber-300">Solicitação Contém Materiais Extras / Acima da Cota Orçada</div>
+                <div className="font-bold text-amber-300">Solicitação Contém Materiais Fora da Base / Acima da Cota Orçada</div>
                 <p className="text-amber-200/80 text-[11px] mt-0.5">
-                  Esta solicitação ultrapassa as quantidades ou inclui itens fora do orçamento aprovado da obra.
-                  Conforme as diretrizes da Sabrar Engenharia, ela será encaminhada para <strong>análise e aprovação de um Administrador</strong> antes de liberar a separação e compras.
+                  Esta solicitação inclui materiais fora da base oficial ou ultrapassa as quantidades do orçamento da obra.
+                  Ela será encaminhada para <strong>aprovação dos Administradores, Sabrina ou Emily</strong> antes de liberar a separação e compras.
                 </p>
               </div>
             </div>
@@ -1891,7 +2034,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     {loading
                       ? 'Processando...'
                       : isApprovalRequired
-                      ? `Enviar para Aprovação do Administrador (${count} materiais)`
+                      ? `Enviar para Aprovação (${count} materiais)`
                       : `Emitir Solicitação (${count} materiais)`}
                   </span>
                 </button>

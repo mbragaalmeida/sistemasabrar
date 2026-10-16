@@ -28,7 +28,7 @@ import { UsersPage } from './pages/UsersPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { api } from './services/api';
-import { isPageAllowed } from './utils/permissions';
+import { isPageAllowed, getDefaultPageForRole } from './utils/permissions';
 
 const AppContent: React.FC = () => {
   const { currentUser, isSimulating, stopSimulation } = useAuth();
@@ -37,7 +37,7 @@ const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [currentPage, setCurrentPage] = useState<string>(() => getDefaultPageForRole(currentUser?.role));
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
 
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
@@ -51,13 +51,13 @@ const AppContent: React.FC = () => {
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
-  // Redireciona para o Dashboard caso o usuário troque para um perfil sem permissão na página aberta
+  // Redireciona para a página padrão do perfil caso o usuário troque para um perfil sem permissão na página aberta
   useEffect(() => {
     const role = currentUser?.role || 'admin';
     if (!isPageAllowed(currentPage, role)) {
-      setCurrentPage('dashboard');
+      setCurrentPage(getDefaultPageForRole(role));
     }
-  }, [currentUser]);
+  }, [currentUser, currentPage]);
 
   // Carrega contagem de notificações não lidas
   useEffect(() => {
@@ -77,7 +77,7 @@ const AppContent: React.FC = () => {
   const handleNavigate = (page: string, id?: number) => {
     const role = currentUser?.role || 'admin';
     if (!isPageAllowed(page, role)) {
-      setCurrentPage('dashboard');
+      setCurrentPage(getDefaultPageForRole(role));
       return;
     }
 

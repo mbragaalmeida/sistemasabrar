@@ -141,9 +141,12 @@ projectsRouter.get('/:id', async (req, res) => {
 
     const enrichedRequests = await Promise.all(requests.map(async r => {
       const items = await db.prepare(`
-        SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit
+        SELECT mri.*,
+               COALESCE(m.name, mri.custom_name, 'Material Fora da Base') as material_name,
+               COALESCE(m.code, 'FORA-BASE') as material_code,
+               COALESCE(m.unit, mri.custom_unit, 'un') as material_unit
         FROM material_request_items mri
-        JOIN materials m ON mri.material_id = m.id
+        LEFT JOIN materials m ON mri.material_id = m.id
         WHERE mri.request_id = ?
       `).all(r.id);
       return { ...r, items };

@@ -8,10 +8,14 @@ export const requestsRouter = express.Router();
 requestsRouter.get('/', async (req, res) => {
   try {
     const { project_id, status, priority } = req.query;
+    const userRole = req.headers['x-user-role'] || req.query.role;
+    const userId = req.headers['x-user-id'] || req.query.user_id;
+
     let query = `
       SELECT mr.*, 
              COALESCE(p.name, 'Solicitações Internas - SABRAR') as project_name, 
              COALESCE(p.code, 'SAB-INTERNO') as project_code, 
+             p.client as client_name,
              p.responsible_engineer,
              u.name as requested_by_name, u_admin.name as admin_approved_by_name
       FROM material_requests mr
@@ -42,19 +46,50 @@ requestsRouter.get('/', async (req, res) => {
 
     query += ' ORDER BY mr.id DESC';
 
-    const requests = await db.prepare(query).all(...params);
+    let requests = await db.prepare(query).all(...params);
 
-    const enriched = await Promise.all(requests.map(async r => {
-      const items = await db.prepare(`
-        SELECT mri.*, m.name as material_name, m.code as material_code, m.unit as material_unit,
-               m.stock_physical, m.stock_reserved, m.image_url
-        FROM material_request_items mri
-        JOIN materials m ON mri.material_id = m.id
-        WHERE mri.request_id = ?
-        ORDER BY mri.id ASC
-      `).all(r.id);
+    // Item 3: Aparecer apenas solicitações de materiais das obras de cada engenheiro (Admins, Emily e Sabrina veem todas)
+    if (userRole === 'engenharia' && userId) {
+      const engUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(Number(userId));
+      const assignedRows = await db.prepare('SELECT project_id FROM project_engineers WHERE user_id = ?').all(Number(userId));
+      const assignedProjectIds = new Set(assignedRows.map(r => Number(r.project_id)));
+      const normUser = (engUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
 
-      return { ...r, items };
+      requests = requests.filter(r => {
+        if (assignedProjectIds.has(Number(r.project_id))) return true;
+        if (r.project_code === 'SAB-INTERNO' && Number(r.requested_by) === Number(userId)) return true;
+        if (normUser && r.responsible_engineer) {
+          const normProj = String(r.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          if (normProj.includes(normUser) || normUser.includes(normProj)) return true;
+        }
+        return false;
+      });
+    }
+
+    const allItems = await db.prepare(`
+      SELECT mri.*,
+             COALESCE(m.name, mri.custom_name, 'Material Fora da Base') as material_name,
+             COALESCE(m.code, 'FORA-BASE') as material_code,
+             COALESCE(m.unit, mri.custom_unit, 'un') as material_unit,
+             COALESCE(m.stock_physical, 0) as stock_physical,
+             COALESCE(m.stock_reserved, 0) as stock_reserved,
+             m.image_url
+      FROM material_request_items mri
+      LEFT JOIN materials m ON mri.material_id = m.id
+      ORDER BY mri.id ASC
+    `).all();
+
+    const itemsByRequestId = new Map();
+    for (const item of allItems) {
+      if (!itemsByRequestId.has(item.request_id)) {
+        itemsByRequestId.set(item.request_id, []);
+      }
+      itemsByRequestId.get(item.request_id).push(item);
+    }
+
+    const enriched = requests.map(r => ({
+      ...r,
+      items: itemsByRequestId.get(r.id) || []
     }));
 
     res.json(enriched);
@@ -426,11 +461,11 @@ requestsRouter.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Solicitação não encontrada' });
     }
 
-    // 1. Estorna quantidades reservadas no estoque de materiais, se ainda não tiverem sido entregues
-    if (request.status !== 'Entregue') {
+    // 1. Estorna quantidades reservadas no estoque de materiais, se ainda não tiverem sido entregues/separadas
+    if (request.status !== 'Entregue' && request.status !== 'Separado') {
       const items = await db.prepare('SELECT material_id, quantity_reserved FROM material_request_items WHERE request_id = ?').all(requestId);
       for (const item of items) {
-        if (item.quantity_reserved && item.quantity_reserved > 0) {
+        if (item.material_id && item.quantity_reserved && item.quantity_reserved > 0) {
           await db.prepare(`
             UPDATE materials 
             SET stock_reserved = GREATEST(0, stock_reserved - ?), updated_at = CURRENT_TIMESTAMP
@@ -440,7 +475,8 @@ requestsRouter.delete('/:id', async (req, res) => {
       }
     }
 
-    // 2. Remove substituições vinculadas à solicitação
+    // 2. Desvincula compras associadas aos itens desta solicitação e remove substituições
+    await db.prepare('UPDATE purchases SET request_item_id = NULL WHERE request_item_id IN (SELECT id FROM material_request_items WHERE request_id = ?)').run(requestId);
     await db.prepare('DELETE FROM material_substitutions WHERE request_id = ?').run(requestId);
 
     // 3. Remove os itens da solicitação

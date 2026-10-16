@@ -38,7 +38,7 @@ import { AssignEngineersModal } from '../components/modals/AssignEngineersModal'
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
 import { LinkMaterialModal } from '../components/modals/LinkMaterialModal';
-import { canDeleteProject } from '../utils/permissions';
+import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 
 interface ProjectDetailPageProps {
   projectId: number;
@@ -983,38 +983,49 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           {/* Resumo Financeiro & Status */}
           <div className="space-y-4">
             <div className="bg-dark-900 border border-dark-750 p-5 rounded-3xl shadow-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-bold uppercase tracking-wider text-sabrar-400">Total Geral da Obra</div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-400 border border-sabrar-500/40">
-                  {budget?.status || project.status}
-                </span>
-              </div>
-              <div className="text-3xl font-black text-white">
-                R$ {(project.total_budget_final || totalBudgetCalculated).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </div>
-              <div className="text-xs text-slate-300 pt-3 border-t border-dark-750 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Materiais ({editableMaterials.length} itens):</span>
-                  <span className="font-semibold text-white">
-                    R$ {(project.total_budget_materials || totalMaterials).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Serviços & Mão de Obra:</span>
-                  <span className="font-semibold text-white">
-                    R$ {(project.total_budget_services || totalServices).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
+              {canUserViewPrices(currentUser) ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold uppercase tracking-wider text-sabrar-400">Total Geral da Obra</div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-400 border border-sabrar-500/40">
+                      {budget?.status || project.status}
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-white">
+                    R$ {(project.total_budget_final || totalBudgetCalculated).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-slate-300 pt-3 border-t border-dark-750 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Materiais ({editableMaterials.length} itens):</span>
+                      <span className="font-semibold text-white">
+                        R$ {(project.total_budget_materials || totalMaterials).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Serviços & Mão de Obra:</span>
+                      <span className="font-semibold text-white">
+                        R$ {(project.total_budget_services || totalServices).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Botão rápido para ir à aba de Orçamento */}
-              <button
-                onClick={() => setActiveTab('orcamento')}
-                className="w-full py-2.5 rounded-2xl bg-dark-850 hover:bg-dark-800 text-sabrar-300 border border-sabrar-500/30 text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95"
-              >
-                <Calculator className="w-4 h-4 text-sabrar-400" />
-                <span>Ver / Editar Orçamento Completo ({editableMaterials.length})</span>
-              </button>
+                  {/* Botão rápido para ir à aba de Orçamento */}
+                  <button
+                    onClick={() => setActiveTab('orcamento')}
+                    className="w-full py-2.5 rounded-2xl bg-dark-850 hover:bg-dark-800 text-sabrar-300 border border-sabrar-500/30 text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Calculator className="w-4 h-4 text-sabrar-400" />
+                    <span>Ver / Editar Orçamento Completo ({editableMaterials.length})</span>
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-sabrar-400">Status da Obra</div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-400 border border-sabrar-500/40">
+                    {budget?.status || project.status}
+                  </span>
+                </div>
+              )}
 
               {isObraLiberada ? (
                 <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 space-y-2">
@@ -1562,7 +1573,17 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                           />
                         </td>
-                        <td className="p-3 text-center text-slate-400">{s.unit}</td>
+                        <td className="p-3 text-center">
+                          <input
+                            type="text"
+                            value={s.unit || 'vb'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditableServices(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
+                            }}
+                            className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-amber-500 p-1 rounded-lg outline-none"
+                          />
+                        </td>
                         <td className="p-3 text-right">
                           <input
                             type="number"
@@ -1694,7 +1715,17 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
                             />
                           </td>
-                          <td className="p-3 text-center text-slate-400">{eq.unit || 'un'}</td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="text"
+                              value={eq.unit || 'un'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableEquipment(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
+                              }}
+                              className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-cyan-500 p-1 rounded-lg outline-none"
+                            />
+                          </td>
                           <td className="p-3 text-right">
                             <input
                               type="number"

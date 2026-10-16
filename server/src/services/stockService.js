@@ -139,38 +139,40 @@ export class StockService {
       /emily/i.test(reqUser.name)
     );
 
+    let hasCustomItems = false;
+
     for (const item of items) {
-      let materialId = item.materialId || item.material_id;
-      const isCustom = Boolean(item.isCustom || (!materialId && item.customName));
-      const customName = item.customName ? String(item.customName).trim() : null;
+      let materialId = item.materialId || item.material_id || null;
+      const isCustom = Boolean(item.isCustom || (!materialId && (item.customName || item.materialName)));
+      const customName = (item.customName || item.materialName) ? String(item.customName || item.materialName).trim() : null;
+      const customUnit = item.unit ? String(item.unit).trim() : 'un';
       const qty = Number(item.quantity || item.quantity_requested);
 
       if (qty <= 0) continue;
 
-      // Se for material fora da base (avulso): apenas Emily ou Admin podem solicitar
-      if (isCustom || (!materialId && customName)) {
-        if (!isEmilyOrAdmin) {
-          throw new Error('Apenas Emily (Compras) possui autorização para solicitar materiais que não constam na Base Central de Materiais.');
-        }
+      // Material fora da base: qualquer usuário pode solicitar (Item 9), sem criar registro na tabela oficial materials (Item 8)
+      if (isCustom || !materialId) {
+        if (!customName) continue;
+        materialId = null;
+        hasCustomItems = true;
+        hasExtraItems = true;
 
-        // Cadastra ou reutiliza o material avulso na tabela materials para integridade de chaves estrangeiras
-        let customMat = await db.prepare("SELECT * FROM materials WHERE LOWER(name) = LOWER(?)").get(customName);
-        if (!customMat) {
-          const countRes = await db.prepare("SELECT COUNT(*) as count FROM materials").get();
-          const customCode = `MAT-EXT-${String((countRes?.count || 0) + 1).padStart(5, '0')}`;
-          const insMat = await db.prepare(`
-            INSERT INTO materials (code, name, category, unit, reference_price, status, description, created_at, updated_at)
-            VALUES (?, ?, 'DIVERSOS / AVULSO', ?, 0.00, 'Ativo', 'Material avulso fora da base solicitado por Emily Bueno', NOW(), NOW())
-          `).run(customCode, customName, item.unit || 'und');
-          customMat = { id: insMat.lastInsertRowid, name: customName, unit: item.unit || 'und', stock_physical: 0, stock_reserved: 0 };
-        }
-        materialId = customMat.id;
+        itemsQuotaAnalysis.push({
+          materialId: null,
+          quantity: qty,
+          isExtra: true,
+          budgetQuantity: 0,
+          previouslyRequested: 0,
+          extraQuantity: qty,
+          isCustom: true,
+          customName,
+          customUnit
+        });
+        continue;
       }
 
-      if (!materialId) continue;
-
       if (isInternal) {
-        // Solicitações internas não possuem cota de obra
+        // Solicitações internas de materiais da base não possuem cota de obra
         itemsQuotaAnalysis.push({
           materialId,
           quantity: qty,
@@ -178,8 +180,9 @@ export class StockService {
           budgetQuantity: 0,
           previouslyRequested: 0,
           extraQuantity: 0,
-          isCustom,
-          customName
+          isCustom: false,
+          customName: null,
+          customUnit
         });
         continue;
       }
@@ -190,7 +193,7 @@ export class StockService {
       let previouslyRequested = prevRequestedMap.get(materialId) || 0;
       let extraQuantity = 0;
 
-      if (!budgetItem || isCustom) {
+      if (!budgetItem) {
         // Material não consta no orçamento da obra -> 100% Extra
         isExtra = true;
         budgetQuantity = 0;
@@ -214,14 +217,15 @@ export class StockService {
         budgetQuantity,
         previouslyRequested,
         extraQuantity,
-        isCustom,
-        customName
+        isCustom: false,
+        customName: null,
+        customUnit
       });
     }
 
-    // Se houver itens extras ou acima do limite, a solicitação de obra fica pendente de aprovação (Administrador, Sabrina ou Emily)
-    const requiresAdminApproval = !isInternal && hasExtraItems;
-    const initialStatus = requiresAdminApproval ? 'Aguardando aprovação' : 'Processando';
+    // Se houver itens fora da base (qualquer obra/interno) ou itens extras acima do orçamento da obra, exige aprovação (Admin, Sabrina ou Emily)
+    const requiresAdminApproval = hasCustomItems || (!isInternal && hasExtraItems);
+    const initialStatus = requiresAdminApproval ? 'Aguardando aprovação' : 'Solicitado';
     const initialApprovalStatus = requiresAdminApproval ? 'Pendente' : 'Aprovado';
 
     // Cria a solicitação no banco
@@ -243,27 +247,33 @@ export class StockService {
     const purchasesCreated = [];
 
     for (const analysis of itemsQuotaAnalysis) {
-      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(analysis.materialId);
-      if (!mat) continue;
+      const mat = analysis.materialId
+        ? await db.prepare('SELECT * FROM materials WHERE id = ?').get(analysis.materialId)
+        : null;
 
-      // Se requer aprovação do administrador, NÃO reserva estoque nem cria compras até aprovação
+      if (!mat && !analysis.isCustom) continue;
+
+      const matName = mat ? mat.name : (analysis.customName || 'Material Fora da Base');
+      const matUnit = mat ? mat.unit : (analysis.customUnit || 'un');
+
+      // Se requer aprovação (Admin, Sabrina ou Emily), NÃO reserva estoque nem cria compras até aprovação
       if (requiresAdminApproval) {
         await db.prepare(`
           INSERT INTO material_request_items (
             request_id, material_id, quantity_requested, quantity_reserved, quantity_delivered,
             deficit, is_extra, budget_quantity, previously_requested, extra_quantity,
-            is_custom, custom_name
-          ) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)
+            is_custom, custom_name, custom_unit
+          ) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           requestId, analysis.materialId, analysis.quantity,
           analysis.isExtra, analysis.budgetQuantity, analysis.previouslyRequested, analysis.extraQuantity,
-          Boolean(analysis.isCustom), analysis.customName || null
+          Boolean(analysis.isCustom), analysis.customName || null, matUnit
         );
 
         processedItems.push({
           materialId: analysis.materialId,
-          materialName: mat.name,
-          materialUnit: mat.unit,
+          materialName: matName,
+          materialUnit: matUnit,
           requestedQuantity: analysis.quantity,
           reservedQuantity: 0,
           deficit: 0,
@@ -277,8 +287,8 @@ export class StockService {
         continue;
       }
 
-      // Fluxo normal (dentro do orçamento ou interno): Reserva e Déficit imediatos
-      const available = Math.max(0, mat.stock_physical - mat.stock_reserved);
+      // Fluxo normal (dentro do orçamento ou interno com material da base): Reserva e Déficit imediatos
+      const available = mat ? Math.max(0, mat.stock_physical - mat.stock_reserved) : 0;
       const deficit = Math.max(0, analysis.quantity - available);
       const reservable = Math.min(analysis.quantity, available);
 
@@ -286,17 +296,17 @@ export class StockService {
         INSERT INTO material_request_items (
           request_id, material_id, quantity_requested, quantity_reserved, quantity_delivered,
           deficit, is_extra, budget_quantity, previously_requested, extra_quantity,
-          is_custom, custom_name
-        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+          is_custom, custom_name, custom_unit
+        ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         requestId, analysis.materialId, analysis.quantity, reservable, deficit,
         analysis.isExtra, analysis.budgetQuantity, analysis.previouslyRequested, analysis.extraQuantity,
-        Boolean(analysis.isCustom), analysis.customName || null
+        Boolean(analysis.isCustom), analysis.customName || null, matUnit
       );
 
       const requestItemId = itemResult.lastInsertRowid;
 
-      if (reservable > 0) {
+      if (mat && reservable > 0) {
         await db.prepare(`
           UPDATE materials 
           SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
@@ -309,7 +319,7 @@ export class StockService {
         `).run(
           analysis.materialId, reservable, mat.stock_physical, mat.stock_physical,
           projectId, requestId, userId,
-          `Reserva de ${reservable} ${mat.unit} para obra ${project.name} (${reqCode})`
+          `Reserva de ${reservable} ${matUnit} para obra ${project.name} (${reqCode})`
         );
         totalReservedItems++;
       }
@@ -317,14 +327,16 @@ export class StockService {
       if (deficit > 0) {
         const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
         const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+        const refPrice = mat ? Number(mat.reference_price || 0) : 0;
 
         const purResult = await db.prepare(`
-          INSERT INTO purchases (code, project_id, request_item_id, material_id, quantity, supplier_id, unit_price, total_price, status, priority, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
+          INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
         `).run(
-          purchaseCode, projectId, requestItemId, analysis.materialId, deficit,
-          mat.supplier_id, mat.reference_price,
-          Number((deficit * mat.reference_price).toFixed(2)),
+          purchaseCode, projectId, requestItemId, analysis.materialId,
+          mat ? null : matName, matUnit, deficit,
+          mat ? mat.supplier_id : null, refPrice,
+          Number((deficit * refPrice).toFixed(2)),
           priority === 'Urgente' ? 'Alta' : priority,
           `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${analysis.quantity}, Disponível: ${available}, Comprar: ${deficit}.`
         );
@@ -332,7 +344,7 @@ export class StockService {
         purchasesCreated.push({
           id: purResult.lastInsertRowid,
           code: purchaseCode,
-          materialName: mat.name,
+          materialName: matName,
           deficitQuantity: deficit
         });
         totalDeficitItems++;
@@ -340,8 +352,8 @@ export class StockService {
 
       processedItems.push({
         materialId: analysis.materialId,
-        materialName: mat.name,
-        materialUnit: mat.unit,
+        materialName: matName,
+        materialUnit: matUnit,
         requestedQuantity: analysis.quantity,
         reservedQuantity: reservable,
         deficit,
@@ -352,13 +364,13 @@ export class StockService {
       });
     }
 
-    // Se requereu aprovação do administrador:
+    // Se requereu aprovação (Admin, Sabrina ou Emily):
     if (requiresAdminApproval) {
-      // Dispara notificação urgente para o perfil Administrador Geral
+      // Dispara notificação urgente para o perfil Administrador Geral / Aprovadores
       await db.prepare(`
         INSERT INTO notifications (role_target, title, message, type, link)
-        VALUES ('admin', 'Materiais Extras - Aprovação de Administrador Necessária', ?, 'urgent', '/solicitacoes')
-      `).run(`A obra ${project.name} (${reqCode}) teve uma solicitação contendo materiais adicionais ou acima do orçamento previsto. Aprovação de um administrador é necessária.`);
+        VALUES ('admin', 'Materiais Extras / Fora da Base - Aprovação Necessária', ?, 'urgent', '/solicitacoes')
+      `).run(`A obra ${project.name} (${reqCode}) teve uma solicitação contendo materiais fora da base ou acima do orçamento previsto. Aprovação necessária.`);
 
       // Log de auditoria
       await db.prepare(`
@@ -366,7 +378,7 @@ export class StockService {
         VALUES (?, 'SOLICITACAO_EXTRA_PENDENTE', 'SOLICITACAO', ?, ?, null, 'Aguardando aprovação', ?)
       `).run(
         userId, requestId, projectId,
-        `Solicitação ${reqCode} com materiais adicionais / acima do orçamento gerada para a obra ${project.name}. Aguarda aprovação de um Administrador.`
+        `Solicitação ${reqCode} com materiais fora da base / acima do orçamento gerada para a obra ${project.name}. Aguarda aprovação (Admin, Sabrina ou Emily).`
       );
 
       const firstProcessed = processedItems[0] || {};
@@ -386,19 +398,12 @@ export class StockService {
         requestedQuantity: firstProcessed.requestedQuantity,
         reservedQuantity: 0,
         deficit: 0,
-        message: 'Solicitação registrada. Por conter materiais extras ou acima da cota orçada, aguarda aprovação de um Administrador.'
+        message: 'Solicitação registrada. Por conter materiais fora da base ou acima da cota orçada, aguarda aprovação (Admin, Sabrina ou Emily).'
       };
     }
 
-    // Define status final da solicitação (quando aprovada / dentro do orçamento)
-    let requestStatus = 'Reservado';
-    if (totalDeficitItems > 0 && totalReservedItems === 0) {
-      requestStatus = 'Solicitado';
-    } else if (totalDeficitItems > 0 && totalReservedItems > 0) {
-      requestStatus = 'Parcialmente Atendido';
-    } else {
-      requestStatus = 'Reservado';
-    }
+    // Define status inicial padrão da solicitação: 'Solicitado' (Item 4)
+    const requestStatus = 'Solicitado';
 
     await db.prepare('UPDATE material_requests SET status = ? WHERE id = ?').run(requestStatus, requestId);
 
@@ -448,7 +453,7 @@ export class StockService {
   }
 
   /**
-   * Aprovação de solicitação com materiais extras por um Administrador (Requisito 2 e 4).
+   * Aprovação de solicitação com materiais extras / fora da base por um Administrador, Sabrina ou Emily.
    * Libera a reserva no estoque físico e gera pedidos de compra para eventuais déficits.
    */
   static async approveExtraRequest(requestId, adminUserId, notes = '') {
@@ -467,11 +472,15 @@ export class StockService {
     const purchasesCreated = [];
 
     for (const it of items) {
-      const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(it.material_id);
-      if (!mat) continue;
+      const mat = it.material_id
+        ? await db.prepare('SELECT * FROM materials WHERE id = ?').get(it.material_id)
+        : null;
+      if (!mat && !it.is_custom && !it.custom_name) continue;
 
+      const matName = mat ? mat.name : (it.custom_name || 'Material Fora da Base');
+      const matUnit = mat ? mat.unit : (it.custom_unit || 'un');
       const qty = Number(it.quantity_requested);
-      const available = Math.max(0, mat.stock_physical - mat.stock_reserved);
+      const available = mat ? Math.max(0, mat.stock_physical - mat.stock_reserved) : 0;
       const deficit = Math.max(0, qty - available);
       const reservable = Math.min(qty, available);
 
@@ -481,7 +490,7 @@ export class StockService {
         WHERE id = ?
       `).run(reservable, deficit, it.id);
 
-      if (reservable > 0) {
+      if (mat && reservable > 0) {
         await db.prepare(`
           UPDATE materials 
           SET stock_reserved = stock_reserved + ?, updated_at = CURRENT_TIMESTAMP 
@@ -494,7 +503,7 @@ export class StockService {
         `).run(
           mat.id, reservable, mat.stock_physical, mat.stock_physical,
           project.id, requestId, adminUserId,
-          `Reserva autorizada pelo Admin (${reservable} ${mat.unit}) para obra ${project.name} (${req.code})`
+          `Reserva autorizada (${reservable} ${matUnit}) para obra ${project.name} (${req.code})`
         );
         totalReserved++;
       }
@@ -502,29 +511,26 @@ export class StockService {
       if (deficit > 0) {
         const nextPurchaseCount = (await db.prepare('SELECT COUNT(*) as count FROM purchases WHERE (is_hidden IS FALSE OR is_hidden IS NULL)').get())?.count + 1 || 1;
         const purchaseCode = `COM-2026-${String(nextPurchaseCount).padStart(4, '0')}`;
+        const refPrice = mat ? Number(mat.reference_price || 0) : 0;
 
         await db.prepare(`
-          INSERT INTO purchases (code, project_id, request_item_id, material_id, quantity, supplier_id, unit_price, total_price, status, priority, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
+          INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
         `).run(
-          purchaseCode, project.id, it.id, mat.id, deficit,
-          mat.supplier_id, mat.reference_price,
-          Number((deficit * mat.reference_price).toFixed(2)),
+          purchaseCode, project.id, it.id, mat ? mat.id : null,
+          mat ? null : matName, matUnit, deficit,
+          mat ? mat.supplier_id : null, refPrice,
+          Number((deficit * refPrice).toFixed(2)),
           req.priority === 'Urgente' ? 'Alta' : req.priority,
-          `Compra automática por déficit em solicitação extra autorizada pelo Admin (${req.code}) para a obra ${project.name}.`
+          `Compra automática por déficit em solicitação autorizada (${req.code}) para a obra ${project.name}.`
         );
 
-        purchasesCreated.push({ code: purchaseCode, materialName: mat.name, deficitQuantity: deficit });
+        purchasesCreated.push({ code: purchaseCode, materialName: matName, deficitQuantity: deficit });
         totalDeficit++;
       }
     }
 
-    let newStatus = 'Reservado';
-    if (totalDeficit > 0 && totalReserved === 0) {
-      newStatus = 'Solicitado';
-    } else if (totalDeficit > 0 && totalReserved > 0) {
-      newStatus = 'Parcialmente Atendido';
-    }
+    const newStatus = 'Solicitado';
 
     const approverUser = await db.prepare('SELECT name FROM users WHERE id = ?').get(adminUserId);
     const approverName = approverUser?.name || 'Administrador';
@@ -612,8 +618,8 @@ export class StockService {
 
   /**
    * Almoxarifado altera status de atendimento:
-   * 'Em separação' -> 'Separado' -> 'Entregue'
-   * Quando 'Entregue': baixa efetivamente todos os itens do estoque físico e do reservado!
+   * 'Solicitado' -> 'Em Separação' -> 'Separado Parcial' / 'Separado'
+   * Quando 'Separado': baixa efetivamente todos os itens do estoque físico e do reservado!
    */
   static async updateRequestStatus(requestId, newStatus, userId, notes = '') {
     const req = await db.prepare('SELECT * FROM material_requests WHERE id = ?').get(requestId);
@@ -624,8 +630,18 @@ export class StockService {
 
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.project_id);
 
-    if (newStatus === 'Entregue' && req.status !== 'Entregue') {
+    if ((newStatus === 'Separado' || newStatus === 'Entregue') && req.status !== 'Separado' && req.status !== 'Entregue') {
       for (const item of items) {
+        if (!item.material_id) {
+          const deliveredQty = item.quantity_reserved > 0 ? item.quantity_reserved : item.quantity_requested;
+          await db.prepare(`
+            UPDATE material_request_items 
+            SET quantity_delivered = ?, quantity_reserved = 0 
+            WHERE id = ?
+          `).run(deliveredQty, item.id);
+          continue;
+        }
+
         const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id);
         if (!mat) continue;
 
@@ -655,24 +671,24 @@ export class StockService {
         `).run(
           mat.id, deliveredQty, prevStock, newStock,
           project.id, requestId, userId,
-          `Retirada física confirmada pelo Almoxarifado para obra ${project.name} (${req.code})`
+          `Separação/saída física confirmada pelo Almoxarifado para obra ${project.name} (${req.code})`
         );
       }
 
       // Registra log de auditoria
       await db.prepare(`
         INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
-        VALUES (?, 'ENTREGA_MATERIAL', 'SOLICITACAO', ?, ?, ?, 'Entregue', ?)
+        VALUES (?, 'ENTREGA_MATERIAL', 'SOLICITACAO', ?, ?, ?, ?, ?)
       `).run(
-        userId, requestId, project.id, req.status,
-        `Almoxarifado entregou ${items.length} material(is) da solicitação ${req.code} para a obra ${project.name}`
+        userId, requestId, project.id, req.status, newStatus,
+        `Almoxarifado marcou como ${newStatus} ${items.length} material(is) da solicitação ${req.code} para a obra ${project.name}`
       );
 
-      // Notifica Engenharia que foi entregue
+      // Notifica Engenharia que foi separado
       await db.prepare(`
         INSERT INTO notifications (user_id, role_target, title, message, type, link)
-        VALUES (?, 'Engenharia', 'Material Entregue no Canteiro', ?, 'success', '/solicitacoes')
-      `).run(req.requested_by, `Solicitação ${req.code} (${items.length} materiais) foi entregue no canteiro da obra ${project.name}.`);
+        VALUES (?, 'Engenharia', 'Material Separado no Almoxarifado', ?, 'success', '/solicitacoes')
+      `).run(req.requested_by, `Solicitação ${req.code} (${items.length} materiais) da obra ${project.name} foi marcada como ${newStatus}.`);
     }
 
     await db.prepare(`
@@ -799,16 +815,22 @@ export class StockService {
       throw new Error('Este pedido já foi marcado como recebido');
     }
 
-    const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(purchase.material_id);
-    const prevStock = mat.stock_physical;
-    const newStock = prevStock + purchase.quantity;
+    const mat = purchase.material_id
+      ? await db.prepare('SELECT * FROM materials WHERE id = ?').get(purchase.material_id)
+      : null;
+    const matName = mat ? mat.name : (purchase.custom_name || 'Material Fora da Base');
+    const matUnit = mat ? mat.unit : (purchase.custom_unit || 'un');
+    const prevStock = mat ? Number(mat.stock_physical || 0) : 0;
+    const newStock = prevStock + Number(purchase.quantity || 0);
 
-    // Atualiza estoque físico
-    await db.prepare(`
-      UPDATE materials 
-      SET stock_physical = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ?
-    `).run(newStock, mat.id);
+    // Atualiza estoque físico se for material da base oficial
+    if (mat) {
+      await db.prepare(`
+        UPDATE materials 
+        SET stock_physical = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(newStock, mat.id);
+    }
 
     // Atualiza status do pedido de compra
     const now = new Date().toISOString().split('T')[0];
@@ -820,12 +842,15 @@ export class StockService {
 
     // Registra movimentação de entrada no estoque
     await db.prepare(`
-      INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
-      VALUES (?, 'ENTRADA', ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO stock_movements (material_id, custom_name, custom_unit, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+      VALUES (?, ?, ?, 'ENTRADA', ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      mat.id, purchase.quantity, prevStock, newStock,
+      mat ? mat.id : null,
+      mat ? null : matName,
+      matUnit,
+      purchase.quantity, prevStock, newStock,
       purchase.project_id, purchaseId, userId,
-      `Recebimento de compra ${purchase.code}: +${purchase.quantity} ${mat.unit}`
+      `Recebimento de compra ${purchase.code}: +${purchase.quantity} ${matUnit}`
     );
 
     // Auditoria
@@ -834,20 +859,20 @@ export class StockService {
       VALUES (?, 'RECEBIMENTO_COMPRA', 'COMPRA', ?, ?, 'Aguardando entrega', 'Recebido', ?)
     `).run(
       userId, purchaseId, purchase.project_id,
-      `Recebimento de ${purchase.quantity} ${mat.unit} de ${mat.name} da compra ${purchase.code}. Estoque atualizado de ${prevStock} para ${newStock}.`
+      `Recebimento de ${purchase.quantity} ${matUnit} de ${matName} da compra ${purchase.code}.`
     );
 
     // Notifica Almoxarifado e Engenharia
     await db.prepare(`
       INSERT INTO notifications (role_target, title, message, type, link)
       VALUES ('Almoxarifado', 'Material de Compra Recebido', ?, 'success', '/estoque')
-    `).run(`Chegaram ${purchase.quantity} ${mat.unit} de ${mat.name} (${purchase.code}). Já disponível no estoque físico.`);
+    `).run(`Chegaram ${purchase.quantity} ${matUnit} de ${matName} (${purchase.code}). Já disponível no almoxarifado.`);
 
     return {
       success: true,
       purchaseId,
       code: purchase.code,
-      materialName: mat.name,
+      materialName: matName,
       quantityReceived: purchase.quantity,
       newStock: newStock
     };

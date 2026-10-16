@@ -8,10 +8,13 @@ stockRouter.get('/movements', async (req, res) => {
   try {
     const { material_id, project_id, type } = req.query;
     let query = `
-      SELECT sm.*, m.name as material_name, m.code as material_code, m.unit as material_unit,
+      SELECT sm.*,
+             COALESCE(m.name, sm.custom_name, 'Material Fora da Base') as material_name,
+             COALESCE(m.code, 'FORA-BASE') as material_code,
+             COALESCE(m.unit, sm.custom_unit, 'un') as material_unit,
              p.name as project_name, p.code as project_code, u.name as user_name
       FROM stock_movements sm
-      JOIN materials m ON sm.material_id = m.id
+      LEFT JOIN materials m ON sm.material_id = m.id
       LEFT JOIN projects p ON sm.project_id = p.id
       LEFT JOIN users u ON sm.user_id = u.id
       WHERE 1=1

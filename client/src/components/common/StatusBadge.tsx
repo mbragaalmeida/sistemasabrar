@@ -36,13 +36,15 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
 
       // Solicitações de Material
       case 'Solicitado':
-        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-700/60';
       case 'Reservado':
-        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-600/60 font-semibold';
+        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-700/60 font-semibold';
       case 'Em separação':
+      case 'Em Separação':
         return 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/80 dark:text-purple-300 dark:border-purple-600/60 font-bold';
+      case 'Separado Parcial':
+      case 'Parcialmente Atendido':
+        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-600/60 font-bold';
       case 'Separado':
-        return 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950/80 dark:text-teal-300 dark:border-teal-600/60 font-medium';
       case 'Entregue':
         return 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-sabrar-950/80 dark:text-sabrar-300 dark:border-sabrar-500/60 font-bold';
 
