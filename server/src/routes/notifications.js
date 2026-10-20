@@ -39,9 +39,12 @@ notificationsRouter.get('/', async (req, res) => {
 
         const target = (n.role_target || '').toLowerCase();
 
-        // Admin, Sabrina ou Emily veem notificações administrativas/gerais
-        if (effectiveRole === 'admin' || /sabrina|emily/i.test(userName)) {
-          return target === 'admin' || target === 'diretoria' || target === 'all';
+        const userEmail = (user?.email || '').toLowerCase();
+        const isAdminOrApprover = effectiveRole === 'admin' || /sabrina|emily/i.test(userName) || /sabrina|emily/i.test(userEmail);
+
+        // Admin, Sabrina ou Emily veem notificações administrativas/gerais (ajustes de estoque, aprovações de extras, etc.)
+        if (isAdminOrApprover && (target === 'admin' || target === 'diretoria' || target === 'all')) {
+          return true;
         }
 
         // Engenharia: apenas notificações do setor de engenharia E das suas obras

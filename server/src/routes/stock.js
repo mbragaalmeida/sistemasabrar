@@ -171,6 +171,15 @@ stockRouter.post('/adjustments', async (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, 'Pendente')
       `).run(material_id, prevStock, targetStock, diff, reason.trim(), user_id || null);
 
+      const requester = user_id ? await db.prepare('SELECT name FROM users WHERE id = ?').get(user_id) : null;
+      const requesterName = requester?.name || 'Jennifer Souza';
+
+      // Dispara notificação urgente para Administradores, Sabrina e Emily
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('admin', 'Ajuste de Estoque Aguardando Aprovação', ?, 'urgent', '/materiais')
+      `).run(`${requesterName} solicitou ajuste de saldo no item "${mat.name}" (de ${prevStock} para ${targetStock} ${mat.unit}). Motivo: "${reason.trim()}".`);
+
       return res.json({
         success: true,
         direct: false,
@@ -235,6 +244,13 @@ stockRouter.post('/adjustments/:id/approve', async (req, res) => {
       WHERE id = ?
     `).run(user_id, notes || 'Aprovado', id);
 
+    if (adj.requested_by) {
+      await db.prepare(`
+        INSERT INTO notifications (user_id, role_target, title, message, type, link)
+        VALUES (?, 'almoxarifado', 'Ajuste de Estoque Aprovado', ?, 'info', '/materiais')
+      `).run(adj.requested_by, `Ajuste no material "${mat.name}" foi aprovado por ${user.name}. Novo estoque: ${targetStock} ${mat.unit}.`);
+    }
+
     res.json({ success: true, message: `Ajuste aprovado! Novo estoque físico de "${mat.name}": ${targetStock} ${mat.unit}.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -271,6 +287,14 @@ stockRouter.post('/adjustments/:id/reject', async (req, res) => {
       SET status = 'Rejeitado', reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, review_notes = ?
       WHERE id = ?
     `).run(user_id, notes || 'Recusado', id);
+
+    if (adj.requested_by) {
+      const mat = await db.prepare('SELECT name FROM materials WHERE id = ?').get(adj.material_id);
+      await db.prepare(`
+        INSERT INTO notifications (user_id, role_target, title, message, type, link)
+        VALUES (?, 'almoxarifado', 'Ajuste de Estoque Recusado', ?, 'urgent', '/materiais')
+      `).run(adj.requested_by, `Ajuste no material "${mat?.name || 'Material'}" foi recusado por ${user.name}. Motivo: ${notes || 'Não informado'}.`);
+    }
 
     res.json({ success: true, message: 'Solicitação de ajuste de estoque recusada com sucesso.' });
   } catch (err) {

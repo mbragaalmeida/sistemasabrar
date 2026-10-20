@@ -32,12 +32,11 @@ import { canUserViewPrices } from '../utils/permissions';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
-import { AdjustStockModal } from '../components/modals/AdjustStockModal';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
-  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato' | 'disponibilidade_ajustes'>('separacao');
+  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
@@ -52,25 +51,14 @@ export const StockPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
   const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
 
-  // Gestão de Disponibilidade e Ajustes de Estoque
-  const [stockMaterials, setStockMaterials] = useState<any[]>([]);
-  const [adjustments, setAdjustments] = useState<any[]>([]);
-  const [pendingAdjustments, setPendingAdjustments] = useState<any[]>([]);
-  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
-  const [selectedMaterialForAdjust, setSelectedMaterialForAdjust] = useState<any | null>(null);
-  const [materialFilterSearch, setMaterialFilterSearch] = useState('');
-  const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<number | null>(null);
+  // Gestão de Disponibilidade e Cancelamento de Itens pelo Almoxarifado
+  const [togglingItemAvailabilityId, setTogglingItemAvailabilityId] = useState<number | null>(null);
+  const [cancellingItemData, setCancellingItemData] = useState<{ item: any; request: any } | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancellingItem, setIsCancellingItem] = useState(false);
 
   const canApproveSubstitution = Boolean(
     currentUser?.role === 'admin' ||
-    /sabrina|emily/i.test(currentUser?.name || '') ||
-    /sabrina|emily/i.test(currentUser?.email || '')
-  );
-
-  const canApproveAdjustment = Boolean(
-    currentUser?.role === 'admin' ||
-    currentUser?.role === 'orcamento_engenharia' ||
-    currentUser?.role === 'compras_solicitacoes' ||
     /sabrina|emily/i.test(currentUser?.name || '') ||
     /sabrina|emily/i.test(currentUser?.email || '')
   );
@@ -102,23 +90,18 @@ export const StockPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, reqs, rets, moves, subs, mats, adjs] = await Promise.all([
+      const [sumData, reqs, rets, moves, subs] = await Promise.all([
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
         api.getStockMovements(),
-        api.getSubstitutions(),
-        api.getMaterials().catch(() => []),
-        api.getStockAdjustments().catch(() => [])
+        api.getSubstitutions()
       ]);
       setSummary(sumData);
       setPendingRequests(reqs);
       setReturns(rets);
       setMovements(moves);
       setSubstitutions(subs || []);
-      setStockMaterials(mats || []);
-      setAdjustments(adjs || []);
-      setPendingAdjustments((adjs || []).filter((a: any) => a.status === 'pendente'));
     } catch (err) {
       console.error('Erro ao carregar dados do estoque:', err);
     } finally {
@@ -126,39 +109,59 @@ export const StockPage: React.FC = () => {
     }
   };
 
-  const handleToggleAvailability = async (m: any) => {
-    const nextStatus = m.availability_status === 'em_falta' ? 'disponivel' : 'em_falta';
-    setTogglingAvailabilityId(m.id);
+  const handleToggleItemAvailability = async (item: any) => {
+    const current = item.availability_status || 'disponivel';
+    const nextStatus = current === 'disponivel' ? 'em_falta' : 'disponivel';
+    setTogglingItemAvailabilityId(item.id);
     try {
-      await api.updateMaterialAvailability(m.id, nextStatus);
-      setStockMaterials(prev => prev.map(item => item.id === m.id ? { ...item, availability_status: nextStatus } : item));
+      await api.updateRequestItemAvailability(item.id, nextStatus, currentUser?.id);
+      setPendingRequests(prev => prev.map(req => {
+        if (req.items && req.items.some((it: any) => it.id === item.id)) {
+          return {
+            ...req,
+            items: req.items.map((it: any) => it.id === item.id ? { ...it, availability_status: nextStatus } : it)
+          };
+        }
+        return req;
+      }));
     } catch (err: any) {
+      console.error('Erro ao alternar disponibilidade do item:', err);
       alert(err.message || 'Erro ao alterar disponibilidade');
     } finally {
-      setTogglingAvailabilityId(null);
+      setTogglingItemAvailabilityId(null);
     }
   };
 
-  const handleApproveAdjustment = async (id: number) => {
-    if (!window.confirm('Confirma a aprovação deste ajuste de quantidade de estoque?')) return;
-    try {
-      await api.approveStockAdjustment(id, currentUser?.id);
-      await loadData();
-      alert('Ajuste de estoque aprovado com sucesso!');
-    } catch (err: any) {
-      alert(err.message || 'Erro ao aprovar ajuste');
+  const handleConfirmCancelItem = async () => {
+    if (!cancellingItemData || !cancelReason.trim()) {
+      alert('Por favor, informe a justificativa do cancelamento.');
+      return;
     }
-  };
-
-  const handleRejectAdjustment = async (id: number) => {
-    const reason = window.prompt('Informe o motivo da recusa do ajuste:');
-    if (!reason) return;
+    setIsCancellingItem(true);
     try {
-      await api.rejectStockAdjustment(id, currentUser?.id, reason);
-      await loadData();
-      alert('Ajuste de estoque recusado.');
+      await api.cancelRequestItem(cancellingItemData.item.id, cancelReason.trim(), currentUser?.id);
+      setPendingRequests(prev => prev.map(req => {
+        if (req.items && req.items.some((it: any) => it.id === cancellingItemData.item.id)) {
+          return {
+            ...req,
+            items: req.items.map((it: any) => it.id === cancellingItemData.item.id ? {
+              ...it,
+              item_status: 'Cancelado',
+              cancellation_reason: cancelReason.trim(),
+              cancelled_by: currentUser?.id,
+              cancelled_at: new Date().toISOString()
+            } : it)
+          };
+        }
+        return req;
+      }));
+      setCancellingItemData(null);
+      setCancelReason('');
     } catch (err: any) {
-      alert(err.message || 'Erro ao recusar ajuste');
+      console.error('Erro ao cancelar item:', err);
+      alert(err.message || 'Erro ao cancelar item');
+    } finally {
+      setIsCancellingItem(false);
     }
   };
 
@@ -283,20 +286,6 @@ export const StockPage: React.FC = () => {
         >
           Extrato Completo de Movimentações (Auditoria)
         </button>
-        <button
-          onClick={() => setActiveTab('disponibilidade_ajustes')}
-          className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'disponibilidade_ajustes' ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30 font-bold' : 'hover:text-white'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Disponibilidade & Ajustes de Estoque</span>
-          {pendingAdjustments.length > 0 && (
-            <span className="bg-amber-500 text-black px-1.5 py-0.2 rounded-full text-[10px] font-black">
-              {pendingAdjustments.length}
-            </span>
-          )}
-        </button>
       </div>
 
       {loading && (
@@ -380,17 +369,29 @@ export const StockPage: React.FC = () => {
             });
           });
 
+          // Ordena as solicitações dentro de cada grupo da mais recente para a mais antiga (Item 4)
+          map.forEach(grp => {
+            grp.requests.sort((a: any, b: any) => {
+              const dateA = new Date(a.created_at).getTime() || Number(a.id) || 0;
+              const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
+              return dateB - dateA;
+            });
+          });
+
+          // Ordena as obras para que a obra com a solicitação mais recente fique no topo (Item 4)
           return Array.from(map.values()).sort((a, b) => {
             if (a.projectId === 'geral') return 1;
             if (b.projectId === 'geral') return -1;
-            return b.requests.length - a.requests.length;
+            const latestA = Math.max(...a.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
+            const latestB = Math.max(...b.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
+            return latestB - latestA;
           });
         })();
 
         const handlePrintProjectRomaneio = (group: any) => {
           const consolidatedItems: any[] = [];
           (group.requests || []).forEach((r: any) => {
-            (r.items || []).forEach((it: any) => {
+            (r.items || []).filter((it: any) => it.item_status !== 'Cancelado').forEach((it: any) => {
               consolidatedItems.push({
                 ...it,
                 notes: `Solicitação ${r.code} • ${it.notes || ''}`
@@ -504,9 +505,17 @@ export const StockPage: React.FC = () => {
                     {items.map((it: any) => {
                       const itemSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Pendente');
                       const approvedSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Aprovado');
+                      const isCancelled = it.item_status === 'Cancelado';
 
                       return (
-                        <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 py-2 border-b border-dark-800 last:border-0">
+                        <div
+                          key={it.id}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 py-2 px-3 rounded-2xl border transition-all ${
+                            isCancelled
+                              ? 'bg-dark-900/40 border-rose-900/30 opacity-60'
+                              : 'bg-dark-850/50 border-dark-800 hover:border-dark-750'
+                          }`}
+                        >
                           <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                             {it.image_url && (
                               <div className="w-8 h-8 rounded-lg bg-dark-950 border border-dark-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5 shadow-sm" title={it.material_name}>
@@ -515,16 +524,18 @@ export const StockPage: React.FC = () => {
                             )}
                             <div>
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-bold text-white">{it.material_name}</span>
+                                <span className={`font-bold ${isCancelled ? 'line-through text-slate-500' : 'text-white'}`}>
+                                  {it.material_name}
+                                </span>
                                 <span className="text-[11px] text-slate-400 font-mono">({it.material_code})</span>
                                 {it.is_extra && (
                                   <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-600/40">
                                     Extra Obra
                                   </span>
                                 )}
-                                {it.availability_status === 'em_falta' && (
-                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
+                                {isCancelled && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700 flex items-center gap-1">
+                                    <X className="w-3 h-3 text-rose-400" /> Cancelado pelo Almoxarifado {it.cancellation_reason ? `("${it.cancellation_reason}")` : ''}
                                   </span>
                                 )}
                               </div>
@@ -585,17 +596,62 @@ export const StockPage: React.FC = () => {
                               </span>
                             )}
 
-                            {/* Botão Trocar Material para o Almoxarifado */}
-                            {!itemSub && req.status !== 'Entregue' && (
-                              <button
-                                type="button"
-                                onClick={() => setSubstituteItemData({ request: req, item: it })}
-                                className="flex items-center gap-1 text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
-                                title="Solicitar troca deste material por outro disponível no almoxarifado"
-                              >
-                                <RefreshCw className="w-3 h-3" />
-                                <span>Trocar Material</span>
-                              </button>
+                            {!isCancelled && (
+                              <>
+                                {/* Toggle 1-clique de Disponibilidade no Almoxarifado (Item 1) */}
+                                <button
+                                  type="button"
+                                  disabled={togglingItemAvailabilityId === it.id || req.status === 'Entregue'}
+                                  onClick={() => handleToggleItemAvailability(it)}
+                                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl border transition-all active:scale-95 shadow-xs cursor-pointer ${
+                                    it.availability_status === 'em_falta'
+                                      ? 'bg-rose-950/90 text-rose-300 border-rose-600 hover:bg-rose-900 shadow-rose-950/50'
+                                      : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900'
+                                  }`}
+                                  title="Clique para alternar: Disponível ou Não disponível (Em falta). Ao marcar Não disponível, a compra é enviada ao setor de compras."
+                                >
+                                  {it.availability_status === 'em_falta' ? (
+                                    <>
+                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                                      <span>✕ Não disponível</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>✓ Disponível</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* Botão Trocar Material para o Almoxarifado */}
+                                {!itemSub && req.status !== 'Entregue' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSubstituteItemData({ request: req, item: it })}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    title="Solicitar troca deste material por outro disponível no almoxarifado"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    <span>Trocar Material</span>
+                                  </button>
+                                )}
+
+                                {/* Botão Cancelar Item (Item 2) */}
+                                {req.status !== 'Entregue' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCancellingItemData({ item: it, request: req });
+                                      setCancelReason('');
+                                    }}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/80 border border-rose-700/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    title="Cancelar este item por duplicidade ou erro (registrado em auditoria imutável)"
+                                  >
+                                    <X className="w-3 h-3 text-rose-400" />
+                                    <span>Cancelar Item</span>
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -947,9 +1003,6 @@ export const StockPage: React.FC = () => {
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-mono font-bold text-xs bg-dark-800 border border-dark-700 px-2 py-0.5 rounded text-sabrar-400">
-                                  {group.projectCode}
-                                </span>
                                 <h2 className="font-extrabold text-sm sm:text-base text-white truncate">
                                   {group.projectName}
                                 </h2>
@@ -1146,184 +1199,6 @@ export const StockPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 4: DISPONIBILIDADE & AJUSTES DE ESTOQUE */}
-      {!loading && activeTab === 'disponibilidade_ajustes' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
-          {/* Banner de Ajustes de Saldo Aguardando Aprovação */}
-          {pendingAdjustments.length > 0 && canApproveAdjustment && (
-            <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3 text-xs shadow-lg">
-              <div className="flex items-center justify-between font-bold text-amber-300">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                  <span className="text-sm font-black">{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
-                </div>
-                <span className="text-[10px] bg-amber-900/60 text-amber-200 px-2.5 py-1 rounded-full border border-amber-600/40">
-                  Aprovação Restrita (Admins, Sabrina ou Emily)
-                </span>
-              </div>
-              <div className="divide-y divide-dark-800">
-                {pendingAdjustments.map((adj) => (
-                  <div key={adj.id} className="pt-2.5 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-300">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-white text-sm">{adj.material_name}</span>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-dark-900 px-1.5 py-0.5 rounded border border-dark-750">
-                          {adj.material_code}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>Estoque Atual: <strong className="text-white">{adj.previous_stock}</strong></span>
-                        <span>➔</span>
-                        <span>Novo Saldo: <strong className="text-amber-300 font-bold">{adj.requested_stock}</strong></span>
-                        <span className={`font-bold ${adj.difference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          ({adj.difference > 0 ? `+${adj.difference}` : adj.difference})
-                        </span>
-                        <span>• Solicitado por: <strong className="text-slate-200">{adj.requester_name || 'Almoxarifado'}</strong></span>
-                        <span>• Motivo: <em className="text-slate-300 font-medium">"{adj.reason}"</em></span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => handleApproveAdjustment(adj.id)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Aprovar Ajuste</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRejectAdjustment(adj.id)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Recusar</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Painel de Controle de Disponibilidade dos Materiais */}
-          <div className="bg-dark-900 rounded-3xl border border-dark-750 p-4 sm:p-5 space-y-4 shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-sabrar-400" />
-                  Status de Disponibilidade no Almoxarifado
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Atualize o status dos materiais para orientar a equipe de obras e compras em tempo real
-                </p>
-              </div>
-
-              {/* Busca Rápida de Materiais */}
-              <div className="relative sm:w-72">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={materialFilterSearch}
-                  onChange={(e) => setMaterialFilterSearch(e.target.value)}
-                  placeholder="Buscar material ou código..."
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-dark-850 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500"
-                />
-              </div>
-            </div>
-
-            {/* Tabela de Materiais com 1-Click Toggle e Ajuste */}
-            <div className="overflow-x-auto rounded-2xl border border-dark-750 bg-dark-850 max-h-[500px] overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-dark-800 text-slate-400 font-bold border-b border-dark-700 sticky top-0 z-10">
-                  <tr>
-                    <th className="p-3">Código</th>
-                    <th className="p-3">Material</th>
-                    <th className="p-3 text-center">Físico</th>
-                    <th className="p-3 text-center">Reservado</th>
-                    <th className="p-3 text-center">Disponível</th>
-                    <th className="p-3 text-center">Disponibilidade Manual (Almoxarifado)</th>
-                    <th className="p-3 text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-dark-750">
-                  {stockMaterials
-                    .filter(m => {
-                      if (!materialFilterSearch.trim()) return true;
-                      const q = materialFilterSearch.toLowerCase();
-                      return (m.name || '').toLowerCase().includes(q) || (m.code || '').toLowerCase().includes(q);
-                    })
-                    .slice(0, 100)
-                    .map((m) => {
-                      const disp = Math.max(0, Number(m.stock_physical || 0) - Number(m.stock_reserved || 0));
-                      const isFalta = m.availability_status === 'em_falta';
-
-                      return (
-                        <tr key={m.id} className="hover:bg-dark-800/50 transition-colors">
-                          <td className="p-3 font-mono font-bold text-sabrar-400 whitespace-nowrap">
-                            {m.code}
-                          </td>
-                          <td className="p-3 min-w-[200px]">
-                            <div className="font-extrabold text-white">{m.name}</div>
-                            <div className="text-[11px] text-slate-400">{m.category} • {m.unit}</div>
-                          </td>
-                          <td className="p-3 text-center font-bold text-white whitespace-nowrap">
-                            {m.stock_physical} {m.unit}
-                          </td>
-                          <td className="p-3 text-center font-bold text-amber-400 whitespace-nowrap">
-                            {m.stock_reserved} {m.unit}
-                          </td>
-                          <td className="p-3 text-center font-extrabold text-sabrar-400 whitespace-nowrap">
-                            {disp} {m.unit}
-                          </td>
-                          <td className="p-3 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleAvailability(m)}
-                              disabled={togglingAvailabilityId === m.id}
-                              className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition-all active:scale-95 flex items-center gap-1.5 mx-auto cursor-pointer ${
-                                isFalta
-                                  ? 'bg-rose-950/80 text-rose-300 border-rose-700 hover:bg-rose-900 shadow-sm'
-                                  : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900 shadow-sm'
-                              }`}
-                              title="Clique para alternar disponibilidade imediatamente"
-                            >
-                              {isFalta ? (
-                                <>
-                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                                  <span>Em Falta</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span>Disponível</span>
-                                </>
-                              )}
-                            </button>
-                          </td>
-                          <td className="p-3 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedMaterialForAdjust(m);
-                                setIsAdjustModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/50 text-amber-300 text-xs font-bold transition-colors active:scale-95"
-                              title="Ajustar quantidade em estoque"
-                            >
-                              Ajustar
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Impressão do Romaneio */}
       <PrintRequestModal
         isOpen={!!selectedRequestForPrint}
@@ -1345,18 +1220,69 @@ export const StockPage: React.FC = () => {
         />
       )}
 
-      {/* Modal de Ajuste de Saldo de Estoque */}
-      <AdjustStockModal
-        isOpen={isAdjustModalOpen}
-        onClose={() => {
-          setIsAdjustModalOpen(false);
-          setSelectedMaterialForAdjust(null);
-        }}
-        material={selectedMaterialForAdjust}
-        onSuccess={() => {
-          loadData();
-        }}
-      />
+      {/* Modal de Cancelamento de Item pelo Almoxarifado (Item 2) */}
+      {cancellingItemData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md bg-dark-900 border border-dark-750 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-rose-400 font-extrabold text-base">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+                <span>Cancelar Item da Solicitação</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancellingItemData(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-dark-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-dark-850 p-3.5 rounded-2xl border border-dark-750 text-xs space-y-1.5">
+              <div className="text-slate-400">
+                Solicitação: <strong className="text-white font-mono">{cancellingItemData.request.code}</strong> • Obra: <strong className="text-white">{cancellingItemData.request.project_name}</strong>
+              </div>
+              <div className="text-white font-bold text-sm">
+                {cancellingItemData.item.material_name}
+              </div>
+              <div className="text-slate-400">
+                Quantidade solicitada: <strong className="text-amber-400">{cancellingItemData.item.quantity_requested} {cancellingItemData.item.material_unit}</strong>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300">
+                Justificativa do cancelamento (Obrigatório - Auditoria Imutável):
+              </label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Ex: Item duplicado pelo solicitante, erro de especificação, etc."
+                rows={3}
+                className="w-full p-3 text-xs rounded-xl bg-dark-800 border border-dark-700 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-dark-800">
+              <button
+                type="button"
+                onClick={() => setCancellingItemData(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white rounded-xl bg-dark-800 hover:bg-dark-750"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={isCancellingItem || !cancelReason.trim()}
+                onClick={handleConfirmCancelItem}
+                className="px-4 py-2 text-xs font-bold text-white rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-rose-900/30"
+              >
+                {isCancellingItem ? 'Cancelando...' : 'Confirmar Cancelamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

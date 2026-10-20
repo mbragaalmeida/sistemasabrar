@@ -21,7 +21,7 @@ export const PrintRequestModal: React.FC<PrintRequestModalProps> = ({
     window.print();
   };
 
-  const items = request.items || [];
+  const items = (request.items || []).filter((it: any) => it.item_status !== 'Cancelado');
   const totalItems = items.length;
   const itemsInStock = items.filter(it => (it.quantity_reserved || 0) > 0).length;
   const itemsWithDeficit = items.filter(it => (it.deficit || 0) > 0).length;

@@ -186,7 +186,11 @@ export const RequestsPage: React.FC = () => {
       });
     }
 
-    return list;
+    return list.sort((a: any, b: any) => {
+      const dateA = new Date(a.created_at).getTime() || Number(a.id) || 0;
+      const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
+      return dateB - dateA;
+    });
   }, [requests, projects, currentUser, searchQuery]);
 
   // Agrupamento de solicitações por Obra (igual ao Almoxarifado)
@@ -234,13 +238,27 @@ export const RequestsPage: React.FC = () => {
       }
     });
 
-    return Array.from(groupsMap.values());
+    // Ordena as solicitações dentro de cada grupo da mais recente para a mais antiga (Item 4)
+    groupsMap.forEach(group => {
+      group.requests.sort((a: any, b: any) => {
+        const dateA = new Date(a.created_at).getTime() || Number(a.id) || 0;
+        const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
+        return dateB - dateA;
+      });
+    });
+
+    // Ordena as obras para que a obra com a solicitação mais recente fique no topo (Item 4)
+    return Array.from(groupsMap.values()).sort((a: any, b: any) => {
+      const latestA = Math.max(...a.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
+      const latestB = Math.max(...b.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
+      return latestB - latestA;
+    });
   }, [visibleRequests]);
 
   const handlePrintProjectRomaneio = (group: any) => {
     const itemsMap = new Map<string, any>();
     group.requests.forEach((r: any) => {
-      (r.items || []).forEach((it: any) => {
+      (r.items || []).filter((it: any) => it.item_status !== 'Cancelado').forEach((it: any) => {
         const key = it.material_id ? `mat-${it.material_id}` : `custom-${it.material_name}-${it.material_unit}`;
         if (!itemsMap.has(key)) {
           itemsMap.set(key, {
@@ -448,7 +466,9 @@ export const RequestsPage: React.FC = () => {
               {items.map((it: any) => (
                 <div key={it.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1 py-1 border-b border-dark-800 last:border-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-bold text-white">{it.material_name}</span>
+                    <span className={`font-bold ${it.item_status === 'Cancelado' ? 'line-through text-slate-500' : 'text-white'}`}>
+                      {it.material_name}
+                    </span>
                     <span className="text-[11px] text-slate-400 font-mono">({it.material_code || 'FORA-BASE'})</span>
                     {!it.material_id && (
                       <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-500/40">
@@ -465,14 +485,22 @@ export const RequestsPage: React.FC = () => {
                         (+{it.extra_quantity} acima da cota orçada de {it.budget_quantity})
                       </span>
                     )}
-                    {it.availability_status === 'em_falta' ? (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1">
-                        <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
+                    {it.item_status === 'Cancelado' ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700 flex items-center gap-1">
+                        <X className="w-3 h-3 text-rose-400" /> Cancelado pelo Almoxarifado {it.cancellation_reason ? `("${it.cancellation_reason}")` : ''}
                       </span>
                     ) : (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
-                        Disponível
-                      </span>
+                      <>
+                        {it.availability_status === 'em_falta' ? (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1" title="Item em falta no estoque físico - Demanda enviada para Compras">
+                            <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30" title="Item disponível no estoque do almoxarifado">
+                            ✓ Disponível
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                   <div className="flex items-center gap-2.5 flex-wrap">

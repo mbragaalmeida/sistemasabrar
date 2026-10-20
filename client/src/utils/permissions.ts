@@ -8,7 +8,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'ducts': ['admin', 'orcamento', 'orcamento_engenharia'],
-  'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes'],
+  'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes', 'orcamento_engenharia'],
   'stock': ['admin', 'almoxarifado'],
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
@@ -100,6 +100,7 @@ export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
         { id: 'dashboard', label: 'Início', iconName: 'dashboard' },
         { id: 'projects', label: 'Obras', iconName: 'projects' },
         { id: 'budgets', label: 'Orçamentos', iconName: 'budgets' },
+        { id: 'materials', label: 'Materiais', iconName: 'materials' },
         { id: 'requests', label: 'Solicitar', iconName: 'requests' }
       ];
     case 'almoxarifado':

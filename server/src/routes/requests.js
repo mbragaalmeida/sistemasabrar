@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from '../db/connection.js';
-import { StockService } from '../services/stockService.js';
+import { StockService, generateNextPurchaseCode } from '../services/stockService.js';
 
 export const requestsRouter = express.Router();
 
@@ -73,7 +73,7 @@ requestsRouter.get('/', async (req, res) => {
              COALESCE(mri.custom_unit, m.unit, 'un') as material_unit,
              COALESCE(m.stock_physical, 0) as stock_physical,
              COALESCE(m.stock_reserved, 0) as stock_reserved,
-             COALESCE(m.availability_status, 'disponivel') as availability_status,
+             COALESCE(mri.availability_status, 'disponivel') as availability_status,
              m.image_url
       FROM material_request_items mri
       LEFT JOIN materials m ON mri.material_id = m.id
@@ -428,6 +428,194 @@ requestsRouter.post('/substitutions/:id/reject', async (req, res) => {
 
     res.json({ success: true, message: 'Substituição recusada.' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Alterna disponibilidade do item (Almoxarifado: Disponível / Não disponível [Em Falta])
+requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { status, userId } = req.body; // status: 'disponivel' | 'em_falta'
+
+    if (!['disponivel', 'em_falta'].includes(status)) {
+      return res.status(400).json({ error: 'Status de disponibilidade inválido.' });
+    }
+
+    const item = await db.prepare(`
+      SELECT mri.*, mr.code as request_code, mr.project_id, p.name as project_name,
+             m.name as mat_name, m.unit as mat_unit, m.reference_price, m.converted_price, m.package_content
+      FROM material_request_items mri
+      JOIN material_requests mr ON mri.request_id = mr.id
+      LEFT JOIN projects p ON mr.project_id = p.id
+      LEFT JOIN materials m ON mri.material_id = m.id
+      WHERE mri.id = ?
+    `).get(itemId);
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item não encontrado.' });
+    }
+
+    await db.prepare(`
+      UPDATE material_request_items
+      SET availability_status = ?
+      WHERE id = ?
+    `).run(status, itemId);
+
+    const materialName = item.mat_name || item.custom_name || 'Material';
+    const materialUnit = item.custom_unit || item.mat_unit || 'un';
+
+    if (status === 'em_falta') {
+      // Verifica se já existe compra ativa gerada para este item
+      const existingPurchase = await db.prepare(`
+        SELECT id, code, status FROM purchases 
+        WHERE request_item_id = ? AND status NOT IN ('Cancelado')
+        LIMIT 1
+      `).get(itemId);
+
+      if (!existingPurchase) {
+        const purchaseCode = await generateNextPurchaseCode();
+        const unitPrice = item.converted_price || item.reference_price || 0;
+        const totalPrice = Number((Number(item.quantity) * Number(unitPrice)).toFixed(2));
+
+        await db.prepare(`
+          INSERT INTO purchases (
+            code, project_id, request_item_id, material_id, custom_name, custom_unit,
+            quantity, unit_price, total_price, status, priority, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', 'Alta', ?)
+        `).run(
+          purchaseCode, item.project_id, itemId, item.material_id,
+          item.mat_name ? null : item.custom_name, materialUnit,
+          item.quantity, unitPrice, totalPrice,
+          `Demanda gerada pelo Almoxarifado: item marcado como NÃO DISPONÍVEL na solicitação ${item.request_code} (Obra: ${item.project_name || 'Sabrar'}).`
+        );
+      }
+
+      // Notifica setor de Compras
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('compras', 'Item Não Disponível no Estoque', ?, 'urgent', '/compras')
+      `).run(`O almoxarifado marcou o item "${materialName}" (${item.quantity} ${materialUnit}) como NÃO DISPONÍVEL na solicitação ${item.request_code} (${item.project_name || 'Obra'}). Compra necessária.`);
+
+      // Log de auditoria
+      await db.prepare(`
+        INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+        VALUES (?, 'DISPONIBILIDADE_INDISPONIVEL', ?, 0, 0, ?, ?, ?, ?)
+      `).run(
+        item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+        `Item "${materialName}" marcado como NÃO DISPONÍVEL pelo Almoxarifado na solicitação ${item.request_code}`
+      );
+    } else {
+      // Se voltou para 'disponivel', cancela compra pendente que ainda não foi efetuada
+      await db.prepare(`
+        UPDATE purchases
+        SET status = 'Cancelado', notes = notes || ' (Cancelado: almoxarifado marcou item como disponível no estoque)'
+        WHERE request_item_id = ? AND status = 'Solicitado'
+      `).run(itemId);
+
+      // Log de auditoria
+      await db.prepare(`
+        INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+        VALUES (?, 'DISPONIBILIDADE_DISPONIVEL', ?, 0, 0, ?, ?, ?, ?)
+      `).run(
+        item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+        `Item "${materialName}" marcado como DISPONÍVEL pelo Almoxarifado na solicitação ${item.request_code}`
+      );
+    }
+
+    res.json({
+      success: true,
+      availability_status: status,
+      message: status === 'em_falta'
+        ? `Item "${materialName}" marcado como Não Disponível. Demanda enviada para Compras!`
+        : `Item "${materialName}" marcado como Disponível.`
+    });
+  } catch (err) {
+    console.error('Erro ao atualizar disponibilidade do item:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cancelar um item específico da solicitação (Almoxarifado)
+requestsRouter.patch('/items/:itemId/cancel', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { reason, userId } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Informe a justificativa do cancelamento deste item.' });
+    }
+
+    const item = await db.prepare(`
+      SELECT mri.*, mr.code as request_code, mr.project_id, p.name as project_name,
+             m.name as mat_name, m.unit as mat_unit
+      FROM material_request_items mri
+      JOIN material_requests mr ON mri.request_id = mr.id
+      LEFT JOIN projects p ON mr.project_id = p.id
+      LEFT JOIN materials m ON mri.material_id = m.id
+      WHERE mri.id = ?
+    `).get(itemId);
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item não encontrado.' });
+    }
+
+    if (item.item_status === 'Cancelado') {
+      return res.status(400).json({ error: 'Este item já se encontra cancelado.' });
+    }
+
+    // Marca como cancelado
+    await db.prepare(`
+      UPDATE material_request_items
+      SET item_status = 'Cancelado',
+          cancellation_reason = ?,
+          cancelled_by = ?,
+          cancelled_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(reason.trim(), userId || null, itemId);
+
+    // Se havia reserva de estoque neste item, estorna a reserva
+    if (item.material_id && item.quantity_reserved && item.quantity_reserved > 0) {
+      await db.prepare(`
+        UPDATE materials
+        SET stock_reserved = GREATEST(0, stock_reserved - ?), updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(item.quantity_reserved, item.material_id);
+    }
+
+    // Se havia compra gerada para este item, cancela
+    await db.prepare(`
+      UPDATE purchases
+      SET status = 'Cancelado', notes = notes || ' (Cancelado: item da solicitação foi cancelado pelo almoxarifado)'
+      WHERE request_item_id = ? AND status NOT IN ('Entregue', 'Concluído')
+    `).run(itemId);
+
+    const materialName = item.mat_name || item.custom_name || 'Material';
+
+    // Registro imutável de auditoria no histórico de movimentações (stock_movements)
+    await db.prepare(`
+      INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+      VALUES (?, 'CANCELAMENTO_ITEM', ?, 0, 0, ?, ?, ?, ?)
+    `).run(
+      item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+      `Item "${materialName}" da solicitação ${item.request_code} (${item.project_name || 'Obra'}) CANCELADO pelo Almoxarifado. Motivo: ${reason.trim()}`
+    );
+
+    // Também registra em audit_logs
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, old_value, new_value, details)
+      VALUES (?, 'CANCELAR_ITEM_SOLICITACAO', 'SOLICITACAO_ITEM', ?, ?, 'Ativo', 'Cancelado', ?)
+    `).run(
+      userId || null, itemId, item.project_id,
+      `Item "${materialName}" (${item.quantity} ${item.custom_unit || item.mat_unit || 'un'}) cancelado na solicitação ${item.request_code}. Justificativa: ${reason.trim()}`
+    );
+
+    res.json({
+      success: true,
+      message: `Item "${materialName}" cancelado com sucesso.`
+    });
+  } catch (err) {
+    console.error('Erro ao cancelar item:', err);
     res.status(500).json({ error: err.message });
   }
 });

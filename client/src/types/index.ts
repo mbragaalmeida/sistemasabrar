@@ -170,6 +170,11 @@ export interface MaterialRequestItem {
   budget_quantity?: number;
   previously_requested?: number;
   extra_quantity?: number;
+  availability_status?: 'disponivel' | 'em_falta';
+  item_status?: 'Ativo' | 'Cancelado';
+  cancellation_reason?: string;
+  cancelled_by?: number;
+  cancelled_at?: string;
 }
 
 export interface MaterialQuota {

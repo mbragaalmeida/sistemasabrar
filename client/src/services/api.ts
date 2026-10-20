@@ -358,6 +358,10 @@ export const api = {
     fetchJson<any>(`/requests/substitutions/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
   rejectSubstitution: (id: number | string, userId?: number, notes?: string) =>
     fetchJson<any>(`/requests/substitutions/${id}/reject`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
+  updateRequestItemAvailability: (itemId: number | string, status: 'disponivel' | 'em_falta', userId?: number) =>
+    fetchJson<any>(`/requests/items/${itemId}/availability`, { method: 'PATCH', body: JSON.stringify({ status, userId }) }),
+  cancelRequestItem: (itemId: number | string, reason: string, userId?: number) =>
+    fetchJson<any>(`/requests/items/${itemId}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason, userId }) }),
   deleteRequest: (id: number | string, userId?: number) =>
     fetchJson<any>(`/requests/${id}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
 

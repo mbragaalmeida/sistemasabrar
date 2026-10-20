@@ -405,29 +405,10 @@ export class StockService {
         totalReservedItems++;
       }
 
+      // Fase de Transição (Item 1): Compras automáticas NÃO são disparadas na criação inicial da solicitação,
+      // pois o estoque físico ainda está em contagem. Apenas itens marcados como 'Não disponível' (em falta)
+      // pelo Almoxarifado na fila de separação serão despachados para compras e notificados.
       if (deficitInChosenUnit > 0) {
-        const purchaseCode = await generateNextPurchaseCode();
-        const unitPrice = analysis.unitPrice != null ? analysis.unitPrice : (mat ? Number(mat.reference_price || 0) : 0);
-        const totalPrice = Number((deficitInChosenUnit * unitPrice).toFixed(2));
-
-        const purResult = await db.prepare(`
-          INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
-        `).run(
-          purchaseCode, projectId, requestItemId, analysis.materialId,
-          mat ? null : matName, matUnit, deficitInChosenUnit,
-          mat ? mat.supplier_id : null, unitPrice,
-          totalPrice,
-          priority === 'Urgente' ? 'Alta' : priority,
-          `Demanda automática gerada por déficit na solicitação ${reqCode} da obra ${project.name}. Solicitado: ${analysis.quantity} ${matUnit} (≈ ${standardQty.toFixed(2)} ${mat.unit || 'un'}), Disponível: ${available} ${mat.unit || 'un'}, Comprar: ${deficitInChosenUnit} ${matUnit}.`
-        );
-
-        purchasesCreated.push({
-          id: purResult.lastInsertRowid,
-          code: purchaseCode,
-          materialName: matName,
-          deficitQuantity: deficitInChosenUnit
-        });
         totalDeficitItems++;
       }
 
@@ -488,20 +469,11 @@ export class StockService {
 
     await db.prepare('UPDATE material_requests SET status = ? WHERE id = ?').run(requestStatus, requestId);
 
-    // Dispara notificações normais para Almoxarifado e Compras
-    if (totalReservedItems > 0) {
-      await db.prepare(`
-        INSERT INTO notifications (role_target, title, message, type, link)
-        VALUES ('Almoxarifado', 'Nova Solicitação para Separação', ?, 'info', '/estoque')
-      `).run(`Engenharia solicitou ${processedItems.length} materiais para a obra ${project.name} (${reqCode}). ${totalReservedItems} item(ns) reservados para separação.`);
-    }
-
-    if (totalDeficitItems > 0) {
-      await db.prepare(`
-        INSERT INTO notifications (role_target, title, message, type, link)
-        VALUES ('Compras', 'Déficit de Estoque - Demanda Gerada', ?, 'urgent', '/compras')
-      `).run(`Obra ${project.name} (${reqCode}): ${totalDeficitItems} materiais sem estoque suficiente geraram demandas de compra.`);
-    }
+    // Notificação para Almoxarifado para separação
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('Almoxarifado', 'Nova Solicitação para Separação', ?, 'info', '/estoque')
+    `).run(`Engenharia solicitou ${processedItems.length} materiais para a obra ${project.name} (${reqCode}).`);
 
     // Log de auditoria
     await db.prepare(`
