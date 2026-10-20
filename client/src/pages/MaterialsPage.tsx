@@ -44,6 +44,7 @@ export const MaterialsPage: React.FC = () => {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedMaterialForAdjust, setSelectedMaterialForAdjust] = useState<Material | null>(null);
   const [pendingAdjustments, setPendingAdjustments] = useState<any[]>([]);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<number | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | undefined>(undefined);
   const [selectedMaterialForPhoto, setSelectedMaterialForPhoto] = useState<Material | null>(null);
@@ -77,10 +78,9 @@ export const MaterialsPage: React.FC = () => {
   };
 
   const fetchPendingAdjustments = async () => {
-    if (!canApproveAdjustment) return;
     try {
       const data = await api.getStockAdjustments('pendente');
-      setPendingAdjustments(data);
+      setPendingAdjustments(data || []);
     } catch (err) {
       console.error('Erro ao buscar ajustes pendentes:', err);
     }
@@ -101,6 +101,7 @@ export const MaterialsPage: React.FC = () => {
 
   const handleApproveAdjustment = async (id: number) => {
     if (!window.confirm('Confirma a aprovação deste ajuste de quantidade de estoque?')) return;
+    setActionLoadingId(id);
     try {
       await api.approveStockAdjustment(id, currentUser?.id);
       await fetchMaterials();
@@ -108,18 +109,23 @@ export const MaterialsPage: React.FC = () => {
       alert('Ajuste de estoque aprovado com sucesso!');
     } catch (err: any) {
       alert(err.message || 'Erro ao aprovar ajuste');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   const handleRejectAdjustment = async (id: number) => {
     const reason = window.prompt('Informe o motivo da recusa do ajuste:');
-    if (!reason) return;
+    if (!reason || !reason.trim()) return;
+    setActionLoadingId(id);
     try {
-      await api.rejectStockAdjustment(id, currentUser?.id, reason);
+      await api.rejectStockAdjustment(id, currentUser?.id, reason.trim());
       await fetchPendingAdjustments();
-      alert('Ajuste de estoque recusado.');
+      alert('Ajuste de estoque recusado com sucesso.');
     } catch (err: any) {
       alert(err.message || 'Erro ao recusar ajuste');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -127,6 +133,12 @@ export const MaterialsPage: React.FC = () => {
     fetchCategories();
     fetchPendingAdjustments();
   }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchPendingAdjustments();
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     fetchMaterials();
@@ -252,59 +264,127 @@ export const MaterialsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Banner de Ajustes de Saldo de Estoque Aguardando Aprovação */}
-      {pendingAdjustments.length > 0 && canApproveAdjustment && (
-        <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3 text-xs shadow-lg">
-          <div className="flex items-center justify-between font-bold text-amber-300">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-              <span className="text-sm font-black">{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
-            </div>
-            <span className="text-[10px] bg-amber-900/60 text-amber-200 px-2.5 py-1 rounded-full border border-amber-600/40">
-              Aprovação Restrita (Admins, Sabrina ou Emily)
-            </span>
-          </div>
-          <div className="divide-y divide-dark-800">
-            {pendingAdjustments.map((adj) => (
-              <div key={adj.id} className="pt-2.5 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-300">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-white text-sm">{adj.material_name}</span>
-                    <span className="font-mono text-xs font-bold text-amber-400 bg-dark-900 px-1.5 py-0.5 rounded border border-dark-750">
-                      {adj.material_code}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-                    <span>Estoque Atual: <strong className="text-white">{adj.previous_stock}</strong></span>
-                    <span>➔</span>
-                    <span>Novo Saldo: <strong className="text-amber-300 font-bold">{adj.requested_stock}</strong></span>
-                    <span className={`font-bold ${adj.difference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      ({adj.difference > 0 ? `+${adj.difference}` : adj.difference})
-                    </span>
-                    <span>• Solicitado por: <strong className="text-slate-200">{adj.requester_name || 'Almoxarifado'}</strong></span>
-                    <span>• Motivo: <em className="text-slate-300 font-medium">"{adj.reason}"</em></span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  <button
-                    type="button"
-                    onClick={() => handleApproveAdjustment(adj.id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Aprovar Ajuste</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRejectAdjustment(adj.id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Recusar</span>
-                  </button>
-                </div>
+      {/* Banner / Card de Ajustes de Saldo de Estoque Aguardando Aprovação (Item 9) */}
+      {pendingAdjustments.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-950/70 via-amber-900/40 to-dark-900 border-2 border-amber-500/60 rounded-3xl p-4 sm:p-5 shadow-2xl shadow-amber-950/30 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
               </div>
-            ))}
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-2">
+                  <span>{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
+                </h3>
+                <p className="text-[11px] text-amber-200/80">
+                  Alterações manuais de quantidade propostas pela equipe que requerem autorização dos Administradores, Sabrina ou Emily.
+                </p>
+              </div>
+            </div>
+
+            <div className="self-start sm:self-center shrink-0">
+              {canApproveAdjustment ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  Aprovação Autorizada (Admin / Sabrina / Emily)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-dark-800 text-slate-300 border border-dark-700">
+                  Aguardando Análise da Gestão
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            {pendingAdjustments.map((adj) => {
+              const diff = Number(adj.difference || 0);
+              const isDiffPositive = diff > 0;
+              const isLoading = actionLoadingId === adj.id;
+
+              return (
+                <div
+                  key={adj.id}
+                  className="bg-dark-900/90 hover:bg-dark-850 p-3.5 sm:p-4 rounded-2xl border border-amber-500/30 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all"
+                >
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-sm sm:text-base text-white truncate">
+                        {adj.material_name}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-amber-400 bg-dark-950 px-2 py-0.5 rounded-lg border border-dark-700">
+                        {adj.material_code}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        ({adj.material_unit || 'und'})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 flex-wrap text-xs text-slate-300">
+                      <span className="bg-dark-950 px-2 py-1 rounded-lg border border-dark-700">
+                        Estoque Atual: <strong className="text-white font-bold">{adj.previous_stock}</strong>
+                      </span>
+                      <span className="text-amber-400 font-bold">➔</span>
+                      <span className="bg-amber-950/70 text-amber-200 px-2 py-1 rounded-lg border border-amber-600/40">
+                        Novo Saldo Proposto: <strong className="text-amber-300 font-extrabold">{adj.requested_stock}</strong>
+                      </span>
+                      <span className={`px-2 py-1 rounded-lg font-black text-xs ${
+                        isDiffPositive
+                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
+                          : 'bg-rose-950/80 text-rose-300 border border-rose-600/40'
+                      }`}>
+                        {isDiffPositive ? `+${diff}` : diff} {adj.material_unit || 'und'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 flex items-center gap-2 flex-wrap pt-0.5">
+                      <span>
+                        Solicitado por: <strong className="text-slate-200 font-bold">{adj.requested_by_name || adj.requester_name || 'Almoxarifado'}</strong>
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Motivo: <em className="text-amber-200/90 font-medium bg-dark-950/60 px-1.5 py-0.5 rounded border border-dark-800">"{adj.reason}"</em>
+                      </span>
+                      {adj.created_at && (
+                        <>
+                          <span>•</span>
+                          <span className="text-slate-500">
+                            {new Date(adj.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {canApproveAdjustment ? (
+                    <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => handleApproveAdjustment(adj.id)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-600/30 disabled:opacity-50 active:scale-95"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>{isLoading ? 'Aprovando...' : 'Aprovar Ajuste'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => handleRejectAdjustment(adj.id)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-lg shadow-rose-600/30 disabled:opacity-50 active:scale-95"
+                      >
+                        <X className="w-4 h-4" />
+                        <span>{isLoading ? 'Recusando...' : 'Recusar'}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-400 bg-amber-950/50 border border-amber-600/30 px-3 py-1.5 rounded-xl shrink-0 self-start md:self-center">
+                      Aguardando aprovação de Admin, Sabrina ou Emily
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
