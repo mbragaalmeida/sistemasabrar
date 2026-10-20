@@ -201,7 +201,7 @@ const AppContent: React.FC = () => {
           )}
 
           {currentPage === 'notifications' && (
-            <NotificationsPage />
+            <NotificationsPage onNavigate={handleNavigate} />
           )}
         </main>
       </div>

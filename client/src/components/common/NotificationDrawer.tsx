@@ -64,6 +64,43 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
     }
   };
 
+  const handleNavigateToLink = (n: Notification) => {
+    if (!n.link) return;
+    const link = n.link.trim().toLowerCase();
+
+    if (link.startsWith('/projetos/') || link.startsWith('/obras/')) {
+      const parts = n.link.split('/');
+      const id = Number(parts[2]);
+      if (!isNaN(id)) {
+        onNavigate('project-detail', id);
+      } else {
+        onNavigate('projects');
+      }
+    } else if (link === '/materiais' || link.startsWith('/materiais') || link.startsWith('/materials')) {
+      onNavigate('materials');
+    } else if (link === '/solicitacoes' || link.startsWith('/solicitacoes') || link.startsWith('/requests')) {
+      onNavigate('requests');
+    } else if (link === '/compras' || link.startsWith('/compras') || link.startsWith('/purchases')) {
+      onNavigate('purchases');
+    } else if (link === '/estoque' || link.startsWith('/estoque') || link.startsWith('/stock')) {
+      onNavigate('stock');
+    } else if (link === '/projetos' || link.startsWith('/projetos') || link.startsWith('/obras')) {
+      onNavigate('projects');
+    } else if (link === '/dashboard' || link.startsWith('/dashboard')) {
+      onNavigate('dashboard');
+    } else if (link === '/ai-hub' || link.startsWith('/ai')) {
+      onNavigate('ai-hub');
+    } else {
+      const page = link.replace(/^\//, '');
+      onNavigate(page);
+    }
+
+    if (!n.is_read) {
+      handleMarkAsRead(n.id);
+    }
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   const filtered = filterRole === 'all'
@@ -175,28 +212,33 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
           {filtered.map((n) => (
             <div
               key={n.id}
+              onClick={() => {
+                if (n.link) handleNavigateToLink(n);
+              }}
               className={`p-3.5 rounded-2xl border transition-all ${
+                n.link ? 'cursor-pointer hover:border-sabrar-500/80 active:scale-[0.99]' : ''
+              } ${
                 n.is_read
                   ? 'bg-dark-900/60 border-dark-750/70 text-slate-400'
                   : 'bg-dark-900 border-sabrar-500/40 shadow-md'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2.5">
+                <div className="flex items-start gap-2.5 min-w-0">
                   <div className="mt-0.5 shrink-0 p-1.5 rounded-xl bg-dark-850 border border-dark-700">
                     {getIcon(n.type)}
                   </div>
-                  <div>
-                    <div className="font-bold text-sm text-white flex items-center gap-1.5">
-                      {n.title}
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-white flex items-center gap-1.5 flex-wrap">
+                      <span>{n.title}</span>
                       {!n.is_read && (
                         <span className="w-2 h-2 rounded-full bg-sabrar-500 animate-pulse"></span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
-                    <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500">
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed break-words">{n.message}</p>
+                    <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500 flex-wrap">
                       {n.role_target && (
-                        <span className="font-medium text-sabrar-400 bg-sabrar-950 px-1.5 py-0.5 rounded border border-sabrar-500/30">
+                        <span className="font-semibold text-sabrar-400 bg-sabrar-950 px-2 py-0.5 rounded-md border border-sabrar-500/30 uppercase text-[10px]">
                           {n.role_target}
                         </span>
                       )}
@@ -205,35 +247,31 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1 items-end shrink-0">
+                <div className="flex flex-col gap-1.5 items-end shrink-0 ml-2">
                   {!n.is_read && (
                     <button
-                      onClick={() => handleMarkAsRead(n.id)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkAsRead(n.id);
+                      }}
                       title="Marcar como lida"
-                      className="p-1 rounded-lg text-slate-400 hover:text-sabrar-400 hover:bg-dark-800"
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-sabrar-400 hover:bg-dark-800 transition-colors"
                     >
                       <Check className="w-4 h-4" />
                     </button>
                   )}
                   {n.link && (
                     <button
-                      onClick={() => {
-                        if (n.link.startsWith('/projetos/')) {
-                          const id = Number(n.link.split('/')[2]);
-                          onNavigate('project-detail', id);
-                        } else if (n.link === '/solicitacoes') {
-                          onNavigate('requests');
-                        } else if (n.link === '/compras') {
-                          onNavigate('purchases');
-                        } else if (n.link === '/estoque') {
-                          onNavigate('stock');
-                        }
-                        onClose();
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNavigateToLink(n);
                       }}
-                      className="p-1 rounded-lg text-sabrar-400 hover:bg-dark-800 transition-colors"
-                      title="Ir para o módulo"
+                      className="p-1.5 rounded-xl text-sabrar-400 hover:text-white bg-dark-850 hover:bg-sabrar-600 border border-dark-700 hover:border-sabrar-500 transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                      title="Acessar página de destino desta notificação"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-4 h-4" />
                     </button>
                   )}
                 </div>

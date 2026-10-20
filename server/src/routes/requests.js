@@ -82,6 +82,9 @@ requestsRouter.get('/', async (req, res) => {
 
     const itemsByRequestId = new Map();
     for (const item of allItems) {
+      if (item.material_unit) {
+        item.material_unit = String(item.material_unit).replace(/^[\d.,]+\s*/, '').trim() || 'un';
+      }
       if (!itemsByRequestId.has(item.request_id)) {
         itemsByRequestId.set(item.request_id, []);
       }
@@ -463,7 +466,8 @@ requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
     `).run(status, itemId);
 
     const materialName = item.mat_name || item.custom_name || 'Material';
-    const materialUnit = item.custom_unit || item.mat_unit || 'un';
+    const materialUnit = (item.custom_unit || item.mat_unit || 'un').replace(/^[\d.,]+\s*/, '').trim() || 'un';
+    const itemQty = Number(item.quantity_requested || item.quantity || 1);
 
     if (status === 'em_falta') {
       // Verifica se já existe compra ativa gerada para este item
@@ -475,8 +479,8 @@ requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
 
       if (!existingPurchase) {
         const purchaseCode = await generateNextPurchaseCode();
-        const unitPrice = item.converted_price || item.reference_price || 0;
-        const totalPrice = Number((Number(item.quantity) * Number(unitPrice)).toFixed(2));
+        const unitPrice = Number(item.converted_price || item.reference_price || 0);
+        const totalPrice = Number((itemQty * unitPrice).toFixed(2)) || 0;
 
         await db.prepare(`
           INSERT INTO purchases (
@@ -486,7 +490,7 @@ requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
         `).run(
           purchaseCode, item.project_id, itemId, item.material_id,
           item.mat_name ? null : item.custom_name, materialUnit,
-          item.quantity, unitPrice, totalPrice,
+          itemQty, unitPrice, totalPrice,
           `Demanda gerada pelo Almoxarifado: item marcado como NÃO DISPONÍVEL na solicitação ${item.request_code} (Obra: ${item.project_name || 'Sabrar'}).`
         );
       }
@@ -495,14 +499,14 @@ requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
       await db.prepare(`
         INSERT INTO notifications (role_target, title, message, type, link)
         VALUES ('compras', 'Item Não Disponível no Estoque', ?, 'urgent', '/compras')
-      `).run(`O almoxarifado marcou o item "${materialName}" (${item.quantity} ${materialUnit}) como NÃO DISPONÍVEL na solicitação ${item.request_code} (${item.project_name || 'Obra'}). Compra necessária.`);
+      `).run(`O almoxarifado marcou o item "${materialName}" (${itemQty} ${materialUnit}) como NÃO DISPONÍVEL na solicitação ${item.request_code} (${item.project_name || 'Obra'}). Compra necessária.`);
 
       // Log de auditoria
       await db.prepare(`
         INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
         VALUES (?, 'DISPONIBILIDADE_INDISPONIVEL', ?, 0, 0, ?, ?, ?, ?)
       `).run(
-        item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+        item.material_id || null, itemQty, item.project_id, item.request_id, userId || null,
         `Item "${materialName}" marcado como NÃO DISPONÍVEL pelo Almoxarifado na solicitação ${item.request_code}`
       );
     } else {
@@ -518,7 +522,7 @@ requestsRouter.patch('/items/:itemId/availability', async (req, res) => {
         INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
         VALUES (?, 'DISPONIBILIDADE_DISPONIVEL', ?, 0, 0, ?, ?, ?, ?)
       `).run(
-        item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+        item.material_id || null, itemQty, item.project_id, item.request_id, userId || null,
         `Item "${materialName}" marcado como DISPONÍVEL pelo Almoxarifado na solicitação ${item.request_code}`
       );
     }
@@ -592,12 +596,14 @@ requestsRouter.patch('/items/:itemId/cancel', async (req, res) => {
 
     const materialName = item.mat_name || item.custom_name || 'Material';
 
+    const itemQty = Number(item.quantity_requested || item.quantity || 1);
+
     // Registro imutável de auditoria no histórico de movimentações (stock_movements)
     await db.prepare(`
       INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
       VALUES (?, 'CANCELAMENTO_ITEM', ?, 0, 0, ?, ?, ?, ?)
     `).run(
-      item.material_id || null, item.quantity, item.project_id, item.request_id, userId || null,
+      item.material_id || null, itemQty, item.project_id, item.request_id, userId || null,
       `Item "${materialName}" da solicitação ${item.request_code} (${item.project_name || 'Obra'}) CANCELADO pelo Almoxarifado. Motivo: ${reason.trim()}`
     );
 
@@ -607,7 +613,7 @@ requestsRouter.patch('/items/:itemId/cancel', async (req, res) => {
       VALUES (?, 'CANCELAR_ITEM_SOLICITACAO', 'SOLICITACAO_ITEM', ?, ?, 'Ativo', 'Cancelado', ?)
     `).run(
       userId || null, itemId, item.project_id,
-      `Item "${materialName}" (${item.quantity} ${item.custom_unit || item.mat_unit || 'un'}) cancelado na solicitação ${item.request_code}. Justificativa: ${reason.trim()}`
+      `Item "${materialName}" (${itemQty} ${item.custom_unit || item.mat_unit || 'un'}) cancelado na solicitação ${item.request_code}. Justificativa: ${reason.trim()}`
     );
 
     res.json({

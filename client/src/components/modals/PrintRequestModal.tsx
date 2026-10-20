@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { MaterialRequest } from '../../types';
 import { Printer, X, ClipboardCheck, Building2, User, Calendar, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { formatDateBR, formatDateTimeBR } from '../../utils/dateUtils';
+import { sanitizeUnit } from '../../utils/unitConverter';
 
 interface PrintRequestModalProps {
   isOpen: boolean;
@@ -261,7 +262,7 @@ export const PrintRequestModal: React.FC<PrintRequestModalProps> = ({
 
                         {/* Unidade */}
                         <td style={{ color: '#334155' }} className="py-2 px-2 text-center border-r border-slate-300 font-semibold text-slate-700 uppercase">
-                          {it.material_unit || 'un'}
+                          {sanitizeUnit(it.material_unit)}
                         </td>
 
                         {/* Qtd Solicitada */}

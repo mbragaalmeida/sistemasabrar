@@ -314,3 +314,19 @@ export function formatMoney(val: number): string {
     maximumFractionDigits: 2
   });
 }
+
+/**
+ * Higieniza o texto de unidade para garantir que números ou quantidades digitados por engano
+ * no campo de unidade sejam removidos (ex: '34 un' -> 'un', '1 un' -> 'un', '2 m' -> 'm').
+ */
+export function sanitizeUnit(unit?: string | null): string {
+  if (!unit) return 'un';
+  const trimmed = String(unit).trim();
+  // Se contiver padrão de embalagem (ex: 'rolo c/ 10 metros', 'cx c/ 50'), preserva integralmente
+  if (/^(rolo|cx|caixa|pacote|pct|lata|fardo|barra)\s+c\//i.test(trimmed)) {
+    return trimmed;
+  }
+  // Remove número e espaço no início: '34 un' -> 'un', '2 pç' -> 'pç'
+  const cleaned = trimmed.replace(/^[\d.,]+\s*/, '').trim();
+  return cleaned || 'un';
+}

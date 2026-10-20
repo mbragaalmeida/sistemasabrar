@@ -206,7 +206,10 @@ export class StockService {
       let materialId = item.materialId || item.material_id || null;
       const isCustom = Boolean(item.isCustom || (!materialId && (item.customName || item.materialName)));
       const customName = (item.customName || item.materialName) ? String(item.customName || item.materialName).trim() : null;
-      const customUnit = item.unit ? String(item.unit).trim() : 'un';
+      const rawUnit = item.unit ? String(item.unit).trim() : 'un';
+      const customUnit = /^(rolo|cx|caixa|pacote|pct|lata|fardo|barra)\s+c\//i.test(rawUnit)
+        ? rawUnit
+        : (rawUnit.replace(/^[\d.,]+\s*/, '').trim() || 'un');
       const qty = Number(item.quantity || item.quantity_requested);
 
       if (qty <= 0) continue;

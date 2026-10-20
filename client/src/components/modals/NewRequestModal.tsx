@@ -26,7 +26,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { AssignEngineersModal } from './AssignEngineersModal';
 import { formatDateBR, getTodayBR, addDaysBR, parseDateBRToISO, maskDateInput } from '../../utils/dateUtils';
-import { parsePackageInfo, getUnitOptions, convertQuantity, getUnitPriceForUnit, formatMoney, COMMON_UNITS } from '../../utils/unitConverter';
+import { parsePackageInfo, getUnitOptions, convertQuantity, getUnitPriceForUnit, formatMoney, COMMON_UNITS, sanitizeUnit } from '../../utils/unitConverter';
 
 interface NewRequestModalProps {
   isOpen: boolean;
@@ -479,13 +479,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   // Adição de Item Fora da Base (Exclusivo Emily / Compras)
   const handleAddCustomUncatalogedExtra = (name: string, qty: number, unit = 'un') => {
     if (!name.trim() || qty <= 0) return;
+    const cleanUnit = sanitizeUnit(unit);
     const newId = Date.now() + Math.floor(Math.random() * 1000);
     const newItem = {
       id: newId,
       material_id: null,
       material_name: name.trim().toUpperCase(),
       material_code: 'FORA-BASE',
-      unit: unit || 'un',
+      unit: cleanUnit,
       quantity: qty,
       isExtra: true,
       isCustom: true,
@@ -665,13 +666,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   // Inclusão de material avulso fora da base (Exclusivo Emily / Compras)
   const handleAddUncatalogedCustomItem = (name: string, qty: number, unit = 'un') => {
     if (!name.trim() || qty <= 0) return;
+    const cleanUnit = sanitizeUnit(unit);
     const newId = Date.now() + Math.floor(Math.random() * 1000);
     const newItem = {
       id: newId,
       material_id: null,
       material_name: name.trim().toUpperCase(),
       material_code: 'FORA-BASE',
-      unit: unit || 'un',
+      unit: cleanUnit,
       quantity: qty,
       isExtra: true,
       isCustom: true,
@@ -680,7 +682,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setCustomItems(prev => [newItem, ...prev]);
     setSelectedCustomIds(prev => new Set(prev).add(newId));
     setCustomQuantities(prev => ({ ...prev, [newId]: qty }));
-    setCustomItemUnits(prev => ({ ...prev, [newId]: unit || 'un' }));
+    setCustomItemUnits(prev => ({ ...prev, [newId]: cleanUnit }));
     setCustomMaterialSearch('');
     setCustomMaterialId('');
     setCustomQuantity('1');
@@ -868,7 +870,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         const itemsToSubmit = batchItemsWithMetrics
           .filter(it => it.isSelected && it.currentRequestedQty > 0)
           .map(it => {
-            const chosenUnit = budgetUnits[it.id] || it.unit || 'un';
+            const chosenUnit = sanitizeUnit(budgetUnits[it.id] || it.unit || 'un');
             return {
               materialId: it.material_id || null,
               quantity: it.currentRequestedQty,
@@ -897,7 +899,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         const itemsToSubmit = customItemsWithMetrics
           .filter(it => it.isSelected && it.currentRequestedQty > 0 && (it.material_id || it.isCustom))
           .map(it => {
-            const chosenUnit = customItemUnits[it.id] || it.unit || 'un';
+            const chosenUnit = sanitizeUnit(customItemUnits[it.id] || it.unit || 'un');
             return {
               materialId: it.material_id || null,
               quantity: it.currentRequestedQty,

@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, CheckCircle, Flame, AlertTriangle, Info, Check } from 'lucide-react';
+import { Bell, CheckCircle, Flame, AlertTriangle, Info, Check, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
 import { Notification } from '../types';
 import { useAuth } from '../context/AuthContext';
 
-export const NotificationsPage: React.FC = () => {
+interface NotificationsPageProps {
+  onNavigate?: (page: string, id?: number) => void;
+}
+
+export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate }) => {
   const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +28,42 @@ export const NotificationsPage: React.FC = () => {
   useEffect(() => {
     fetchNotifs();
   }, []);
+
+  const handleNavigateToLink = (n: Notification) => {
+    if (!n.link || !onNavigate) return;
+    const link = n.link.trim().toLowerCase();
+
+    if (link.startsWith('/projetos/') || link.startsWith('/obras/')) {
+      const parts = n.link.split('/');
+      const id = Number(parts[2]);
+      if (!isNaN(id)) {
+        onNavigate('project-detail', id);
+      } else {
+        onNavigate('projects');
+      }
+    } else if (link === '/materiais' || link.startsWith('/materiais') || link.startsWith('/materials')) {
+      onNavigate('materials');
+    } else if (link === '/solicitacoes' || link.startsWith('/solicitacoes') || link.startsWith('/requests')) {
+      onNavigate('requests');
+    } else if (link === '/compras' || link.startsWith('/compras') || link.startsWith('/purchases')) {
+      onNavigate('purchases');
+    } else if (link === '/estoque' || link.startsWith('/estoque') || link.startsWith('/stock')) {
+      onNavigate('stock');
+    } else if (link === '/projetos' || link.startsWith('/projetos') || link.startsWith('/obras')) {
+      onNavigate('projects');
+    } else if (link === '/dashboard' || link.startsWith('/dashboard')) {
+      onNavigate('dashboard');
+    } else if (link === '/ai-hub' || link.startsWith('/ai')) {
+      onNavigate('ai-hub');
+    } else {
+      const page = link.replace(/^\//, '');
+      onNavigate(page);
+    }
+
+    if (!n.is_read) {
+      handleMarkAsRead(n.id);
+    }
+  };
 
   const handleMarkAsRead = async (id: number) => {
     try {
@@ -80,13 +120,18 @@ export const NotificationsPage: React.FC = () => {
               return (
                 <div
                   key={n.id}
+                  onClick={() => {
+                    if (n.link && onNavigate) handleNavigateToLink(n);
+                  }}
                   className={`p-4 rounded-3xl border transition-all flex items-start justify-between gap-3 ${
+                    n.link && onNavigate ? 'cursor-pointer hover:border-sabrar-500/80 active:scale-[0.99]' : ''
+                  } ${
                     isUnread
                       ? 'bg-dark-900 border-sabrar-500/40 shadow-md'
                       : 'bg-dark-900/60 border-dark-750 text-slate-400'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
                     <div
                       className={`p-2 rounded-2xl shrink-0 ${
                         n.type === 'urgent'
@@ -99,8 +144,8 @@ export const NotificationsPage: React.FC = () => {
                       <Bell className="w-4 h-4" />
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className={`font-bold text-sm ${isUnread ? 'text-white' : 'text-slate-300'}`}>
                           {n.title}
                         </h3>
@@ -108,22 +153,46 @@ export const NotificationsPage: React.FC = () => {
                           <span className="w-2 h-2 rounded-full bg-sabrar-500 animate-pulse"></span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
-                      <span className="text-[10px] text-slate-500 mt-1 block">
-                        {new Date(n.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed break-words">{n.message}</p>
+                      <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500 flex-wrap">
+                        {n.role_target && (
+                          <span className="font-semibold text-sabrar-400 bg-sabrar-950 px-2 py-0.5 rounded-md border border-sabrar-500/30 uppercase">
+                            {n.role_target}
+                          </span>
+                        )}
+                        <span>{new Date(n.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
                     </div>
                   </div>
 
-                  {isUnread && (
-                    <button
-                      onClick={() => handleMarkAsRead(n.id)}
-                      className="p-1.5 rounded-xl text-slate-400 hover:text-sabrar-400 hover:bg-dark-800 transition-colors shrink-0"
-                      title="Marcar como lida"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    {isUnread && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkAsRead(n.id);
+                        }}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-sabrar-400 hover:bg-dark-800 transition-colors shrink-0"
+                        title="Marcar como lida"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                    )}
+                    {n.link && onNavigate && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNavigateToLink(n);
+                        }}
+                        className="p-1.5 rounded-xl text-sabrar-400 hover:text-white bg-dark-850 hover:bg-sabrar-600 border border-dark-700 hover:border-sabrar-500 transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                        title="Acessar módulo de destino"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })

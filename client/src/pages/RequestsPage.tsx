@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { NewRequestModal } from '../components/modals/NewRequestModal';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
+import { sanitizeUnit } from '../utils/unitConverter';
 
 export const RequestsPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -505,7 +506,7 @@ export const RequestsPage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="text-slate-300">
-                      Solicitado: <span className="font-bold text-white">{it.quantity_requested} {it.material_unit}</span>
+                      Solicitado: <span className="font-bold text-white">{it.quantity_requested} {sanitizeUnit(it.material_unit)}</span>
                     </span>
                     <span className="text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700 font-semibold text-[11px]">
                       Reservado: {it.quantity_reserved}
