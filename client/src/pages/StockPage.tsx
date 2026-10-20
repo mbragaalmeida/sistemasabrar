@@ -334,11 +334,24 @@ export const StockPage: React.FC = () => {
           return true;
         });
 
+        const extractRequestSequenceNumber = (r: any): number => {
+          if (r?.code) {
+            const m = r.code.match(/(\d+)$/);
+            if (m) return parseInt(m[1], 10);
+          }
+          return Number(r?.id) || 0;
+        };
+
+        // Ordenação decrescente rigorosa por número da solicitação (ex: SOL-2026-0047 antes de SOL-2026-0045)
+        const sortedFilteredRequests = [...filteredRequests].sort((a, b) => {
+          return extractRequestSequenceNumber(b) - extractRequestSequenceNumber(a);
+        });
+
         // Agrupamento por obra (boxes de cada obra com botão de imprimir romaneio)
         const groupedByProject: any[] = (() => {
           const map = new Map<number | string, any>();
 
-          filteredRequests.forEach(req => {
+          sortedFilteredRequests.forEach(req => {
             const key = req.project_id || 'geral';
             if (!map.has(key)) {
               map.set(key, {
@@ -370,22 +383,20 @@ export const StockPage: React.FC = () => {
             });
           });
 
-          // Ordena as solicitações dentro de cada grupo da mais recente para a mais antiga (Item 4)
+          // Ordena as solicitações dentro de cada grupo da maior numeração para a menor
           map.forEach(grp => {
             grp.requests.sort((a: any, b: any) => {
-              const dateA = new Date(a.created_at).getTime() || Number(a.id) || 0;
-              const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
-              return dateB - dateA;
+              return extractRequestSequenceNumber(b) - extractRequestSequenceNumber(a);
             });
           });
 
-          // Ordena as obras para que a obra com a solicitação mais recente fique no topo (Item 4)
+          // Ordena as obras para que a obra com a solicitação de maior numeração fique no topo
           return Array.from(map.values()).sort((a, b) => {
             if (a.projectId === 'geral') return 1;
             if (b.projectId === 'geral') return -1;
-            const latestA = Math.max(...a.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
-            const latestB = Math.max(...b.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
-            return latestB - latestA;
+            const maxA = Math.max(...a.requests.map((r: any) => extractRequestSequenceNumber(r)));
+            const maxB = Math.max(...b.requests.map((r: any) => extractRequestSequenceNumber(r)));
+            return maxB - maxA;
           });
         })();
 
@@ -1088,12 +1099,12 @@ export const StockPage: React.FC = () => {
             ) : (
               /* VISUALIZAÇÃO 2: LISTA GERAL */
               <div className="space-y-4">
-                {filteredRequests.length === 0 ? (
+                {sortedFilteredRequests.length === 0 ? (
                   <div className="py-12 text-center bg-dark-900 rounded-3xl border border-dark-750 text-xs text-slate-500">
                     Nenhuma solicitação encontrada para o filtro selecionado.
                   </div>
                 ) : (
-                  filteredRequests.map((req) => renderRequestCard(req))
+                  sortedFilteredRequests.map((req) => renderRequestCard(req))
                 )}
               </div>
             )}

@@ -266,17 +266,17 @@ export const MaterialsPage: React.FC = () => {
 
       {/* Banner / Card de Ajustes de Saldo de Estoque Aguardando Aprovação (Item 9) */}
       {pendingAdjustments.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-950/70 via-amber-900/40 to-dark-900 border-2 border-amber-500/60 rounded-3xl p-4 sm:p-5 shadow-2xl shadow-amber-950/30 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+        <div className="bg-white dark:bg-dark-900 border-2 border-amber-400 dark:border-amber-500/50 rounded-3xl p-4 sm:p-5 shadow-lg shadow-amber-500/5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-100 dark:border-amber-500/20 pb-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                 <AlertTriangle className="w-5 h-5 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                   <span>{pendingAdjustments.length} solicitação(ões) de correção de estoque aguardando aprovação</span>
                 </h3>
-                <p className="text-[11px] text-amber-200/80">
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                   Alterações manuais de quantidade propostas pela equipe que requerem autorização dos Administradores, Sabrina ou Emily.
                 </p>
               </div>
@@ -284,12 +284,12 @@ export const MaterialsPage: React.FC = () => {
 
             <div className="self-start sm:self-center shrink-0">
               {canApproveAdjustment ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black bg-amber-50 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
                   Aprovação Autorizada (Admin / Sabrina / Emily)
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-dark-800 text-slate-300 border border-dark-700">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-dark-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-dark-700">
                   Aguardando Análise da Gestão
                 </span>
               )}
@@ -305,50 +305,50 @@ export const MaterialsPage: React.FC = () => {
               return (
                 <div
                   key={adj.id}
-                  className="bg-dark-900/90 hover:bg-dark-850 p-3.5 sm:p-4 rounded-2xl border border-amber-500/30 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all"
+                  className="bg-slate-50 hover:bg-slate-100/80 dark:bg-dark-850 dark:hover:bg-dark-800 p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-dark-750 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all"
                 >
-                  <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="space-y-2 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-extrabold text-sm sm:text-base text-white truncate">
+                      <span className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white truncate">
                         {adj.material_name}
                       </span>
-                      <span className="font-mono text-xs font-bold text-amber-400 bg-dark-950 px-2 py-0.5 rounded-lg border border-dark-700">
+                      <span className="font-mono text-xs font-bold text-slate-700 dark:text-amber-400 bg-white dark:bg-dark-900 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-dark-700">
                         {adj.material_code}
                       </span>
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                         ({adj.material_unit || 'und'})
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2.5 flex-wrap text-xs text-slate-300">
-                      <span className="bg-dark-950 px-2 py-1 rounded-lg border border-dark-700">
-                        Estoque Atual: <strong className="text-white font-bold">{adj.previous_stock}</strong>
+                    <div className="flex items-center gap-2.5 flex-wrap text-xs">
+                      <span className="bg-white dark:bg-dark-900 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-dark-700">
+                        Estoque Atual: <strong className="text-slate-900 dark:text-white font-black">{adj.previous_stock}</strong>
                       </span>
-                      <span className="text-amber-400 font-bold">➔</span>
-                      <span className="bg-amber-950/70 text-amber-200 px-2 py-1 rounded-lg border border-amber-600/40">
-                        Novo Saldo Proposto: <strong className="text-amber-300 font-extrabold">{adj.requested_stock}</strong>
+                      <span className="text-amber-500 font-bold">➔</span>
+                      <span className="bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 px-2.5 py-1 rounded-xl border border-amber-200 dark:border-amber-700/60 font-semibold">
+                        Novo Saldo Proposto: <strong className="text-amber-950 dark:text-amber-100 font-black">{adj.requested_stock}</strong>
                       </span>
-                      <span className={`px-2 py-1 rounded-lg font-black text-xs ${
+                      <span className={`px-2.5 py-1 rounded-xl font-black text-xs ${
                         isDiffPositive
-                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
-                          : 'bg-rose-950/80 text-rose-300 border border-rose-600/40'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60'
+                          : 'bg-rose-50 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700/60'
                       }`}>
                         {isDiffPositive ? `+${diff}` : diff} {adj.material_unit || 'und'}
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-slate-400 flex items-center gap-2 flex-wrap pt-0.5">
+                    <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2 flex-wrap pt-0.5">
                       <span>
-                        Solicitado por: <strong className="text-slate-200 font-bold">{adj.requested_by_name || adj.requester_name || 'Almoxarifado'}</strong>
+                        Solicitado por: <strong className="text-slate-900 dark:text-slate-200 font-bold">{adj.requested_by_name || adj.requester_name || 'Almoxarifado'}</strong>
                       </span>
                       <span>•</span>
                       <span>
-                        Motivo: <em className="text-amber-200/90 font-medium bg-dark-950/60 px-1.5 py-0.5 rounded border border-dark-800">"{adj.reason}"</em>
+                        Motivo: <span className="text-slate-800 dark:text-slate-200 font-medium italic bg-white dark:bg-dark-900 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-dark-750">"{adj.reason}"</span>
                       </span>
                       {adj.created_at && (
                         <>
                           <span>•</span>
-                          <span className="text-slate-500">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">
                             {new Date(adj.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </>
@@ -362,7 +362,7 @@ export const MaterialsPage: React.FC = () => {
                         type="button"
                         disabled={isLoading}
                         onClick={() => handleApproveAdjustment(adj.id)}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-600/30 disabled:opacity-50 active:scale-95"
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md shadow-emerald-600/30 disabled:opacity-50 active:scale-95 cursor-pointer"
                       >
                         <Check className="w-4 h-4" />
                         <span>{isLoading ? 'Aprovando...' : 'Aprovar Ajuste'}</span>
@@ -371,14 +371,14 @@ export const MaterialsPage: React.FC = () => {
                         type="button"
                         disabled={isLoading}
                         onClick={() => handleRejectAdjustment(adj.id)}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-lg shadow-rose-600/30 disabled:opacity-50 active:scale-95"
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-md shadow-rose-600/30 disabled:opacity-50 active:scale-95 cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                         <span>{isLoading ? 'Recusando...' : 'Recusar'}</span>
                       </button>
                     </div>
                   ) : (
-                    <div className="text-[11px] text-amber-400 bg-amber-950/50 border border-amber-600/30 px-3 py-1.5 rounded-xl shrink-0 self-start md:self-center">
+                    <div className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-600/30 px-3 py-1.5 rounded-xl shrink-0 self-start md:self-center font-medium">
                       Aguardando aprovação de Admin, Sabrina ou Emily
                     </div>
                   )}

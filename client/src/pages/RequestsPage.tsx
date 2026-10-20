@@ -239,20 +239,26 @@ export const RequestsPage: React.FC = () => {
       }
     });
 
-    // Ordena as solicitações dentro de cada grupo da mais recente para a mais antiga (Item 4)
+    const extractRequestSequenceNumber = (r: any): number => {
+      if (r?.code) {
+        const m = r.code.match(/(\d+)$/);
+        if (m) return parseInt(m[1], 10);
+      }
+      return Number(r?.id) || 0;
+    };
+
+    // Ordena as solicitações dentro de cada grupo da maior numeração (mais recente) para a menor
     groupsMap.forEach(group => {
       group.requests.sort((a: any, b: any) => {
-        const dateA = new Date(a.created_at).getTime() || Number(a.id) || 0;
-        const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
-        return dateB - dateA;
+        return extractRequestSequenceNumber(b) - extractRequestSequenceNumber(a);
       });
     });
 
-    // Ordena as obras para que a obra com a solicitação mais recente fique no topo (Item 4)
-    return Array.from(groupsMap.values()).sort((a: any, b: any) => {
-      const latestA = Math.max(...a.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
-      const latestB = Math.max(...b.requests.map((r: any) => new Date(r.created_at).getTime() || Number(r.id) || 0));
-      return latestB - latestA;
+    // Ordena as obras para que a obra com a solicitação de maior numeração de SOL fique no topo
+    return Array.from(groupsMap.values()).sort((a, b) => {
+      const maxA = Math.max(...a.requests.map((r: any) => extractRequestSequenceNumber(r)));
+      const maxB = Math.max(...b.requests.map((r: any) => extractRequestSequenceNumber(r)));
+      return maxB - maxA;
     });
   }, [visibleRequests]);
 

@@ -370,7 +370,7 @@ body.light header input {
   border-color: #fecdd3 !important;
   color: #9f1239 !important; /* Vermelho escuro nítido */
 }
-.light [class*="bg-rose-950"] * {
+.light [class*="bg-rose-950"] *:not(button):not(button *):not([class*="bg-"]):not([class*="text-"]):not([class*="border-"]) {
   color: #9f1239 !important;
 }
 
@@ -380,7 +380,7 @@ body.light header input {
   border-color: #fde68a !important;
   color: #92400e !important;
 }
-.light [class*="bg-amber-950"] * {
+.light [class*="bg-amber-950"] *:not(button):not(button *):not([class*="bg-"]):not([class*="text-"]):not([class*="border-"]) {
   color: #92400e !important;
 }
 
@@ -390,7 +390,7 @@ body.light header input {
   border-color: #bbf7d0 !important;
   color: #15803d !important;
 }
-.light [class*="bg-emerald-950"] * {
+.light [class*="bg-emerald-950"] *:not(button):not(button *):not([class*="bg-"]):not([class*="text-"]):not([class*="border-"]) {
   color: #15803d !important;
 }
 
@@ -400,7 +400,7 @@ body.light header input {
   border-color: #bae6fd !important;
   color: #0369a1 !important;
 }
-.light [class*="bg-cyan-950"] * {
+.light [class*="bg-cyan-950"] *:not(button):not(button *):not([class*="bg-"]):not([class*="text-"]):not([class*="border-"]) {
   color: #0369a1 !important;
 }
 
