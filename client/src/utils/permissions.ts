@@ -9,7 +9,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'ducts': ['admin', 'orcamento', 'orcamento_engenharia'],
   'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes', 'orcamento_engenharia'],
-  'stock': ['admin', 'almoxarifado'],
+  'stock': ['admin', 'almoxarifado', 'compras_solicitacoes', 'orcamento_engenharia'],
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
@@ -44,6 +44,17 @@ export function getDefaultPageForRole(role?: UserRole): string {
     default:
       return 'requests';
   }
+}
+
+/**
+ * Verifica se o usuário tem perfil com autoridade de aprovação (Admin, Sabrina ou Emily)
+ */
+export function canUserApproveOperations(user?: { role?: string; email?: string; name?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'compras_solicitacoes' || user.role === 'orcamento_engenharia') return true;
+  const name = String(user.name || '').toLowerCase();
+  const email = String(user.email || '').toLowerCase();
+  return /sabrina|emily/i.test(name) || /sabrina|emily/i.test(email);
 }
 
 /**

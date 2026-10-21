@@ -358,6 +358,13 @@ export const api = {
     fetchJson<any>(`/requests/substitutions/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
   rejectSubstitution: (id: number | string, userId?: number, notes?: string) =>
     fetchJson<any>(`/requests/substitutions/${id}/reject`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
+  createQuantityChange: (data: { requestItemId: number; requestId?: number; newQuantity: number; reason: string; userId?: number }) =>
+    fetchJson<any>('/requests/quantity-changes', { method: 'POST', body: JSON.stringify(data) }),
+  getQuantityChanges: () => fetchJson<any[]>('/requests/quantity-changes'),
+  approveQuantityChange: (id: number | string, userId?: number, notes?: string) =>
+    fetchJson<any>(`/requests/quantity-changes/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
+  rejectQuantityChange: (id: number | string, userId?: number, notes?: string) =>
+    fetchJson<any>(`/requests/quantity-changes/${id}/reject`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
   updateRequestItemAvailability: (itemId: number | string, status: 'disponivel' | 'em_falta', userId?: number) =>
     fetchJson<any>(`/requests/items/${itemId}/availability`, { method: 'PATCH', body: JSON.stringify({ status, userId }) }),
   cancelRequestItem: (itemId: number | string, reason: string, userId?: number) =>

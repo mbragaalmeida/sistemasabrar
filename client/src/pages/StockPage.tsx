@@ -24,14 +24,16 @@ import {
   Search,
   RefreshCw,
   ArrowRight,
+  Hash,
   X
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { canUserViewPrices } from '../utils/permissions';
+import { canUserViewPrices, canUserApproveOperations } from '../utils/permissions';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
+import { QuantityChangeModal } from '../components/modals/QuantityChangeModal';
 import { sanitizeUnit } from '../utils/unitConverter';
 
 export const StockPage: React.FC = () => {
@@ -46,6 +48,8 @@ export const StockPage: React.FC = () => {
   const [movements, setMovements] = useState<any[]>([]);
   const [substitutions, setSubstitutions] = useState<any[]>([]);
   const [substituteItemData, setSubstituteItemData] = useState<{ request: any; item: any } | null>(null);
+  const [quantityChanges, setQuantityChanges] = useState<any[]>([]);
+  const [quantityChangeItemData, setQuantityChangeItemData] = useState<{ request: any; item: any } | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
@@ -58,11 +62,8 @@ export const StockPage: React.FC = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [isCancellingItem, setIsCancellingItem] = useState(false);
 
-  const canApproveSubstitution = Boolean(
-    currentUser?.role === 'admin' ||
-    /sabrina|emily/i.test(currentUser?.name || '') ||
-    /sabrina|emily/i.test(currentUser?.email || '')
-  );
+  const canApproveOperations = canUserApproveOperations(currentUser);
+  const canApproveSubstitution = canApproveOperations;
 
   const toggleProjectExpand = (id: number | string) => {
     setExpandedProjects(prev => {
@@ -91,18 +92,20 @@ export const StockPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, reqs, rets, moves, subs] = await Promise.all([
+      const [sumData, reqs, rets, moves, subs, qtyChanges] = await Promise.all([
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
         api.getStockMovements(),
-        api.getSubstitutions()
+        api.getSubstitutions(),
+        api.getQuantityChanges()
       ]);
       setSummary(sumData);
       setPendingRequests(reqs);
       setReturns(rets);
       setMovements(moves);
       setSubstitutions(subs || []);
+      setQuantityChanges(qtyChanges || []);
     } catch (err) {
       console.error('Erro ao carregar dados do estoque:', err);
     } finally {
@@ -192,6 +195,31 @@ export const StockPage: React.FC = () => {
     } catch (err: any) {
       console.error('Erro ao recusar troca:', err);
       alert(err.message || 'Erro ao recusar troca de material');
+    }
+  };
+
+  const handleApproveQuantityChange = async (changeId: number) => {
+    if (!window.confirm('Confirma a autorização para a alteração da quantidade deste material?')) return;
+    try {
+      await api.approveQuantityChange(changeId, currentUser?.id, 'Autorizado');
+      await loadData();
+      alert('Alteração de quantidade autorizada e aplicada com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao aprovar alteração de quantidade:', err);
+      alert(err.message || 'Erro ao aprovar alteração de quantidade');
+    }
+  };
+
+  const handleRejectQuantityChange = async (changeId: number) => {
+    const reason = prompt('Informe a justificativa da recusa da alteração de quantidade:');
+    if (!reason) return;
+    try {
+      await api.rejectQuantityChange(changeId, currentUser?.id, reason);
+      await loadData();
+      alert('Alteração de quantidade recusada.');
+    } catch (err: any) {
+      console.error('Erro ao recusar alteração de quantidade:', err);
+      alert(err.message || 'Erro ao recusar alteração de quantidade');
     }
   };
 
@@ -517,6 +545,8 @@ export const StockPage: React.FC = () => {
                     {items.map((it: any) => {
                       const itemSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Pendente');
                       const approvedSub = substitutions.find((s: any) => s.request_item_id === it.id && s.status === 'Aprovado');
+                      const itemQtyChange = quantityChanges.find((q: any) => q.request_item_id === it.id && q.status === 'Pendente');
+                      const approvedQtyChange = quantityChanges.find((q: any) => q.request_item_id === it.id && q.status === 'Aprovado');
                       const isCancelled = it.item_status === 'Cancelado';
 
                       return (
@@ -558,7 +588,7 @@ export const StockPage: React.FC = () => {
                                     <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
                                     Troca Solicitada: {itemSub.substitute_material_name} (Qtd: {itemSub.quantity})
                                   </span>
-                                  {canApproveSubstitution && (
+                                  {canApproveOperations && (
                                     <div className="flex items-center gap-1">
                                       <button
                                         type="button"
@@ -585,6 +615,42 @@ export const StockPage: React.FC = () => {
                                 <div className="mt-0.5 text-[10px] font-bold text-emerald-400 flex items-center gap-1">
                                   <Check className="w-3 h-3 text-emerald-400" />
                                   <span>Substituído com autorização por: {approvedSub.substitute_material_name}</span>
+                                </div>
+                              )}
+
+                              {itemQtyChange && (
+                                <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                  <span className="text-[11px] font-bold text-sky-300 bg-sky-950/80 border border-sky-600/50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Hash className="w-3 h-3 text-sky-400" />
+                                    Alteração Solicitada: {itemQtyChange.original_quantity} → {itemQtyChange.new_quantity} {sanitizeUnit(it.material_unit)}
+                                  </span>
+                                  {canApproveOperations && (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveQuantityChange(itemQtyChange.id)}
+                                        className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded shadow-xs"
+                                        title="Aprovar alteração de quantidade deste item"
+                                      >
+                                        Aprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRejectQuantityChange(itemQtyChange.id)}
+                                        className="text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded shadow-xs"
+                                        title="Recusar alteração de quantidade"
+                                      >
+                                        Recusar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {approvedQtyChange && (
+                                <div className="mt-0.5 text-[10px] font-bold text-sky-400 flex items-center gap-1">
+                                  <Check className="w-3 h-3 text-sky-400" />
+                                  <span>Quantidade alterada com autorização: {approvedQtyChange.new_quantity} {sanitizeUnit(it.material_unit)}</span>
                                 </div>
                               )}
                             </div>
@@ -645,6 +711,19 @@ export const StockPage: React.FC = () => {
                                   >
                                     <RefreshCw className="w-3 h-3" />
                                     <span>Trocar Material</span>
+                                  </button>
+                                )}
+
+                                {/* Botão Alterar Quantidade para o Almoxarifado (Item 3) */}
+                                {!itemQtyChange && req.status !== 'Entregue' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setQuantityChangeItemData({ request: req, item: it })}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/40 hover:bg-sky-950/80 border border-sky-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    title="Solicitar alteração da quantidade deste material"
+                                  >
+                                    <Hash className="w-3 h-3" />
+                                    <span>Alterar Qtd</span>
                                   </button>
                                 )}
 
@@ -921,73 +1000,132 @@ export const StockPage: React.FC = () => {
               ))}
             </div>
 
-            {/* Banner de Solicitações de Troca de Material Pendentes */}
-            {substitutions.filter(s => s.status === 'Pendente').length > 0 && (
-              <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs sm:text-sm">
-                    <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
-                    <span>
-                      {substitutions.filter(s => s.status === 'Pendente').length} Solicitação(ões) de Troca de Material Aguardando Autorização
+            {/* Banner de Solicitações de Troca de Material e Alteração de Quantidade Pendentes */}
+            {(() => {
+              const pendingSubs = substitutions.filter(s => s.status === 'Pendente');
+              const pendingQty = quantityChanges.filter(q => q.status === 'Pendente');
+              const totalPending = pendingSubs.length + pendingQty.length;
+
+              if (totalPending === 0) return null;
+
+              return (
+                <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-amber-300 font-bold text-xs sm:text-sm">
+                      <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+                      <span>
+                        {totalPending} Solicitação(ões) de Troca / Alteração de Quantidade Aguardando Autorização
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-amber-400 font-semibold bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-600/40">
+                      Aprovação: Admins, Sabrina ou Emily
                     </span>
                   </div>
-                  <span className="text-[11px] text-amber-400 font-semibold bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-600/40">
-                    Aprovação: Admins, Sabrina ou Emily
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {substitutions.filter(s => s.status === 'Pendente').map((sub) => (
-                    <div key={sub.id} className="p-3.5 bg-dark-900/90 border border-amber-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                          <span className="font-mono text-amber-300 font-bold">{sub.request_code}</span>
-                          <span className="truncate max-w-[200px]">{sub.project_name}</span>
-                        </div>
-                        <div className="text-xs space-y-1">
-                          <div className="text-slate-300">
-                            De: <strong className="text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Trocas de Material */}
+                    {pendingSubs.map((sub) => (
+                      <div key={`sub-${sub.id}`} className="p-3.5 bg-dark-900/90 border border-amber-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
+                        <div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                            <span className="font-mono text-amber-300 font-bold">{sub.request_code}</span>
+                            <span className="truncate max-w-[200px]">{sub.project_name}</span>
                           </div>
-                          <div className="text-emerald-400 font-bold flex items-center gap-1">
-                            <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
-                            <span>Para: {sub.substitute_material_name} ({sub.quantity} {sub.substitute_material_unit || 'un'})</span>
+                          <div className="text-xs space-y-1">
+                            <div className="text-slate-300">
+                              De: <strong className="text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
+                            </div>
+                            <div className="text-emerald-400 font-bold flex items-center gap-1">
+                              <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
+                              <span>Para: {sub.substitute_material_name} ({sub.quantity} {sub.substitute_material_unit || 'un'})</span>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
+                            Motivo: "{sub.reason}"
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            Tipo: <strong className="text-amber-400">Troca de Material</strong> • Solicitado por: <strong>{sub.requested_by_name || 'Almoxarifado'}</strong>
                           </div>
                         </div>
-                        <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
-                          Motivo: "{sub.reason}"
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-1">
-                          Solicitado por: <strong>{sub.requested_by_name || 'Almoxarifado'}</strong>
-                        </div>
+
+                        {canApproveOperations ? (
+                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveSubstitution(sub.id)}
+                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
+                            >
+                              Autorizar Troca
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectSubstitution(sub.id)}
+                              className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-amber-400/90 bg-amber-950/40 p-1.5 rounded-xl text-center border border-amber-800/40 font-medium">
+                            Aguardando análise da Direção / Compras
+                          </div>
+                        )}
                       </div>
+                    ))}
 
-                      {canApproveSubstitution ? (
-                        <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
-                          <button
-                            type="button"
-                            onClick={() => handleApproveSubstitution(sub.id)}
-                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
-                          >
-                            Autorizar Troca
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRejectSubstitution(sub.id)}
-                            className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
-                          >
-                            Recusar
-                          </button>
+                    {/* Alterações de Quantidade */}
+                    {pendingQty.map((qc) => (
+                      <div key={`qc-${qc.id}`} className="p-3.5 bg-dark-900/90 border border-sky-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
+                        <div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                            <span className="font-mono text-sky-300 font-bold">{qc.request_code}</span>
+                            <span className="truncate max-w-[200px]">{qc.project_name}</span>
+                          </div>
+                          <div className="text-xs space-y-1">
+                            <div className="text-slate-200 font-bold">
+                              {qc.material_name}
+                            </div>
+                            <div className="text-sky-400 font-bold flex items-center gap-1">
+                              <ArrowRight className="w-3 h-3 text-sky-400 shrink-0" />
+                              <span>Qtd: De <span className="line-through opacity-75">{qc.original_quantity}</span> para {qc.new_quantity} {qc.material_unit || 'un'}</span>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
+                            Motivo: "{qc.reason}"
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            Tipo: <strong className="text-sky-400">Alteração de Quantidade</strong> • Solicitado por: <strong>{qc.requested_by_name || 'Almoxarifado'}</strong>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="text-[10px] text-amber-400/90 bg-amber-950/40 p-1.5 rounded-xl text-center border border-amber-800/40 font-medium">
-                          Aguardando análise da Direção / Compras
-                        </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {canApproveOperations ? (
+                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveQuantityChange(qc.id)}
+                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
+                            >
+                              Autorizar Alteração
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectQuantityChange(qc.id)}
+                              className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-sky-400/90 bg-sky-950/40 p-1.5 rounded-xl text-center border border-sky-800/40 font-medium">
+                            Aguardando análise da Direção / Compras
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* VISUALIZAÇÃO 1: POR OBRA (BOXES SEPARADAS COM BOTÃO DE IMPRESSÃO) */}
             {viewMode === 'by_project' ? (
@@ -1228,6 +1366,20 @@ export const StockPage: React.FC = () => {
           onSuccess={() => {
             loadData();
             setSubstituteItemData(null);
+          }}
+        />
+      )}
+
+      {/* Modal de Solicitação de Alteração de Quantidade */}
+      {quantityChangeItemData && (
+        <QuantityChangeModal
+          isOpen={!!quantityChangeItemData}
+          onClose={() => setQuantityChangeItemData(null)}
+          request={quantityChangeItemData.request}
+          item={quantityChangeItemData.item}
+          onSuccess={() => {
+            loadData();
+            setQuantityChangeItemData(null);
           }}
         />
       )}

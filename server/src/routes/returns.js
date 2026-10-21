@@ -50,7 +50,7 @@ returnsRouter.post('/', async (req, res) => {
       projectId,
       materialId,
       quantity,
-      userId || 4, // Default Almoxarife Tiago
+      userId || 22, // Default Almoxarifado Central
       reason
     );
 

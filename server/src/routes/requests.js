@@ -266,7 +266,7 @@ requestsRouter.patch('/:id/status', async (req, res) => {
     const requestId = req.params.id;
     const { status, notes, userId } = req.body;
 
-    const result = await StockService.updateRequestStatus(requestId, status, userId || 4, notes);
+    const result = await StockService.updateRequestStatus(requestId, status, userId || 22, notes);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -284,24 +284,26 @@ requestsRouter.post('/substitutions', async (req, res) => {
     const item = await db.prepare('SELECT * FROM material_request_items WHERE id = ?').get(requestItemId);
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
 
-    const origMat = await db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id);
-    const subMat = await db.prepare('SELECT name FROM materials WHERE id = ?').get(substituteMaterialId);
+    const origMat = item.material_id ? await db.prepare('SELECT name, code FROM materials WHERE id = ?').get(item.material_id) : null;
+    const subMat = await db.prepare('SELECT name, code FROM materials WHERE id = ?').get(substituteMaterialId);
+    const originalName = origMat?.name || item.custom_name || 'Material Fora da Base';
 
     const subResult = await db.prepare(`
       INSERT INTO material_substitutions (
         request_item_id, request_id, original_material_id, substitute_material_id,
-        quantity, reason, requested_by, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendente')
+        quantity, reason, requested_by, status, original_custom_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendente', ?)
     `).run(
-      requestItemId, requestId || item.request_id, item.material_id, substituteMaterialId,
-      quantity || item.quantity_requested, reason || '', userId || 4
+      requestItemId, requestId || item.request_id, item.material_id || null, substituteMaterialId,
+      quantity || item.quantity_requested, reason || '', userId || 22,
+      item.custom_name || originalName
     );
 
     // Notifica Administradores, Sabrina e Emily
     await db.prepare(`
       INSERT INTO notifications (role_target, title, message, type, link)
       VALUES ('admin', 'Almoxarifado Solicitou Troca de Material', ?, 'urgent', '/estoque')
-    `).run(`Almoxarifado solicitou substituir "${origMat?.name}" por "${subMat?.name}". Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
+    `).run(`Almoxarifado solicitou substituir "${originalName}" por "${subMat?.name}". Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
 
     res.status(201).json({ success: true, id: subResult.lastInsertRowid, message: 'Solicitação de troca enviada para aprovação.' });
   } catch (err) {
@@ -314,7 +316,8 @@ requestsRouter.get('/substitutions', async (req, res) => {
   try {
     const subs = await db.prepare(`
       SELECT ms.*,
-             m_orig.name as original_material_name, m_orig.code as original_material_code,
+             COALESCE(m_orig.name, ms.original_custom_name, 'Material Fora da Base') as original_material_name,
+             COALESCE(m_orig.code, 'FORA-BASE') as original_material_code,
              m_sub.name as substitute_material_name, m_sub.code as substitute_material_code, m_sub.unit as substitute_material_unit,
              m_sub.image_url as substitute_image_url,
              u.name as requested_by_name,
@@ -322,7 +325,7 @@ requestsRouter.get('/substitutions', async (req, res) => {
              mr.code as request_code,
              p.name as project_name
       FROM material_substitutions ms
-      JOIN materials m_orig ON ms.original_material_id = m_orig.id
+      LEFT JOIN materials m_orig ON ms.original_material_id = m_orig.id
       JOIN materials m_sub ON ms.substitute_material_id = m_sub.id
       LEFT JOIN users u ON ms.requested_by = u.id
       LEFT JOIN users u_rev ON ms.reviewed_by = u_rev.id
@@ -350,6 +353,8 @@ requestsRouter.post('/substitutions/:id/approve', async (req, res) => {
 
       const isAllowed = user && (
         user.role_name === 'admin' ||
+        user.role_name === 'compras_solicitacoes' ||
+        user.role_name === 'orcamento_engenharia' ||
         user.email === 'sabrina@sabrar.com.br' ||
         user.email === 'emily@sabrar.com.br' ||
         /sabrina|emily/i.test(user.name)
@@ -366,12 +371,39 @@ requestsRouter.post('/substitutions/:id/approve', async (req, res) => {
     if (!sub) return res.status(404).json({ error: 'Substituição não encontrada' });
     if (sub.status !== 'Pendente') return res.status(400).json({ error: 'Esta solicitação já foi analisada' });
 
+    const item = await db.prepare('SELECT * FROM material_request_items WHERE id = ?').get(sub.request_item_id);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+
+    // Libera reserva prévia do material anterior se existia
+    if (sub.original_material_id && item.quantity_reserved > 0) {
+      await db.prepare(`
+        UPDATE materials 
+        SET stock_reserved = GREATEST(0, stock_reserved - ?)
+        WHERE id = ?
+      `).run(item.quantity_reserved, sub.original_material_id);
+    }
+
+    // Verifica disponibilidade do novo material para reservar automaticamente
+    const newMat = await db.prepare('SELECT stock_physical, stock_reserved FROM materials WHERE id = ?').get(sub.substitute_material_id);
+    let toReserve = 0;
+    const subQty = Number(sub.quantity);
+    let deficit = subQty;
+    if (newMat) {
+      const available = Math.max(0, (newMat.stock_physical || 0) - (newMat.stock_reserved || 0));
+      toReserve = Math.min(available, subQty);
+      deficit = Math.max(0, subQty - toReserve);
+      if (toReserve > 0) {
+        await db.prepare('UPDATE materials SET stock_reserved = stock_reserved + ? WHERE id = ?').run(toReserve, sub.substitute_material_id);
+      }
+    }
+
     // Atualiza o item da solicitação com o novo material
     await db.prepare(`
       UPDATE material_request_items 
-      SET material_id = ?, quantity_requested = ?
+      SET material_id = ?, quantity_requested = ?, quantity_reserved = ?, deficit = ?,
+          is_custom = false, custom_name = NULL, custom_unit = NULL
       WHERE id = ?
-    `).run(sub.substitute_material_id, sub.quantity, sub.request_item_id);
+    `).run(sub.substitute_material_id, sub.quantity, toReserve, deficit, sub.request_item_id);
 
     // Atualiza o registro de substituição
     await db.prepare(`
@@ -405,6 +437,8 @@ requestsRouter.post('/substitutions/:id/reject', async (req, res) => {
 
       const isAllowed = user && (
         user.role_name === 'admin' ||
+        user.role_name === 'compras_solicitacoes' ||
+        user.role_name === 'orcamento_engenharia' ||
         user.email === 'sabrina@sabrar.com.br' ||
         user.email === 'emily@sabrar.com.br' ||
         /sabrina|emily/i.test(user.name)
@@ -430,6 +464,210 @@ requestsRouter.post('/substitutions/:id/reject', async (req, res) => {
     `).run(`A solicitação de troca de material foi recusada. Motivo: ${notes || 'Não informado'}.`);
 
     res.json({ success: true, message: 'Substituição recusada.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Solicitar alteração de quantidade pelo Almoxarifado (Item 3)
+requestsRouter.post('/quantity-changes', async (req, res) => {
+  try {
+    const { requestItemId, requestId, newQuantity, reason, userId } = req.body;
+    if (!requestItemId || newQuantity === undefined || newQuantity === null || Number(newQuantity) <= 0) {
+      return res.status(400).json({ error: 'Item da solicitação e nova quantidade válida são obrigatórios' });
+    }
+
+    const item = await db.prepare('SELECT * FROM material_request_items WHERE id = ?').get(requestItemId);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+
+    const mat = item.material_id ? await db.prepare('SELECT name, code, unit FROM materials WHERE id = ?').get(item.material_id) : null;
+    const materialName = mat ? mat.name : (item.custom_name || 'Material Fora da Base');
+    const unit = mat ? mat.unit : (item.custom_unit || 'un');
+
+    const result = await db.prepare(`
+      INSERT INTO material_quantity_changes (
+        request_item_id, request_id, original_quantity, new_quantity,
+        reason, requested_by, status
+      ) VALUES (?, ?, ?, ?, ?, ?, 'Pendente')
+    `).run(
+      requestItemId, requestId || item.request_id, item.quantity_requested, Number(newQuantity),
+      reason || '', userId || 22
+    );
+
+    // Notifica Administradores, Sabrina e Emily
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('admin', 'Almoxarifado Solicitou Alteração de Quantidade', ?, 'urgent', '/estoque')
+    `).run(`Almoxarifado solicitou alterar quantidade de "${materialName}" de ${item.quantity_requested} ${unit} para ${newQuantity} ${unit}. Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
+
+    res.status(201).json({ success: true, id: result.lastInsertRowid, message: 'Solicitação de alteração de quantidade enviada para aprovação.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Listar alterações de quantidade
+requestsRouter.get('/quantity-changes', async (req, res) => {
+  try {
+    const changes = await db.prepare(`
+      SELECT mqc.*,
+             COALESCE(m.name, mri.custom_name, 'Material Fora da Base') as material_name,
+             COALESCE(m.code, 'FORA-BASE') as material_code,
+             COALESCE(m.unit, mri.custom_unit, 'un') as material_unit,
+             m.image_url,
+             u.name as requested_by_name,
+             u_rev.name as reviewed_by_name,
+             mr.code as request_code,
+             p.name as project_name
+      FROM material_quantity_changes mqc
+      JOIN material_request_items mri ON mqc.request_item_id = mri.id
+      LEFT JOIN materials m ON mri.material_id = m.id
+      LEFT JOIN users u ON mqc.requested_by = u.id
+      LEFT JOIN users u_rev ON mqc.reviewed_by = u_rev.id
+      LEFT JOIN material_requests mr ON mqc.request_id = mr.id
+      LEFT JOIN projects p ON mr.project_id = p.id
+      ORDER BY mqc.id DESC
+    `).all();
+
+    res.json(changes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aprovar alteração de quantidade (Admin, Sabrina ou Emily)
+requestsRouter.post('/quantity-changes/:id/approve', async (req, res) => {
+  try {
+    const changeId = req.params.id;
+    const { userId, notes } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.role_name === 'compras_solicitacoes' ||
+        user.role_name === 'orcamento_engenharia' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para aprovar alterações de quantidade.'
+        });
+      }
+    }
+
+    const change = await db.prepare('SELECT * FROM material_quantity_changes WHERE id = ?').get(changeId);
+    if (!change) return res.status(404).json({ error: 'Solicitação de alteração não encontrada' });
+    if (change.status !== 'Pendente') return res.status(400).json({ error: 'Esta solicitação já foi analisada' });
+
+    const item = await db.prepare('SELECT * FROM material_request_items WHERE id = ?').get(change.request_item_id);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+
+    const newQty = Number(change.new_quantity);
+    let newReserved = Number(item.quantity_reserved || 0);
+    let newDeficit = 0;
+
+    if (item.material_id) {
+      const mat = await db.prepare('SELECT stock_physical, stock_reserved FROM materials WHERE id = ?').get(item.material_id);
+      if (mat) {
+        if (newQty < newReserved) {
+          // Quantidade reduzida abaixo do que estava reservado: libera o excesso de estoque reservado
+          const excess = newReserved - newQty;
+          await db.prepare('UPDATE materials SET stock_reserved = GREATEST(0, stock_reserved - ?) WHERE id = ?').run(excess, item.material_id);
+          newReserved = newQty;
+          newDeficit = 0;
+        } else if (newQty > newReserved) {
+          // Quantidade aumentada: tenta reservar o adicional se houver estoque livre
+          const needed = newQty - newReserved;
+          const available = Math.max(0, (mat.stock_physical || 0) - (mat.stock_reserved || 0));
+          const canReserveExtra = Math.min(available, needed);
+          if (canReserveExtra > 0) {
+            await db.prepare('UPDATE materials SET stock_reserved = stock_reserved + ? WHERE id = ?').run(canReserveExtra, item.material_id);
+            newReserved += canReserveExtra;
+          }
+          newDeficit = Math.max(0, newQty - newReserved);
+        } else {
+          newDeficit = 0;
+        }
+      } else {
+        newDeficit = Math.max(0, newQty - newReserved);
+      }
+    } else {
+      newDeficit = Math.max(0, newQty - newReserved);
+    }
+
+    // Atualiza o item da solicitação
+    await db.prepare(`
+      UPDATE material_request_items 
+      SET quantity_requested = ?, quantity_reserved = ?, deficit = ?
+      WHERE id = ?
+    `).run(newQty, newReserved, newDeficit, change.request_item_id);
+
+    // Atualiza status da solicitação de alteração
+    await db.prepare(`
+      UPDATE material_quantity_changes
+      SET status = 'Aprovado', reviewed_by = ?, reviewed_at = NOW(), review_notes = ?
+      WHERE id = ?
+    `).run(userId || 1, notes || 'Aprovado', changeId);
+
+    // Notifica Almoxarifado
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('almoxarifado', 'Alteração de Quantidade Autorizada', ?, 'info', '/estoque')
+    `).run(`A alteração de quantidade para ${newQty} na solicitação #${change.request_id} foi autorizada com sucesso.`);
+
+    res.json({ success: true, message: 'Alteração de quantidade aprovada e aplicada.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Recusar alteração de quantidade
+requestsRouter.post('/quantity-changes/:id/reject', async (req, res) => {
+  try {
+    const changeId = req.params.id;
+    const { userId, notes } = req.body;
+
+    if (userId) {
+      const user = await db.prepare(`
+        SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?
+      `).get(userId);
+
+      const isAllowed = user && (
+        user.role_name === 'admin' ||
+        user.role_name === 'compras_solicitacoes' ||
+        user.role_name === 'orcamento_engenharia' ||
+        user.email === 'sabrina@sabrar.com.br' ||
+        user.email === 'emily@sabrar.com.br' ||
+        /sabrina|emily/i.test(user.name)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Acesso restrito: Apenas Administradores, Sabrina ou Emily têm permissão para recusar alterações de quantidade.'
+        });
+      }
+    }
+
+    await db.prepare(`
+      UPDATE material_quantity_changes
+      SET status = 'Recusado', reviewed_by = ?, reviewed_at = NOW(), review_notes = ?
+      WHERE id = ?
+    `).run(userId || 1, notes || 'Recusado', changeId);
+
+    // Notifica Almoxarifado
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('almoxarifado', 'Alteração de Quantidade Não Autorizada', ?, 'urgent', '/estoque')
+    `).run(`A solicitação de alteração de quantidade foi recusada. Motivo: ${notes || 'Não informado'}.`);
+
+    res.json({ success: true, message: 'Alteração de quantidade recusada.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -670,9 +908,10 @@ requestsRouter.delete('/:id', async (req, res) => {
       }
     }
 
-    // 2. Desvincula compras associadas aos itens desta solicitação e remove substituições
+    // 2. Desvincula compras associadas aos itens desta solicitação e remove substituições/alterações de quantidade
     await db.prepare('UPDATE purchases SET request_item_id = NULL WHERE request_item_id IN (SELECT id FROM material_request_items WHERE request_id = ?)').run(requestId);
     await db.prepare('DELETE FROM material_substitutions WHERE request_id = ?').run(requestId);
+    await db.prepare('DELETE FROM material_quantity_changes WHERE request_id = ?').run(requestId);
 
     // 3. Remove os itens da solicitação
     await db.prepare('DELETE FROM material_request_items WHERE request_id = ?').run(requestId);
