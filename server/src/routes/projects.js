@@ -788,7 +788,10 @@ projectsRouter.get('/:id/material-quotas', async (req, res) => {
     const quotas = budgetItems.map(bi => {
       const previouslyRequested = requestedMap.get(bi.material_id) || 0;
       const budgetQuantity = Number(bi.quantity || 0);
-      const remainingQuota = Math.max(0, budgetQuantity - previouslyRequested);
+      const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(bi.unit || bi.material_unit || '');
+      const cleanBudgetQuantity = isDiscrete ? Math.ceil(budgetQuantity) : Number(budgetQuantity.toFixed(2));
+      const cleanPreviouslyRequested = isDiscrete ? Math.ceil(previouslyRequested) : Number(previouslyRequested.toFixed(2));
+      const remainingQuota = isDiscrete ? Math.ceil(Math.max(0, cleanBudgetQuantity - cleanPreviouslyRequested)) : Number(Math.max(0, cleanBudgetQuantity - cleanPreviouslyRequested).toFixed(2));
       const physical = Number(bi.stock_physical || 0);
       const reserved = Number(bi.stock_reserved || 0);
       const availableStock = Math.max(0, physical - reserved);
@@ -800,8 +803,8 @@ projectsRouter.get('/:id/material-quotas', async (req, res) => {
         materialCode: bi.material_code,
         unit: bi.unit || bi.material_unit,
         unitPrice: bi.unit_price,
-        budgetQuantity,
-        previouslyRequested,
+        budgetQuantity: cleanBudgetQuantity,
+        previouslyRequested: cleanPreviouslyRequested,
         remainingQuota,
         physicalStock: physical,
         reservedStock: reserved,

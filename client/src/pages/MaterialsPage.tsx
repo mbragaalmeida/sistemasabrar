@@ -24,6 +24,8 @@ export const MaterialsPage: React.FC = () => {
     /sabrina|emily/i.test(currentUser?.email || '')
   );
 
+  const canConfigureMinimumStock = canApproveAdjustment;
+
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
   const [search, setSearch] = useState('');
@@ -126,6 +128,28 @@ export const MaterialsPage: React.FC = () => {
       alert(err.message || 'Erro ao recusar ajuste');
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  // Configuração rápida de Estoque Mínimo (Item 5 - Admins, Sabrina e Emily)
+  const handleConfigureMinimumStock = async (m: Material) => {
+    const current = m.stock_minimum || 0;
+    const input = window.prompt(
+      `Configurar Estoque Mínimo para reposição:\n\nMaterial: ${m.name}\nUnidade: ${m.unit}\n\nQuando o estoque físico atingir ou ficar abaixo deste valor, o setor de compras será notificado para providenciar compras.\n\nInforme a quantidade mínima de estoque:`,
+      String(current)
+    );
+    if (input === null) return;
+    const val = parseFloat(input.replace(',', '.'));
+    if (isNaN(val) || val < 0) {
+      alert('Por favor, informe uma quantidade válida (maior ou igual a zero).');
+      return;
+    }
+    try {
+      await api.updateMaterialMinimumStock(m.id, val, currentUser?.id);
+      setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, stock_minimum: val } : item));
+      alert(`Estoque mínimo do material "${m.name}" configurado para ${val} ${m.unit} com sucesso!`);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao configurar estoque mínimo');
     }
   };
 
@@ -763,6 +787,29 @@ export const MaterialsPage: React.FC = () => {
                       <div className="text-[9px] uppercase font-bold text-slate-500">Disponível</div>
                       <div className="font-black text-xs text-sabrar-400">{m.stock_available} {m.unit}</div>
                     </div>
+                  </div>
+
+                  {/* Configuração & Alerta de Estoque Mínimo (Item 5) */}
+                  <div className="mt-2 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-dark-850/80 border border-dark-700/80 text-xs">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase">Estoque Mínimo:</span>
+                      <span className="font-bold text-white font-mono">{m.stock_minimum || 0} {m.unit}</span>
+                      {Number(m.stock_minimum) > 0 && Number(m.stock_physical) <= Number(m.stock_minimum) && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-950 text-rose-300 border border-rose-700 animate-pulse">
+                          Atingido!
+                        </span>
+                      )}
+                    </div>
+                    {canConfigureMinimumStock && (
+                      <button
+                        type="button"
+                        onClick={() => handleConfigureMinimumStock(m)}
+                        className="text-[10px] font-bold text-sabrar-400 hover:text-sabrar-300 bg-sabrar-950/60 hover:bg-sabrar-900 border border-sabrar-500/40 px-2 py-0.5 rounded-lg transition-colors cursor-pointer active:scale-95"
+                        title="Configurar estoque mínimo deste material (Apenas Admins, Sabrina e Emily)"
+                      >
+                        ⚙️ Alterar Mínimo
+                      </button>
+                    )}
                   </div>
                 </div>
 

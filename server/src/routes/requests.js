@@ -276,7 +276,7 @@ requestsRouter.patch('/:id/status', async (req, res) => {
 // Solicitar troca de material pelo Almoxarifado (Item 8)
 requestsRouter.post('/substitutions', async (req, res) => {
   try {
-    const { requestItemId, requestId, substituteMaterialId, quantity, reason, userId } = req.body;
+    const { requestItemId, requestId, substituteMaterialId, quantity, substituteUnit, reason, userId } = req.body;
     if (!requestItemId || !substituteMaterialId) {
       return res.status(400).json({ error: 'Item da solicitação e material substituto são obrigatórios' });
     }
@@ -285,17 +285,18 @@ requestsRouter.post('/substitutions', async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
 
     const origMat = item.material_id ? await db.prepare('SELECT name, code FROM materials WHERE id = ?').get(item.material_id) : null;
-    const subMat = await db.prepare('SELECT name, code FROM materials WHERE id = ?').get(substituteMaterialId);
+    const subMat = await db.prepare('SELECT name, code, unit FROM materials WHERE id = ?').get(substituteMaterialId);
     const originalName = origMat?.name || item.custom_name || 'Material Fora da Base';
+    const finalUnit = (substituteUnit && String(substituteUnit).trim()) || subMat?.unit || item.custom_unit || 'un';
 
     const subResult = await db.prepare(`
       INSERT INTO material_substitutions (
         request_item_id, request_id, original_material_id, substitute_material_id,
-        quantity, reason, requested_by, status, original_custom_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendente', ?)
+        quantity, substitute_unit, reason, requested_by, status, original_custom_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pendente', ?)
     `).run(
       requestItemId, requestId || item.request_id, item.material_id || null, substituteMaterialId,
-      quantity || item.quantity_requested, reason || '', userId || 22,
+      quantity || item.quantity_requested, finalUnit, reason || '', userId || 22,
       item.custom_name || originalName
     );
 
@@ -303,7 +304,7 @@ requestsRouter.post('/substitutions', async (req, res) => {
     await db.prepare(`
       INSERT INTO notifications (role_target, title, message, type, link)
       VALUES ('admin', 'Almoxarifado Solicitou Troca de Material', ?, 'urgent', '/estoque')
-    `).run(`Almoxarifado solicitou substituir "${originalName}" por "${subMat?.name}". Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
+    `).run(`Almoxarifado solicitou substituir "${originalName}" por "${subMat?.name}" (${quantity || item.quantity_requested} ${finalUnit}). Motivo: ${reason || 'Não informado'}. Requer autorização de Admin, Sabrina ou Emily.`);
 
     res.status(201).json({ success: true, id: subResult.lastInsertRowid, message: 'Solicitação de troca enviada para aprovação.' });
   } catch (err) {
@@ -318,7 +319,8 @@ requestsRouter.get('/substitutions', async (req, res) => {
       SELECT ms.*,
              COALESCE(m_orig.name, ms.original_custom_name, 'Material Fora da Base') as original_material_name,
              COALESCE(m_orig.code, 'FORA-BASE') as original_material_code,
-             m_sub.name as substitute_material_name, m_sub.code as substitute_material_code, m_sub.unit as substitute_material_unit,
+             m_sub.name as substitute_material_name, m_sub.code as substitute_material_code,
+             COALESCE(ms.substitute_unit, m_sub.unit, 'un') as substitute_material_unit,
              m_sub.image_url as substitute_image_url,
              u.name as requested_by_name,
              u_rev.name as reviewed_by_name,
@@ -397,13 +399,14 @@ requestsRouter.post('/substitutions/:id/approve', async (req, res) => {
       }
     }
 
-    // Atualiza o item da solicitação com o novo material
+    // Atualiza o item da solicitação com o novo material e nova unidade (Item 11)
+    const approvedUnit = sub.substitute_unit || newMat?.unit || 'un';
     await db.prepare(`
       UPDATE material_request_items 
       SET material_id = ?, quantity_requested = ?, quantity_reserved = ?, deficit = ?,
-          is_custom = false, custom_name = NULL, custom_unit = NULL
+          is_custom = false, custom_name = NULL, custom_unit = ?
       WHERE id = ?
-    `).run(sub.substitute_material_id, sub.quantity, toReserve, deficit, sub.request_item_id);
+    `).run(sub.substitute_material_id, sub.quantity, toReserve, deficit, approvedUnit, sub.request_item_id);
 
     // Atualiza o registro de substituição
     await db.prepare(`

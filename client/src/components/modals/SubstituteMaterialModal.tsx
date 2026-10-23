@@ -23,6 +23,7 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<any | null>(null);
   const [quantity, setQuantity] = useState<number>(item?.quantity_requested || 1);
+  const [substituteUnit, setSubstituteUnit] = useState<string>(item?.material_unit || 'un');
   const [reason, setReason] = useState('');
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -32,6 +33,7 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
   useEffect(() => {
     if (item) {
       setQuantity(item.quantity_requested || 1);
+      setSubstituteUnit(item.material_unit || 'un');
       setSearchQuery('');
       setSelectedMaterial(null);
       setReason('');
@@ -81,6 +83,7 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
         requestId: request.id,
         substituteMaterialId: selectedMaterial.id,
         quantity: Number(quantity) || item.quantity_requested,
+        substituteUnit: substituteUnit.trim() || selectedMaterial.unit || 'un',
         reason: reason.trim(),
         userId: currentUser?.id
       });
@@ -202,6 +205,7 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
                     type="button"
                     onClick={() => {
                       setSelectedMaterial(sug);
+                      if (sug.unit) setSubstituteUnit(sug.unit);
                       setSuggestions([]);
                     }}
                     className="w-full text-left p-2.5 hover:bg-dark-800 transition-colors flex items-center justify-between gap-2 text-xs"
@@ -243,13 +247,15 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
             </div>
             <div>
               <label className="block text-slate-300 font-bold text-xs mb-1">
-                Unidade
+                Unidade a Entregar *
               </label>
               <input
                 type="text"
-                disabled
-                value={selectedMaterial?.unit || item.material_unit || 'un'}
-                className="w-full bg-dark-900 text-slate-400 text-xs rounded-xl px-3 py-2 border border-dark-750 cursor-not-allowed"
+                value={substituteUnit}
+                onChange={(e) => setSubstituteUnit(e.target.value)}
+                placeholder="Ex: metro, kg, un, pç"
+                className="w-full bg-dark-850 text-white font-bold text-xs rounded-xl px-3 py-2 border border-dark-700 focus:outline-none focus:border-amber-500"
+                title="Unidade de medida 100% editável para o Almoxarifado"
               />
             </div>
           </div>

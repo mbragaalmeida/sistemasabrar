@@ -6,6 +6,19 @@ import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
 import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
 
+function isDiscreteUnit(u) {
+  return /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(String(u || ''));
+}
+
+function roundQuantityForUnit(qty, u) {
+  const n = Number(qty);
+  if (isNaN(n) || n <= 0) return 1;
+  if (isDiscreteUnit(u)) {
+    return Math.ceil(n);
+  }
+  return Number(n.toFixed(2));
+}
+
 export class SpreadsheetService {
   /**
    * Extrai texto sumário de uma planilha Excel/CSV para análise de IA.
@@ -439,6 +452,7 @@ export class SpreadsheetService {
             // Item 5: Se houver vínculo com a base, usar o nome oficial cadastrado!
             const finalMaterialName = matchedMat ? matchedMat.name : rawDesc;
             const finalUnit = (!unit || unit === '-' || unit === '0') ? (matchedMat?.unit || 'und') : unit;
+            const cleanQty = roundQuantityForUnit(finalQty, finalUnit);
 
             parsedMaterials.push({
               sheet: sName,
@@ -446,7 +460,7 @@ export class SpreadsheetService {
               materialName: finalMaterialName,
               materialCode: matchedMat?.code || null,
               originalSpreadsheetName: rawDesc,
-              quantity: finalQty,
+              quantity: cleanQty,
               unit: finalUnit,
               unitPrice,
               subtotal
@@ -527,7 +541,9 @@ export class SpreadsheetService {
             const materialId = matchedMat ? matchedMat.id : null;
             const finalMaterialName = matchedMat ? matchedMat.name : rawDesc;
             const finalPrice = price > 0 ? price : (Number(matchedMat?.reference_price) || 10.0);
-            const subtotal = Number((qty * finalPrice).toFixed(2));
+            const finalUnit = unit || matchedMat?.unit || 'und';
+            const cleanQty = roundQuantityForUnit(qty, finalUnit);
+            const subtotal = Number((cleanQty * finalPrice).toFixed(2));
 
             parsedMaterials.push({
               sheet: sName,
@@ -535,8 +551,8 @@ export class SpreadsheetService {
               materialName: finalMaterialName,
               materialCode: matchedMat?.code || null,
               originalSpreadsheetName: rawDesc,
-              quantity: qty,
-              unit: unit || matchedMat?.unit || 'und',
+              quantity: cleanQty,
+              unit: finalUnit,
               unitPrice: finalPrice,
               subtotal
             });

@@ -67,13 +67,18 @@ export function canUserViewPrices(user: { role?: string; email?: string; name?: 
 }
 
 /**
- * Permissão para cadastrar novo produto na Base de Materiais:
- * Usuários de 'compras' podem apenas dar entrada em materiais já cadastrados, sem cadastrar novo produto.
+ * Permissão para cadastrar novo produto na Base de Materiais e realizar entrada via NF-e XML:
+ * Permitido para Admins, Almoxarifado, Emily (compras_solicitacoes) e Sabrina (orcamento_engenharia).
+ * Usuários exclusivos de compras básicas (sem gestão) podem apenas dar entrada rápida.
  */
 export function canCreateMaterial(user: { role?: string; email?: string; name?: string } | null | undefined): boolean {
   if (!user) return false;
-  if (user.role === 'compras') return false;
-  return user.role === 'admin' || user.role === 'almoxarifado';
+  if (user.role === 'admin' || user.role === 'almoxarifado' || user.role === 'compras_solicitacoes' || user.role === 'orcamento_engenharia') {
+    return true;
+  }
+  const name = String(user.name || '').toLowerCase();
+  const email = String(user.email || '').toLowerCase();
+  return /sabrina|emily/i.test(name) || /sabrina|emily/i.test(email);
 }
 
 /**

@@ -388,4 +388,47 @@ materialsRouter.patch('/:id/availability', async (req, res) => {
   }
 });
 
+// Configura estoque mínimo do material (Item 5 - Admins, Sabrina e Emily)
+materialsRouter.patch('/:id/minimum-stock', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stock_minimum, userId } = req.body;
+
+    const minVal = Math.max(0, Number(stock_minimum) || 0);
+
+    const mat = await db.prepare('SELECT id, name, code, stock_physical, stock_minimum FROM materials WHERE id = ?').get(id);
+    if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
+
+    await db.prepare('UPDATE materials SET stock_minimum = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(minVal, id);
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, details)
+      VALUES (?, 'CONFIGURAR_ESTOQUE_MINIMO', 'MATERIAL', ?, ?, ?, ?)
+    `).run(
+      userId || 1, id,
+      `Mínimo anterior: ${mat.stock_minimum || 0}`,
+      `Novo mínimo: ${minVal}`,
+      `Estoque mínimo atualizado para ${minVal} no material ${mat.name} (${mat.code})`
+    );
+
+    // Se estoque físico atual estiver igual ou abaixo do estoque mínimo definido, notifica setor de compras!
+    if (minVal > 0 && Number(mat.stock_physical || 0) <= minVal) {
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('compras', 'Alerta: Estoque Mínimo Atingido', ?, 'urgent', '/materiais')
+      `).run(`O material "${mat.name}" atingiu o estoque mínimo: saldo atual de ${mat.stock_physical || 0} (Mínimo: ${minVal}). Providenciar reposição/compras.`);
+    }
+
+    res.json({
+      success: true,
+      material_id: Number(id),
+      stock_minimum: minVal,
+      message: `Estoque mínimo de "${mat.name}" configurado para ${minVal}.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 

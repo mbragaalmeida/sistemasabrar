@@ -1000,51 +1000,145 @@ export const StockPage: React.FC = () => {
               ))}
             </div>
 
-            {/* Banner de Solicitações de Troca de Material e Alteração de Quantidade Pendentes */}
+            {/* Central Unificada de Aprovações Pendentes no Topo do Almoxarifado (Item 6 & Item 4 - Admins, Sabrina e Emily) */}
             {(() => {
+              const pendingExtraReqs = pendingRequests.filter(r => r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente'));
               const pendingSubs = substitutions.filter(s => s.status === 'Pendente');
               const pendingQty = quantityChanges.filter(q => q.status === 'Pendente');
-              const totalPending = pendingSubs.length + pendingQty.length;
+              const grandTotalPending = pendingExtraReqs.length + pendingSubs.length + pendingQty.length;
 
-              if (totalPending === 0) return null;
+              if (grandTotalPending === 0) return null;
 
               return (
-                <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-3xl space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 text-amber-300 font-bold text-xs sm:text-sm">
-                      <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
-                      <span>
-                        {totalPending} Solicitação(ões) de Troca / Alteração de Quantidade Aguardando Autorização
-                      </span>
+                <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-950/60 via-dark-900 to-amber-950/40 border-2 border-amber-500/60 rounded-3xl space-y-4 shadow-2xl animate-fadeIn">
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-amber-500/20 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                        <AlertTriangle className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                          <span>Central de Aprovações Pendentes (Almoxarifado)</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500 text-black">
+                            {grandTotalPending}
+                          </span>
+                        </h2>
+                        <p className="text-[11px] text-slate-400">
+                          Todas as autorizações que dependem dos Administradores, Sabrina ou Emily concentradas no topo para liberação rápida.
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-[11px] text-amber-400 font-semibold bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-600/40">
-                      Aprovação: Admins, Sabrina ou Emily
+                    <span className="text-xs font-bold text-amber-300 bg-amber-900/50 px-3 py-1 rounded-full border border-amber-600/40">
+                      Aprovação: Admins, Sabrina e Emily
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Trocas de Material */}
-                    {pendingSubs.map((sub) => (
-                      <div key={`sub-${sub.id}`} className="p-3.5 bg-dark-900/90 border border-amber-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
-                        <div>
-                          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                            <span className="font-mono text-amber-300 font-bold">{sub.request_code}</span>
-                            <span className="truncate max-w-[200px]">{sub.project_name}</span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                    {/* 1. Solicitações de Material com Extras / Fora da Base */}
+                    {pendingExtraReqs.map((req) => (
+                      <div key={`req-pend-${req.id}`} className="p-4 bg-dark-900/95 border border-amber-500/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs gap-2">
+                            <span className="font-mono text-amber-400 font-black bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700">
+                              {req.code}
+                            </span>
+                            <span className="font-bold text-white truncate max-w-[220px]">
+                              {req.project_name || 'Demanda Geral'}
+                            </span>
+                            <StatusBadge status={req.priority} size="sm" />
                           </div>
-                          <div className="text-xs space-y-1">
+
+                          <div className="text-xs text-slate-300">
+                            <div>Solicitante: <strong className="text-white">{req.requested_by_name}</strong></div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              {new Date(req.created_at).toLocaleDateString('pt-BR')} • {req.items?.length || 0} material(is)
+                            </div>
+                          </div>
+
+                          <div className="bg-dark-850 p-2.5 rounded-xl border border-dark-750 space-y-1.5 max-h-36 overflow-y-auto">
+                            <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                              Itens que aguardam aprovação:
+                            </div>
+                            {(req.items || []).filter((it: any) => it.is_extra || !it.material_id || it.is_custom).map((it: any) => (
+                              <div key={it.id} className="text-[11px] text-slate-200 flex items-center justify-between gap-2 border-b border-dark-800 pb-1 last:border-0 last:pb-0">
+                                <span className="truncate">{it.material_name}</span>
+                                <span className="font-bold text-amber-300 shrink-0">
+                                  {it.quantity_requested} {sanitizeUnit(it.material_unit)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {req.notes && (
+                            <div className="text-[11px] text-slate-400 italic bg-dark-800/60 p-2 rounded-xl">
+                              "{req.notes}"
+                            </div>
+                          )}
+                        </div>
+
+                        {canApproveOperations ? (
+                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm(`Aprovar liberação dos materiais extras da solicitação ${req.code}?`)) {
+                                  await api.approveExtraRequest(req.id, currentUser?.id, 'Aprovado');
+                                  await loadData();
+                                }
+                              }}
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
+                            >
+                              Aprovar Solicitação
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const note = prompt('Motivo da recusa do material:');
+                                if (note) {
+                                  await api.rejectExtraRequest(req.id, currentUser?.id, note);
+                                  await loadData();
+                                }
+                              }}
+                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-amber-400/90 bg-amber-950/40 p-2 rounded-xl text-center border border-amber-800/40 font-medium">
+                            Aguardando autorização dos Administradores, Sabrina ou Emily
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* 2. Trocas de Material do Almoxarifado */}
+                    {pendingSubs.map((sub) => (
+                      <div key={`sub-${sub.id}`} className="p-4 bg-dark-900/95 border border-amber-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
+                        <div>
+                          <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span className="font-mono text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700">
+                              {sub.request_code}
+                            </span>
+                            <span className="truncate max-w-[200px] text-white font-bold">{sub.project_name}</span>
+                            <span className="text-[10px] bg-amber-900/50 text-amber-300 px-2 py-0.5 rounded font-bold">
+                              Troca de Material
+                            </span>
+                          </div>
+                          <div className="text-xs space-y-1.5 bg-dark-850 p-2.5 rounded-xl border border-dark-750">
                             <div className="text-slate-300">
                               De: <strong className="text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
                             </div>
-                            <div className="text-emerald-400 font-bold flex items-center gap-1">
-                              <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
+                            <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                              <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                               <span>Para: {sub.substitute_material_name} ({sub.quantity} {sub.substitute_material_unit || 'un'})</span>
                             </div>
                           </div>
-                          <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
+                          <div className="mt-2 text-[11px] text-slate-300 italic bg-dark-800/60 p-2 rounded-xl border border-dark-750">
                             Motivo: "{sub.reason}"
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-1">
-                            Tipo: <strong className="text-amber-400">Troca de Material</strong> • Solicitado por: <strong>{sub.requested_by_name || 'Almoxarifado'}</strong>
+                          <div className="text-[10px] text-slate-400 mt-1.5">
+                            Solicitado por: <strong className="text-slate-200">{sub.requested_by_name || 'Almoxarifado'}</strong>
                           </div>
                         </div>
 
@@ -1053,48 +1147,53 @@ export const StockPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleApproveSubstitution(sub.id)}
-                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
                             >
                               Autorizar Troca
                             </button>
                             <button
                               type="button"
                               onClick={() => handleRejectSubstitution(sub.id)}
-                              className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
+                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                             >
                               Recusar
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-amber-400/90 bg-amber-950/40 p-1.5 rounded-xl text-center border border-amber-800/40 font-medium">
-                            Aguardando análise da Direção / Compras
+                          <div className="text-[11px] text-amber-400/90 bg-amber-950/40 p-2 rounded-xl text-center border border-amber-800/40 font-medium">
+                            Aguardando autorização dos Administradores, Sabrina ou Emily
                           </div>
                         )}
                       </div>
                     ))}
 
-                    {/* Alterações de Quantidade */}
+                    {/* 3. Alterações de Quantidade do Almoxarifado */}
                     {pendingQty.map((qc) => (
-                      <div key={`qc-${qc.id}`} className="p-3.5 bg-dark-900/90 border border-sky-600/40 rounded-2xl flex flex-col justify-between gap-2.5 shadow-md">
+                      <div key={`qc-${qc.id}`} className="p-4 bg-dark-900/95 border border-sky-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
                         <div>
-                          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                            <span className="font-mono text-sky-300 font-bold">{qc.request_code}</span>
-                            <span className="truncate max-w-[200px]">{qc.project_name}</span>
+                          <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span className="font-mono text-sky-300 font-bold bg-sky-950/80 px-2 py-0.5 rounded border border-sky-700">
+                              {qc.request_code}
+                            </span>
+                            <span className="truncate max-w-[200px] text-white font-bold">{qc.project_name}</span>
+                            <span className="text-[10px] bg-sky-900/50 text-sky-300 px-2 py-0.5 rounded font-bold">
+                              Alteração de Quantidade
+                            </span>
                           </div>
-                          <div className="text-xs space-y-1">
+                          <div className="text-xs space-y-1.5 bg-dark-850 p-2.5 rounded-xl border border-dark-750">
                             <div className="text-slate-200 font-bold">
                               {qc.material_name}
                             </div>
-                            <div className="text-sky-400 font-bold flex items-center gap-1">
-                              <ArrowRight className="w-3 h-3 text-sky-400 shrink-0" />
+                            <div className="text-sky-400 font-bold flex items-center gap-1.5">
+                              <ArrowRight className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                               <span>Qtd: De <span className="line-through opacity-75">{qc.original_quantity}</span> para {qc.new_quantity} {qc.material_unit || 'un'}</span>
                             </div>
                           </div>
-                          <div className="mt-1.5 text-[11px] text-slate-300 italic bg-dark-850 p-2 rounded-xl border border-dark-750">
+                          <div className="mt-2 text-[11px] text-slate-300 italic bg-dark-800/60 p-2 rounded-xl border border-dark-750">
                             Motivo: "{qc.reason}"
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-1">
-                            Tipo: <strong className="text-sky-400">Alteração de Quantidade</strong> • Solicitado por: <strong>{qc.requested_by_name || 'Almoxarifado'}</strong>
+                          <div className="text-[10px] text-slate-400 mt-1.5">
+                            Solicitado por: <strong className="text-slate-200">{qc.requested_by_name || 'Almoxarifado'}</strong>
                           </div>
                         </div>
 
@@ -1103,21 +1202,21 @@ export const StockPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleApproveQuantityChange(qc.id)}
-                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-sm text-center"
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
                             >
                               Autorizar Alteração
                             </button>
                             <button
                               type="button"
                               onClick={() => handleRejectQuantityChange(qc.id)}
-                              className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors"
+                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                             >
                               Recusar
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-sky-400/90 bg-sky-950/40 p-1.5 rounded-xl text-center border border-sky-800/40 font-medium">
-                            Aguardando análise da Direção / Compras
+                          <div className="text-[11px] text-sky-400/90 bg-sky-950/40 p-2 rounded-xl text-center border border-sky-800/40 font-medium">
+                            Aguardando autorização dos Administradores, Sabrina ou Emily
                           </div>
                         )}
                       </div>

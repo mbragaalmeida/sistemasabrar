@@ -278,7 +278,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             // Se houver cota calculada, usa o saldo remanescente; caso contrário, usa o previsto
             const remaining = q !== undefined && q !== null ? Number(q.remainingQuota) : Number(it.quantity || 0);
             const qty = Math.max(0, remaining);
-            initialQtys[it.id] = qty;
+            const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(it.unit || '');
+            initialQtys[it.id] = isDiscrete ? Math.ceil(qty) : Number(qty.toFixed(2));
           });
           // Item 7: Deixar por padrão todos os itens não selecionados
           setSelectedItemIds(new Set());
@@ -1625,9 +1626,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 </div>
                               )}
 
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
+                                  <span className="font-bold text-xs text-white whitespace-normal break-words leading-tight">{it.material_name}</span>
                                   {it.isCustom && (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-500/40 flex items-center gap-1">
                                       <Sparkles className="w-3 h-3 text-purple-400" /> Fora da Base
@@ -1907,7 +1908,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                                 <span className="font-mono text-[10px] font-bold text-sabrar-400 bg-dark-800 px-1.5 py-0.2 rounded border border-dark-700">
                                   {m.code}
                                 </span>
-                                <span className="font-bold text-white truncate">{m.name}</span>
+                                <span className="font-bold text-white whitespace-normal break-words leading-tight">{m.name}</span>
                                 <span className="text-[10px] text-emerald-400 font-semibold">({m.unit})</span>
                               </div>
                               {m.synonyms && (
@@ -2118,9 +2119,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                               </div>
                             )}
 
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-xs text-white truncate">{it.material_name}</span>
+                                <span className="font-bold text-xs text-white whitespace-normal break-words leading-tight">{it.material_name}</span>
                               {!it.isInBudget ? (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1">
                                   <Sparkles className="w-3 h-3 text-amber-400" /> Fora do Orçamento (Aprovação Admin)

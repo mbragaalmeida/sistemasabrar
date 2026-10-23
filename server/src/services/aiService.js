@@ -1739,15 +1739,18 @@ export class AIAnalysisService {
 
     for (const m of budgetMaterials) {
       const auditMeta = auditItems.find(a => a.material_id === m.material_id);
+      const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(m.unit || '');
+      const cleanQty = isDiscrete ? Math.ceil(Number(m.quantity || 1)) : Number(Number(m.quantity || 0).toFixed(2));
+      const cleanSubtotal = Number((cleanQty * Number(m.unit_price || 0)).toFixed(2));
       await insertBudgetItem.run(
         budgetId,
         m.material_id,
         m.material_name,
-        m.quantity,
+        cleanQty,
         m.unit,
         m.unit_price,
-        m.subtotal,
-        m.quantity,
+        cleanSubtotal,
+        cleanQty,
         auditMeta?.calculation_summary || 'Sugestão da IA SABRAR',
         `Item orçado pela Base Central SABRAR via ${modeLabel}`
       );

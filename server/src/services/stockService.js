@@ -170,6 +170,17 @@ export class StockService {
       budgetItems = await db.prepare('SELECT * FROM budget_items WHERE budget_id = ?').all(budget.id);
     }
 
+    // Item 3: Obras sem lista prévia de materiais (ex: manutenções ou obras cadastradas sem lista de materiais prévia):
+    // Solicitações avulsas dessas obras NÃO devem exigir aprovação item a item de Administradores/Emily/Sabrina!
+    const isMaintenanceOrNoList = !isInternal && (
+      !budget ||
+      budgetItems.length === 0 ||
+      /manuten/i.test(project.name || '') ||
+      /manuten/i.test(project.type || '') ||
+      /manuten/i.test(project.category || '') ||
+      /avulso|avulsa/i.test(project.name || '')
+    );
+
     // 3. Busca histórico de solicitações já realizadas para calcular saldo consumido de cada material
     const prevRequests = isInternal ? [] : await db.prepare(`
       SELECT mri.material_id, SUM(mri.quantity_requested) as total_requested
@@ -266,7 +277,11 @@ export class StockService {
       let previouslyRequested = prevRequestedMap.get(materialId) || 0;
       let extraQuantity = 0;
 
-      if (!budgetItem) {
+      if (isMaintenanceOrNoList) {
+        // Obra sem lista prévia de materiais: itens cadastrados são solicitações legítimas diretas, não itens extras
+        isExtra = false;
+        extraQuantity = 0;
+      } else if (!budgetItem) {
         // Material não consta no orçamento da obra -> 100% Extra
         isExtra = true;
         budgetQuantity = 0;
@@ -302,8 +317,11 @@ export class StockService {
       });
     }
 
-    // Se houver itens fora da base (qualquer obra/interno) ou itens extras acima do orçamento da obra, exige aprovação (Admin, Sabrina ou Emily)
-    const requiresAdminApproval = hasCustomItems || (!isInternal && hasExtraItems);
+    // Se houver itens fora da base ou itens extras acima do orçamento da obra, exige aprovação (Admin, Sabrina ou Emily).
+    // Para obras de manutenção ou sem lista prévia (Item 3), materiais da base NÃO exigem aprovação!
+    const requiresAdminApproval = isMaintenanceOrNoList
+      ? false
+      : (hasCustomItems || (!isInternal && hasExtraItems));
     const initialStatus = requiresAdminApproval ? 'Aguardando aprovação' : 'Solicitado';
     const initialApprovalStatus = requiresAdminApproval ? 'Pendente' : 'Aprovado';
 

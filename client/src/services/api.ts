@@ -317,6 +317,8 @@ export const api = {
     fetchJson<any>(`/materials/${id}/image`, { method: 'PATCH', body: JSON.stringify({ image_url }) }),
   updateMaterialAvailability: (id: number | string, availability_status: 'disponivel' | 'em_falta') =>
     fetchJson<any>(`/materials/${id}/availability`, { method: 'PATCH', body: JSON.stringify({ availability_status }) }),
+  updateMaterialMinimumStock: (id: number | string, stock_minimum: number, userId?: number) =>
+    fetchJson<any>(`/materials/${id}/minimum-stock`, { method: 'PATCH', body: JSON.stringify({ stock_minimum, userId }) }),
   quickStockEntry: (materialId: number, quantity: number, notes?: string, userId?: number) =>
     fetchJson<any>('/materials/quick-entry', { method: 'POST', body: JSON.stringify({ materialId, quantity, notes, userId }) }),
   getMaterialAliases: () => fetchJson<any[]>('/materials/aliases'),
@@ -351,7 +353,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ userId, reason })
     }),
-  createMaterialSubstitution: (data: { requestItemId: number; requestId?: number; substituteMaterialId: number; quantity: number; reason: string; userId?: number }) =>
+  createMaterialSubstitution: (data: { requestItemId: number; requestId?: number; substituteMaterialId: number; quantity: number; substituteUnit?: string; reason: string; userId?: number }) =>
     fetchJson<any>('/requests/substitutions', { method: 'POST', body: JSON.stringify(data) }),
   getSubstitutions: () => fetchJson<any[]>('/requests/substitutions'),
   approveSubstitution: (id: number | string, userId?: number, notes?: string) =>
