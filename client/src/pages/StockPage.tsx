@@ -1010,25 +1010,25 @@ export const StockPage: React.FC = () => {
               if (grandTotalPending === 0) return null;
 
               return (
-                <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-950/60 via-dark-900 to-amber-950/40 border-2 border-amber-500/60 rounded-3xl space-y-4 shadow-2xl animate-fadeIn">
-                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-amber-500/20 pb-3">
+                <div className="p-4 sm:p-5 bg-white dark:bg-dark-900 border-2 border-amber-400 dark:border-amber-500/60 rounded-3xl space-y-4 shadow-xl shadow-amber-500/5 animate-fadeIn">
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-amber-200 dark:border-amber-500/20 pb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-                        <AlertTriangle className="w-4 h-4 animate-pulse" />
+                      <div className="w-9 h-9 rounded-2xl bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                        <AlertTriangle className="w-5 h-5 animate-pulse" />
                       </div>
                       <div>
-                        <h2 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                        <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                           <span>Central de Aprovações Pendentes (Almoxarifado)</span>
-                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500 text-black">
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white dark:text-black shadow-xs">
                             {grandTotalPending}
                           </span>
                         </h2>
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                           Todas as autorizações que dependem dos Administradores, Sabrina ou Emily concentradas no topo para liberação rápida.
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-amber-300 bg-amber-900/50 px-3 py-1 rounded-full border border-amber-600/40">
+                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-3 py-1 rounded-full border border-amber-300 dark:border-amber-600/40 shadow-xs">
                       Aprovação: Admins, Sabrina e Emily
                     </span>
                   </div>
@@ -1036,33 +1036,33 @@ export const StockPage: React.FC = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
                     {/* 1. Solicitações de Material com Extras / Fora da Base */}
                     {pendingExtraReqs.map((req) => (
-                      <div key={`req-pend-${req.id}`} className="p-4 bg-dark-900/95 border border-amber-500/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
+                      <div key={`req-pend-${req.id}`} className="p-4 bg-slate-50/80 dark:bg-dark-850 border border-slate-200 dark:border-dark-750 rounded-2xl flex flex-col justify-between gap-3 shadow-xs hover:border-amber-400/60 transition-all">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs gap-2">
-                            <span className="font-mono text-amber-400 font-black bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700">
+                            <span className="font-mono text-amber-800 dark:text-amber-300 font-extrabold bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-300 dark:border-amber-700">
                               {req.code}
                             </span>
-                            <span className="font-bold text-white truncate max-w-[220px]">
+                            <span className="font-extrabold text-slate-900 dark:text-white truncate max-w-[220px]">
                               {req.project_name || 'Demanda Geral'}
                             </span>
                             <StatusBadge status={req.priority} size="sm" />
                           </div>
 
-                          <div className="text-xs text-slate-300">
-                            <div>Solicitante: <strong className="text-white">{req.requested_by_name}</strong></div>
-                            <div className="text-[11px] text-slate-400 mt-0.5">
+                          <div className="text-xs text-slate-700 dark:text-slate-300">
+                            <div>Solicitante: <strong className="text-slate-900 dark:text-white font-extrabold">{req.requested_by_name}</strong></div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                               {new Date(req.created_at).toLocaleDateString('pt-BR')} • {req.items?.length || 0} material(is)
                             </div>
                           </div>
 
-                          <div className="bg-dark-850 p-2.5 rounded-xl border border-dark-750 space-y-1.5 max-h-36 overflow-y-auto">
-                            <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                          <div className="bg-white dark:bg-dark-900 p-3 rounded-xl border border-slate-200 dark:border-dark-750 space-y-1.5 max-h-36 overflow-y-auto shadow-xs">
+                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
                               Itens que aguardam aprovação:
                             </div>
                             {(req.items || []).filter((it: any) => it.is_extra || !it.material_id || it.is_custom).map((it: any) => (
-                              <div key={it.id} className="text-[11px] text-slate-200 flex items-center justify-between gap-2 border-b border-dark-800 pb-1 last:border-0 last:pb-0">
+                              <div key={it.id} className="text-[11px] text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-dark-800 pb-1 last:border-0 last:pb-0">
                                 <span className="truncate">{it.material_name}</span>
-                                <span className="font-bold text-amber-300 shrink-0">
+                                <span className="font-bold text-amber-700 dark:text-amber-300 shrink-0">
                                   {it.quantity_requested} {sanitizeUnit(it.material_unit)}
                                 </span>
                               </div>
@@ -1070,14 +1070,14 @@ export const StockPage: React.FC = () => {
                           </div>
 
                           {req.notes && (
-                            <div className="text-[11px] text-slate-400 italic bg-dark-800/60 p-2 rounded-xl">
+                            <div className="text-[11px] text-slate-600 dark:text-slate-400 italic bg-amber-50/60 dark:bg-dark-800/60 border border-amber-200/60 dark:border-dark-750 p-2.5 rounded-xl">
                               "{req.notes}"
                             </div>
                           )}
                         </div>
 
                         {canApproveOperations ? (
-                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-dark-800">
                             <button
                               type="button"
                               onClick={async () => {
@@ -1086,7 +1086,7 @@ export const StockPage: React.FC = () => {
                                   await loadData();
                                 }
                               }}
-                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-emerald-600/20 text-center cursor-pointer active:scale-95"
                             >
                               Aprovar Solicitação
                             </button>
@@ -1099,13 +1099,13 @@ export const StockPage: React.FC = () => {
                                   await loadData();
                                 }
                               }}
-                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                              className="px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 dark:bg-rose-950/70 dark:hover:bg-rose-900 dark:text-rose-300 dark:border-rose-700 rounded-xl font-bold text-xs transition-all cursor-pointer active:scale-95"
                             >
                               Recusar
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-amber-400/90 bg-amber-950/40 p-2 rounded-xl text-center border border-amber-800/40 font-medium">
+                          <div className="text-[11px] text-amber-800 dark:text-amber-400 bg-amber-100/70 dark:bg-amber-950/40 p-2 rounded-xl text-center border border-amber-300 dark:border-amber-800/40 font-medium">
                             Aguardando autorização dos Administradores, Sabrina ou Emily
                           </div>
                         )}
@@ -1114,53 +1114,53 @@ export const StockPage: React.FC = () => {
 
                     {/* 2. Trocas de Material do Almoxarifado */}
                     {pendingSubs.map((sub) => (
-                      <div key={`sub-${sub.id}`} className="p-4 bg-dark-900/95 border border-amber-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
+                      <div key={`sub-${sub.id}`} className="p-4 bg-slate-50/80 dark:bg-dark-850 border border-amber-300/80 dark:border-amber-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-xs hover:border-amber-500 transition-all">
                         <div>
-                          <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-                            <span className="font-mono text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700">
+                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                            <span className="font-mono text-amber-800 dark:text-amber-300 font-extrabold bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-300 dark:border-amber-700">
                               {sub.request_code}
                             </span>
-                            <span className="truncate max-w-[200px] text-white font-bold">{sub.project_name}</span>
-                            <span className="text-[10px] bg-amber-900/50 text-amber-300 px-2 py-0.5 rounded font-bold">
+                            <span className="truncate max-w-[200px] text-slate-900 dark:text-white font-extrabold">{sub.project_name}</span>
+                            <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-lg font-bold">
                               Troca de Material
                             </span>
                           </div>
-                          <div className="text-xs space-y-1.5 bg-dark-850 p-2.5 rounded-xl border border-dark-750">
-                            <div className="text-slate-300">
-                              De: <strong className="text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
+                          <div className="text-xs space-y-1.5 bg-white dark:bg-dark-900 p-2.5 rounded-xl border border-slate-200 dark:border-dark-750 shadow-xs">
+                            <div className="text-slate-600 dark:text-slate-300">
+                              De: <strong className="text-slate-800 dark:text-slate-200 line-through opacity-75">{sub.original_material_name}</strong>
                             </div>
-                            <div className="text-emerald-400 font-bold flex items-center gap-1.5">
-                              <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <div className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1.5">
+                              <ArrowRight className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                               <span>Para: {sub.substitute_material_name} ({sub.quantity} {sub.substitute_material_unit || 'un'})</span>
                             </div>
                           </div>
-                          <div className="mt-2 text-[11px] text-slate-300 italic bg-dark-800/60 p-2 rounded-xl border border-dark-750">
+                          <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-300 italic bg-amber-50/60 dark:bg-dark-800/60 p-2 rounded-xl border border-amber-200/60 dark:border-dark-750">
                             Motivo: "{sub.reason}"
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-1.5">
-                            Solicitado por: <strong className="text-slate-200">{sub.requested_by_name || 'Almoxarifado'}</strong>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5">
+                            Solicitado por: <strong className="text-slate-800 dark:text-slate-200">{sub.requested_by_name || 'Almoxarifado'}</strong>
                           </div>
                         </div>
 
                         {canApproveOperations ? (
-                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-dark-800">
                             <button
                               type="button"
                               onClick={() => handleApproveSubstitution(sub.id)}
-                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-emerald-600/20 text-center cursor-pointer active:scale-95"
                             >
                               Autorizar Troca
                             </button>
                             <button
                               type="button"
                               onClick={() => handleRejectSubstitution(sub.id)}
-                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                              className="px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 dark:bg-rose-950/70 dark:hover:bg-rose-900 dark:text-rose-300 dark:border-rose-700 rounded-xl font-bold text-xs transition-all cursor-pointer active:scale-95"
                             >
                               Recusar
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-amber-400/90 bg-amber-950/40 p-2 rounded-xl text-center border border-amber-800/40 font-medium">
+                          <div className="text-[11px] text-amber-800 dark:text-amber-400 bg-amber-100/70 dark:bg-amber-950/40 p-2 rounded-xl text-center border border-amber-300 dark:border-amber-800/40 font-medium">
                             Aguardando autorização dos Administradores, Sabrina ou Emily
                           </div>
                         )}
@@ -1169,53 +1169,53 @@ export const StockPage: React.FC = () => {
 
                     {/* 3. Alterações de Quantidade do Almoxarifado */}
                     {pendingQty.map((qc) => (
-                      <div key={`qc-${qc.id}`} className="p-4 bg-dark-900/95 border border-sky-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-lg">
+                      <div key={`qc-${qc.id}`} className="p-4 bg-slate-50/80 dark:bg-dark-850 border border-sky-300/80 dark:border-sky-600/50 rounded-2xl flex flex-col justify-between gap-3 shadow-xs hover:border-sky-500 transition-all">
                         <div>
-                          <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-                            <span className="font-mono text-sky-300 font-bold bg-sky-950/80 px-2 py-0.5 rounded border border-sky-700">
+                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                            <span className="font-mono text-sky-800 dark:text-sky-300 font-extrabold bg-sky-100 dark:bg-sky-950/80 px-2 py-0.5 rounded-lg border border-sky-300 dark:border-sky-700">
                               {qc.request_code}
                             </span>
-                            <span className="truncate max-w-[200px] text-white font-bold">{qc.project_name}</span>
-                            <span className="text-[10px] bg-sky-900/50 text-sky-300 px-2 py-0.5 rounded font-bold">
+                            <span className="truncate max-w-[200px] text-slate-900 dark:text-white font-extrabold">{qc.project_name}</span>
+                            <span className="text-[10px] bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300 border border-sky-300 dark:border-sky-700 px-2 py-0.5 rounded-lg font-bold">
                               Alteração de Quantidade
                             </span>
                           </div>
-                          <div className="text-xs space-y-1.5 bg-dark-850 p-2.5 rounded-xl border border-dark-750">
-                            <div className="text-slate-200 font-bold">
+                          <div className="text-xs space-y-1.5 bg-white dark:bg-dark-900 p-2.5 rounded-xl border border-slate-200 dark:border-dark-750 shadow-xs">
+                            <div className="text-slate-800 dark:text-slate-200 font-bold">
                               {qc.material_name}
                             </div>
-                            <div className="text-sky-400 font-bold flex items-center gap-1.5">
-                              <ArrowRight className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                            <div className="text-sky-700 dark:text-sky-400 font-bold flex items-center gap-1.5">
+                              <ArrowRight className="w-3.5 h-3.5 text-sky-500 shrink-0" />
                               <span>Qtd: De <span className="line-through opacity-75">{qc.original_quantity}</span> para {qc.new_quantity} {qc.material_unit || 'un'}</span>
                             </div>
                           </div>
-                          <div className="mt-2 text-[11px] text-slate-300 italic bg-dark-800/60 p-2 rounded-xl border border-dark-750">
+                          <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-300 italic bg-sky-50/60 dark:bg-dark-800/60 p-2 rounded-xl border border-sky-200/60 dark:border-dark-750">
                             Motivo: "{qc.reason}"
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-1.5">
-                            Solicitado por: <strong className="text-slate-200">{qc.requested_by_name || 'Almoxarifado'}</strong>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5">
+                            Solicitado por: <strong className="text-slate-800 dark:text-slate-200">{qc.requested_by_name || 'Almoxarifado'}</strong>
                           </div>
                         </div>
 
                         {canApproveOperations ? (
-                          <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-dark-800">
                             <button
                               type="button"
                               onClick={() => handleApproveQuantityChange(qc.id)}
-                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors shadow-md text-center cursor-pointer"
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-emerald-600/20 text-center cursor-pointer active:scale-95"
                             >
                               Autorizar Alteração
                             </button>
                             <button
                               type="button"
                               onClick={() => handleRejectQuantityChange(qc.id)}
-                              className="px-4 py-2 bg-rose-900/70 hover:bg-rose-800 text-rose-300 border border-rose-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                              className="px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 dark:bg-rose-950/70 dark:hover:bg-rose-900 dark:text-rose-300 dark:border-rose-700 rounded-xl font-bold text-xs transition-all cursor-pointer active:scale-95"
                             >
                               Recusar
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-sky-400/90 bg-sky-950/40 p-2 rounded-xl text-center border border-sky-800/40 font-medium">
+                          <div className="text-[11px] text-sky-800 dark:text-sky-400 bg-sky-100/70 dark:bg-sky-950/40 p-2 rounded-xl text-center border border-sky-300 dark:border-sky-800/40 font-medium">
                             Aguardando autorização dos Administradores, Sabrina ou Emily
                           </div>
                         )}

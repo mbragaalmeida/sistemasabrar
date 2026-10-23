@@ -67,13 +67,33 @@ export function canUserViewPrices(user: { role?: string; email?: string; name?: 
 }
 
 /**
- * Permissão para cadastrar novo produto na Base de Materiais e realizar entrada via NF-e XML:
+ * Permissão para cadastrar novo produto na Base de Materiais:
  * Permitido para Admins, Almoxarifado, Emily (compras_solicitacoes) e Sabrina (orcamento_engenharia).
- * Usuários exclusivos de compras básicas (sem gestão) podem apenas dar entrada rápida.
  */
 export function canCreateMaterial(user: { role?: string; email?: string; name?: string } | null | undefined): boolean {
   if (!user) return false;
   if (user.role === 'admin' || user.role === 'almoxarifado' || user.role === 'compras_solicitacoes' || user.role === 'orcamento_engenharia') {
+    return true;
+  }
+  const name = String(user.name || '').toLowerCase();
+  const email = String(user.email || '').toLowerCase();
+  return /sabrina|emily/i.test(name) || /sabrina|emily/i.test(email);
+}
+
+/**
+ * Permissão para realizar entrada de materiais via NF-e (XML):
+ * Permitido para todos os perfis de Compras (compras e compras_solicitacoes/Emily),
+ * Almoxarifado, Orçamento/Engenharia (Sabrina) e Administradores.
+ */
+export function canImportXml(user: { role?: string; email?: string; name?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (
+    user.role === 'admin' ||
+    user.role === 'almoxarifado' ||
+    user.role === 'compras' ||
+    user.role === 'compras_solicitacoes' ||
+    user.role === 'orcamento_engenharia'
+  ) {
     return true;
   }
   const name = String(user.name || '').toLowerCase();

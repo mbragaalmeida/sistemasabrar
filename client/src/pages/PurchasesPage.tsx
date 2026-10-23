@@ -18,7 +18,8 @@ import {
   ArrowRight,
   Maximize2,
   Minimize2,
-  ClipboardList
+  ClipboardList,
+  FileCode
 } from 'lucide-react';
 import { Purchase } from '../types';
 import { api } from '../services/api';
@@ -26,6 +27,8 @@ import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { NewPurchaseModal } from '../components/modals/NewPurchaseModal';
 import { CreatePurchaseModal } from '../components/modals/CreatePurchaseModal';
+import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
+import { canImportXml } from '../utils/permissions';
 
 interface ProjectGroup {
   projectId: number | 'geral';
@@ -53,6 +56,7 @@ export const PurchasesPage: React.FC = () => {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
 
   const fetchPurchases = async () => {
@@ -198,14 +202,27 @@ export const PurchasesPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Botão Cadastrar Compra Manual */}
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95 whitespace-nowrap self-start sm:self-auto"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Nova Solicitação de Compra</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {/* Botão Entrada via NF-e (XML) */}
+          {canImportXml(currentUser) && (
+            <button
+              onClick={() => setIsXmlModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all shadow-md shadow-teal-600/30 active:scale-95 whitespace-nowrap"
+            >
+              <FileCode className="w-4 h-4" />
+              <span>Entrada via NF-e (XML)</span>
+            </button>
+          )}
+
+          {/* Botão Cadastrar Compra Manual */}
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95 whitespace-nowrap"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Nova Solicitação de Compra</span>
+          </button>
+        </div>
       </div>
 
       {/* Barra de Controles: Filtros de Status, Alternador de Visão e Busca */}
@@ -764,6 +781,16 @@ export const PurchasesPage: React.FC = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={() => fetchPurchases()}
+      />
+
+      {/* Modal para entrada de NF-e via XML */}
+      <XmlInvoiceModal
+        isOpen={isXmlModalOpen}
+        onClose={() => setIsXmlModalOpen(false)}
+        onSuccess={() => {
+          setIsXmlModalOpen(false);
+          fetchPurchases();
+        }}
       />
     </div>
   );
