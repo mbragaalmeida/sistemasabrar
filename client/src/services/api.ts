@@ -501,5 +501,61 @@ export const api = {
   getDuctAnalysis: (projectId: number) =>
     fetchJson<any>(`/ducts/project/${projectId}`),
   getAllDuctAnalyses: () =>
-    fetchJson<any[]>('/ducts')
+    fetchJson<any[]>('/ducts'),
+
+  // 1. Transferência de Materiais entre Obras (Fase 1)
+  getTransfers: () => fetchJson<any[]>('/transfers'),
+  getReservedByProject: () => fetchJson<any[]>('/transfers/reserved-by-project'),
+  createTransfer: (data: any) =>
+    fetchJson<any>('/transfers', { method: 'POST', body: JSON.stringify(data) }),
+  repayTransfer: (id: number, data: any) =>
+    fetchJson<any>(`/transfers/${id}/repay`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // 2. Cotações e Mapa de Comparação de Preços (Fase 2 - Prints 1 e 2)
+  getQuotations: () => fetchJson<any[]>('/quotations'),
+  getQuotationById: (id: number) => fetchJson<any>(`/quotations/${id}`),
+  createQuotation: (data: any) =>
+    fetchJson<any>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
+  addQuotationSupplier: (quotationId: number, data: any) =>
+    fetchJson<any>(`/quotations/${quotationId}/suppliers`, { method: 'POST', body: JSON.stringify(data) }),
+  setQuotationWinner: (quotationId: number, quotationSupplierId: number) =>
+    fetchJson<any>(`/quotations/${quotationId}/winner`, { method: 'PATCH', body: JSON.stringify({ quotationSupplierId }) }),
+  getPriceIntelligence: (materialId: number) =>
+    fetchJson<any>(`/materials/${materialId}/price-intelligence`),
+  approvePurchase: (purchaseId: number, data: { approval_status: string; userId?: number; rejection_notes?: string }) =>
+    fetchJson<any>(`/purchases/${purchaseId}/approval`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 3. Checklist de Recebimento de Materiais (Fase 3 - Print 3)
+  getReceivingChecklists: () => fetchJson<any[]>('/receiving-checklists'),
+  getReceivingChecklistById: (id: number) => fetchJson<any>(`/receiving-checklists/${id}`),
+  createReceivingChecklist: (data: any) =>
+    fetchJson<any>('/receiving-checklists', { method: 'POST', body: JSON.stringify(data) }),
+  updateReceivingChecklistItems: (id: number, items: any[]) =>
+    fetchJson<any>(`/receiving-checklists/${id}/items`, { method: 'PUT', body: JSON.stringify({ items }) }),
+  finalizeReceivingChecklist: (id: number, userId?: number) =>
+    fetchJson<any>(`/receiving-checklists/${id}/finalize`, { method: 'POST', body: JSON.stringify({ userId }) }),
+
+  // 4. Faturamento Direto e Compras Online (Fase 4 - Print 4)
+  getDirectBillings: () => fetchJson<any[]>('/direct-billings'),
+  createDirectBilling: (data: any) =>
+    fetchJson<any>('/direct-billings', { method: 'POST', body: JSON.stringify(data) }),
+  toggleDirectBillingStep: (id: number, stepName: string, value: boolean) =>
+    fetchJson<any>(`/direct-billings/${id}/step`, { method: 'PATCH', body: JSON.stringify({ stepName, value }) }),
+  getWebPurchases: () => fetchJson<any[]>('/direct-billings/web-purchases'),
+  createWebPurchase: (data: any) =>
+    fetchJson<any>('/direct-billings/web-purchases', { method: 'POST', body: JSON.stringify(data) }),
+
+  // 5. Dashboard Executivo de Compras & Estoque - BI (Fase 5 - Print 5)
+  getPurchasesStockBIDashboard: (params?: { projectId?: string; category?: string; startDate?: string; endDate?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return fetchJson<any>(`/reports/purchases-stock-bi${query ? `?${query}` : ''}`);
+  },
+
+  // 6. Controle de Custos por Obra - Orçado x Realizado (Fase 6)
+  getProjectCostControl: (projectId: number) =>
+    fetchJson<any>(`/cost-control/projects/${projectId}`),
+  addProjectExtraCost: (projectId: number, data: any) =>
+    fetchJson<any>(`/cost-control/projects/${projectId}/costs`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteProjectExtraCost: (costId: number) =>
+    fetchJson<any>(`/cost-control/costs/${costId}`, { method: 'DELETE' })
 };

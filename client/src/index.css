@@ -167,7 +167,7 @@ body.light header input {
 }
 
 /* Inversão seletiva de text-white para dark text (preserva botões coloridos) */
-.light .text-white:not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"] *):not(button[class*="bg-purple"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not(.bg-purple-600 *):not([class*="bg-emerald-600"]):not([class*="bg-sabrar-600"]):not([class*="bg-purple-600"]):not(html.dark header *) {
+.light .text-white:not(button[class*="bg-sabrar"]):not(button[class*="bg-sabrar"] *):not(button[class*="bg-emerald"]):not(button[class*="bg-emerald"] *):not(button[class*="bg-rose"]):not(button[class*="bg-rose"] *):not(button[class*="bg-blue"]):not(button[class*="bg-blue"] *):not(button[class*="bg-teal"]):not(button[class*="bg-teal"] *):not(button[class*="bg-purple"]):not(button[class*="bg-purple"] *):not(.bg-sabrar-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *):not(.bg-blue-600 *):not(.bg-purple-600 *):not([class*="bg-emerald"]):not([class*="bg-sabrar"]):not([class*="bg-purple"]):not([class*="bg-blue"]):not([class*="bg-teal"]):not([class*="bg-rose"]):not(html.dark header *) {
   color: #0F172A !important;
 }
 
@@ -192,32 +192,20 @@ body.light header input {
 }
 
 /* Preserva texto branco puro em botões com fundos sólidos/escuros (500, 600, 700) */
-.light button[class*="bg-sabrar-600"],
-.light button[class*="bg-sabrar-600"] *,
-.light button[class*="bg-sabrar-500"],
-.light button[class*="bg-sabrar-500"] *,
-.light button[class*="bg-emerald-600"],
-.light button[class*="bg-emerald-600"] *,
-.light button[class*="bg-emerald-500"],
-.light button[class*="bg-emerald-500"] *,
-.light button[class*="bg-rose-600"],
-.light button[class*="bg-rose-600"] *,
-.light button[class*="bg-rose-500"],
-.light button[class*="bg-rose-500"] *,
-.light button[class*="bg-teal-600"],
-.light button[class*="bg-teal-600"] *,
-.light button[class*="bg-teal-500"],
-.light button[class*="bg-teal-500"] *,
-.light button[class*="bg-blue-600"],
-.light button[class*="bg-blue-600"] *,
-.light button[class*="bg-blue-500"],
-.light button[class*="bg-blue-500"] *,
-.light button[class*="bg-purple-600"],
-.light button[class*="bg-purple-600"] *,
-.light button[class*="bg-purple-500"],
-.light button[class*="bg-purple-500"] *,
-.light button[class*="bg-purple-700"],
-.light button[class*="bg-purple-700"] *,
+.light button[class*="bg-sabrar"],
+.light button[class*="bg-sabrar"] *,
+.light button[class*="bg-emerald"],
+.light button[class*="bg-emerald"] *,
+.light button[class*="bg-rose"],
+.light button[class*="bg-rose"] *,
+.light button[class*="bg-teal"],
+.light button[class*="bg-teal"] *,
+.light button[class*="bg-blue"],
+.light button[class*="bg-blue"] *,
+.light button[class*="bg-purple"],
+.light button[class*="bg-purple"] *,
+.light button[class*="bg-indigo"],
+.light button[class*="bg-indigo"] *,
 .light .bg-sabrar-600,
 .light .bg-sabrar-600 *,
 .light .bg-emerald-600,
@@ -226,6 +214,12 @@ body.light header input {
 .light .bg-rose-600 *,
 .light .bg-teal-600,
 .light .bg-teal-600 *,
+.light .bg-blue-600,
+.light .bg-blue-600 *,
+.light .bg-blue-500,
+.light .bg-blue-500 *,
+.light .bg-blue-700,
+.light .bg-blue-700 *,
 .light .bg-purple-600,
 .light .bg-purple-600 * {
   color: #FFFFFF !important;

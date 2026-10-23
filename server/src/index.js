@@ -36,6 +36,11 @@ import { bulkImportRouter } from './routes/bulkImport.js';
 import { nfeRouter } from './routes/nfe.js';
 import { aiCalibrationRouter } from './routes/aiCalibration.js';
 import { ductsRouter } from './routes/ducts.js';
+import { transfersRouter } from './routes/transfers.js';
+import { quotationsRouter } from './routes/quotations.js';
+import { receivingChecklistsRouter } from './routes/receivingChecklists.js';
+import { directBillingsRouter } from './routes/directBillings.js';
+import { costControlRouter } from './routes/costControl.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,7 +75,12 @@ const apiEndpoints = [
   ['/bulk-import', bulkImportRouter],
   ['/nfe', nfeRouter],
   ['/ai-calibration', aiCalibrationRouter],
-  ['/ducts', ductsRouter]
+  ['/ducts', ductsRouter],
+  ['/transfers', transfersRouter],
+  ['/quotations', quotationsRouter],
+  ['/receiving-checklists', receivingChecklistsRouter],
+  ['/direct-billings', directBillingsRouter],
+  ['/cost-control', costControlRouter]
 ];
 
 for (const [routePath, router] of apiEndpoints) {

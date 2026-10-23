@@ -20,6 +20,7 @@ import { MaterialsPage } from './pages/MaterialsPage';
 import { StockPage } from './pages/StockPage';
 import { RequestsPage } from './pages/RequestsPage';
 import { PurchasesPage } from './pages/PurchasesPage';
+import { PurchasesStockDashboardPage } from './pages/PurchasesStockDashboardPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { AILearningHub } from './pages/AILearningHub';
 import { ReportsPage } from './pages/ReportsPage';
@@ -178,6 +179,10 @@ const AppContent: React.FC = () => {
 
           {currentPage === 'purchases' && (
             <PurchasesPage />
+          )}
+
+          {currentPage === 'bi-purchases-stock' && (
+            <PurchasesStockDashboardPage onNavigate={handleNavigate} />
           )}
 
           {currentPage === 'suppliers' && (

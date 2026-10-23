@@ -431,4 +431,75 @@ materialsRouter.patch('/:id/minimum-stock', async (req, res) => {
   }
 });
 
+// Inteligência de Preços de Compras (Print 1)
+materialsRouter.get('/:id/price-intelligence', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const mat = await db.prepare('SELECT id, code, name, unit, reference_price FROM materials WHERE id = ?').get(id);
+    if (!mat) return res.status(404).json({ error: 'Material não encontrado.' });
+
+    // Busca compras anteriores deste material
+    const purchases = await db.prepare(`
+      SELECT 
+        p.id,
+        p.code,
+        p.created_at as purchase_date,
+        p.quantity,
+        p.unit,
+        p.unit_price,
+        p.total_price,
+        p.status,
+        p.approval_status,
+        p.supplier_name,
+        pr.name as project_name
+      FROM purchases p
+      LEFT JOIN projects pr ON pr.id = p.project_id
+      WHERE (p.material_id = ? OR p.material_name ILIKE ?) AND p.unit_price > 0
+      ORDER BY p.created_at DESC
+      LIMIT 20
+    `).all(id, mat.name);
+
+    // 1. Último Preço Autorizado (Print 1)
+    const lastAuthorized = purchases.find(p => p.approval_status === 'Aprovado' || p.status === 'Recebido');
+
+    // 2. Último Preço negociado
+    const lastPrice = purchases[0] || null;
+
+    // 3. Melhor Preço (menor valor entre os 10 últimos)
+    const recentTen = purchases.slice(0, 10);
+    let bestPrice = null;
+    let highestPrice = null;
+
+    if (recentTen.length > 0) {
+      bestPrice = recentTen.reduce((min, p) => (Number(p.unit_price) < Number(min.unit_price) ? p : min), recentTen[0]);
+      highestPrice = recentTen.reduce((max, p) => (Number(p.unit_price) > Number(max.unit_price) ? p : max), recentTen[0]);
+    }
+
+    res.json({
+      material: mat,
+      intelligence: {
+        ultimo_preco_autorizado: lastAuthorized ? Number(lastAuthorized.unit_price) : Number(mat.reference_price || 0),
+        ultimo_preco_autorizado_data: lastAuthorized ? lastAuthorized.purchase_date : null,
+        ultimo_preco_autorizado_fornecedor: lastAuthorized ? lastAuthorized.supplier_name : null,
+        
+        ultimo_preco: lastPrice ? Number(lastPrice.unit_price) : Number(mat.reference_price || 0),
+        ultimo_preco_data: lastPrice ? lastPrice.purchase_date : null,
+        ultimo_preco_fornecedor: lastPrice ? lastPrice.supplier_name : null,
+        ultimo_volume: lastPrice ? Number(lastPrice.quantity) : 0,
+
+        melhor_preco: bestPrice ? Number(bestPrice.unit_price) : Number(mat.reference_price || 0),
+        melhor_preco_data: bestPrice ? bestPrice.purchase_date : null,
+        melhor_preco_fornecedor: bestPrice ? bestPrice.supplier_name : null,
+
+        maior_preco: highestPrice ? Number(highestPrice.unit_price) : Number(mat.reference_price || 0),
+        preco_orcado: Number(mat.reference_price || 0)
+      },
+      purchases
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 

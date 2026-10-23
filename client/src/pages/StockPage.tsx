@@ -34,12 +34,16 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
 import { QuantityChangeModal } from '../components/modals/QuantityChangeModal';
+import { MaterialTransferModal } from '../components/modals/MaterialTransferModal';
 import { sanitizeUnit } from '../utils/unitConverter';
 
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
-  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato'>('separacao');
+  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato' | 'transferencias'>('separacao');
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [reservedByProject, setReservedByProject] = useState<any[]>([]);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
@@ -92,13 +96,15 @@ export const StockPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, reqs, rets, moves, subs, qtyChanges] = await Promise.all([
+      const [sumData, reqs, rets, moves, subs, qtyChanges, transferData, reservedData] = await Promise.all([
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
         api.getStockMovements(),
         api.getSubstitutions(),
-        api.getQuantityChanges()
+        api.getQuantityChanges(),
+        api.getTransfers().catch(() => []),
+        api.getReservedByProject().catch(() => [])
       ]);
       setSummary(sumData);
       setPendingRequests(reqs);
@@ -106,10 +112,27 @@ export const StockPage: React.FC = () => {
       setMovements(moves);
       setSubstitutions(subs || []);
       setQuantityChanges(qtyChanges || []);
+      setTransfers(transferData || []);
+      setReservedByProject(reservedData || []);
     } catch (err) {
       console.error('Erro ao carregar dados do estoque:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRepayTransfer = async (transferId: number) => {
+    const notes = window.prompt('Informe o número da NF, Pedido de Compra ou observações da reposição de estoque:');
+    if (notes === null) return;
+    try {
+      await api.repayTransfer(transferId, {
+        repayment_notes: notes,
+        userId: currentUser?.id
+      });
+      alert('Quitação e reposição de estoque registradas com sucesso!');
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar reposição.');
     }
   };
 
@@ -314,6 +337,19 @@ export const StockPage: React.FC = () => {
           }`}
         >
           Extrato Completo de Movimentações (Auditoria)
+        </button>
+        <button
+          onClick={() => setActiveTab('transferencias')}
+          className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'transferencias' ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30 font-bold' : 'hover:text-white'
+          }`}
+        >
+          <span>Transferências & Reposições</span>
+          {transfers.filter(t => t.repayment_status === 'Pendente').length > 0 && (
+            <span className="px-1.5 py-0.2 bg-amber-500 text-black text-[10px] font-black rounded-full">
+              {transfers.filter(t => t.repayment_status === 'Pendente').length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1447,6 +1483,186 @@ export const StockPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TAB 4: TRANSFERÊNCIAS ENTRE OBRAS & PENDÊNCIAS DE REPOSIÇÃO (FASE 1) */}
+      {!loading && activeTab === 'transferencias' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-dark-900 p-5 rounded-3xl border border-slate-200 dark:border-dark-750 shadow-md">
+            <div>
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-sabrar-600 dark:text-sabrar-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Transferências entre Obras com Reposição Automática
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                Controle de retiradas emergenciais de materiais reservados entre canteiros de obras. O sistema gera automaticamente uma pendência de reposição até que a nova compra seja quitada.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsTransferModalOpen(true)}
+              className="px-4 py-2 bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+            >
+              <Truck className="w-4 h-4" />
+              Nova Transferência Emergencial
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-dark-900 p-4 rounded-2xl border border-slate-200 dark:border-dark-750 shadow-sm">
+              <span className="text-xs text-slate-500 uppercase font-semibold">Total de Transferências</span>
+              <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                {transfers.length}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-dark-900 p-4 rounded-2xl border border-slate-200 dark:border-dark-750 shadow-sm">
+              <span className="text-xs text-amber-500 uppercase font-semibold">Reposições Pendentes</span>
+              <div className="text-2xl font-black text-amber-500 mt-1">
+                {transfers.filter(t => t.repayment_status === 'Pendente').length}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-dark-900 p-4 rounded-2xl border border-slate-200 dark:border-dark-750 shadow-sm">
+              <span className="text-xs text-emerald-500 uppercase font-semibold">Reposições Quitadas</span>
+              <div className="text-2xl font-black text-emerald-500 mt-1">
+                {transfers.filter(t => t.repayment_status === 'Quitado').length}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 overflow-hidden shadow-md">
+            <div className="p-4 bg-slate-50 dark:bg-dark-850 border-b border-slate-200 dark:border-dark-750 flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>Registro de Transferências & Quitações</span>
+              <span className="text-slate-400 font-normal">{transfers.length} registro(s)</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 dark:bg-dark-850 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-dark-700">
+                  <tr>
+                    <th className="p-3">Código</th>
+                    <th className="p-3">Data</th>
+                    <th className="p-3">Material</th>
+                    <th className="p-3 text-center">Quantidade</th>
+                    <th className="p-3">Obra Doadora (Origem)</th>
+                    <th className="p-3">Obra Beneficiada (Destino)</th>
+                    <th className="p-3 text-center">Status Reposição</th>
+                    <th className="p-3 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-dark-750">
+                  {transfers.map(t => (
+                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
+                      <td className="p-3 font-mono font-bold text-blue-600 dark:text-blue-400">{t.code}</td>
+                      <td className="p-3 text-slate-500">{new Date(t.transfer_date).toLocaleDateString('pt-BR')}</td>
+                      <td className="p-3">
+                        <div className="font-bold text-slate-900 dark:text-white">{t.material_name}</div>
+                        {t.material_code && <div className="text-[10px] text-slate-400 font-mono">{t.material_code}</div>}
+                      </td>
+                      <td className="p-3 text-center font-black text-slate-800 dark:text-slate-200">
+                        {t.quantity} {t.material_unit}
+                      </td>
+                      <td className="p-3 font-medium text-slate-700 dark:text-slate-300">
+                        {t.from_project_code ? `${t.from_project_code} - ` : ''}{t.from_project_name}
+                      </td>
+                      <td className="p-3 font-medium text-emerald-600 dark:text-emerald-400">
+                        {t.to_project_code ? `${t.to_project_code} - ` : ''}{t.to_project_name}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          t.repayment_status === 'Quitado'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        }`}>
+                          {t.repayment_status}
+                        </span>
+                        {t.repaid_at && (
+                          <div className="text-[9px] text-slate-400 mt-0.5">
+                            Quitado em {new Date(t.repaid_at).toLocaleDateString('pt-BR')}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        {t.repayment_status === 'Pendente' ? (
+                          <button
+                            onClick={() => handleRepayTransfer(t.id)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-sm transition-all"
+                            title="Registrar que o material foi comprado e devolvido à obra doadora"
+                          >
+                            Quitar Reposição
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 text-xs">✓ Concluído</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {transfers.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-slate-400 italic">
+                        Nenhuma transferência emergencial entre obras registrada até o momento.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-dark-900 rounded-3xl border border-slate-200 dark:border-dark-750 overflow-hidden shadow-md">
+            <div className="p-4 bg-slate-50 dark:bg-dark-850 border-b border-slate-200 dark:border-dark-750 text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+              <span>Consulta de Saldo de Materiais Reservados por Obra (Disponibilidade para Transferência)</span>
+              <span className="text-slate-400 font-normal">{reservedByProject.length} item(ns) reservados</span>
+            </div>
+            <div className="overflow-x-auto max-h-72">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 dark:bg-dark-850 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-dark-700">
+                  <tr>
+                    <th className="p-3">Obra</th>
+                    <th className="p-3">Material Reservado</th>
+                    <th className="p-3 text-center">Qtd Reservada</th>
+                    <th className="p-3 text-center">Estoque Físico Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-dark-750">
+                  {reservedByProject.map((r, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-dark-850/60">
+                      <td className="p-3 font-semibold text-slate-900 dark:text-slate-100">
+                        {r.project_code} - {r.project_name}
+                      </td>
+                      <td className="p-3 text-slate-800 dark:text-slate-200">
+                        {r.material_name}
+                      </td>
+                      <td className="p-3 text-center font-bold text-amber-600 dark:text-amber-400">
+                        {r.quantity_reserved} {r.material_unit}
+                      </td>
+                      <td className="p-3 text-center text-slate-500 font-medium">
+                        {r.stock_physical} {r.material_unit}
+                      </td>
+                    </tr>
+                  ))}
+                  {reservedByProject.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-slate-400 italic">
+                        Nenhum material reservado por obras no momento.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Transferência Emergencial */}
+      <MaterialTransferModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        onSuccess={() => loadData()}
+      />
 
       {/* Modal de Impressão do Romaneio */}
       <PrintRequestModal

@@ -82,6 +82,64 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [concludingProject, setConcludingProject] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
+  // Controle de Custos por Obra - Orçado x Realizado (Fase 6)
+  const [costControl, setCostControl] = useState<any>(null);
+  const [showAddCost, setShowAddCost] = useState(false);
+  const [costCategory, setCostCategory] = useState('Empreiteiro / Terceirizado');
+  const [costAmount, setCostAmount] = useState('');
+  const [costDesc, setCostDesc] = useState('');
+  const [costSupplier, setCostSupplier] = useState('');
+  const [costInvoice, setCostInvoice] = useState('');
+  const [savingCost, setSavingCost] = useState(false);
+
+  const fetchCostControl = async () => {
+    try {
+      const res = await api.getProjectCostControl(projectId);
+      setCostControl(res);
+    } catch (err) {
+      console.error('Erro ao buscar controle de custos:', err);
+    }
+  };
+
+  const handleAddCost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!costAmount || !costDesc) {
+      alert('Informe o valor e a descrição do custo.');
+      return;
+    }
+    try {
+      setSavingCost(true);
+      await api.addProjectExtraCost(projectId, {
+        category: costCategory,
+        description: costDesc,
+        supplier_contractor_name: costSupplier,
+        amount: Number(costAmount) || 0,
+        invoice_number: costInvoice,
+        userId: currentUser?.id
+      });
+      setShowAddCost(false);
+      setCostAmount('');
+      setCostDesc('');
+      setCostSupplier('');
+      setCostInvoice('');
+      await fetchCostControl();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar custo extra.');
+    } finally {
+      setSavingCost(false);
+    }
+  };
+
+  const handleDeleteCost = async (costId: number) => {
+    if (!window.confirm('Excluir este lançamento de custo?')) return;
+    try {
+      await api.deleteProjectExtraCost(costId);
+      await fetchCostControl();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir custo.');
+    }
+  };
+
   // Autocomplete flutuante em tempo real para materiais do orçamento
   const [activeMaterialSearchIdx, setActiveMaterialSearchIdx] = useState<number | null>(null);
   const [rowSuggestions, setRowSuggestions] = useState<any[]>([]);
@@ -293,6 +351,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     try {
       const res = await api.getProject(projectId);
       setData(res);
+      fetchCostControl();
 
       if (res.budget) {
         setEditableMaterials((res.budget.items || []).map((item: any) => ({
@@ -2010,6 +2069,258 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       {/* TAB 5: PREVISTO × REALIZADO & VARIAÇÕES */}
       {activeTab === 'comparativo' && (
         <div className="space-y-4 animate-in fade-in">
+
+          {/* CONTROLE FINANCEIRO CONSOLIDADO DA OBRA (FASE 6: ORÇADO X REALIZADO) */}
+          <div className="bg-dark-900 border border-dark-750 rounded-3xl p-5 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-750 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5 text-sabrar-400" />
+                  <h3 className="text-base font-extrabold text-white">
+                    Controle de Custos Consolidado (Orçado × Realizado)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Comparativo financeiro da Ordem de Produção (OP) orçada contra os desembolsos reais em materiais, empreiteiros terceirizados, fretes e dutos.
+                </p>
+              </div>
+
+              {!showAddCost && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddCost(true)}
+                  className="px-3.5 py-2 bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  Lançar Custo Extra (Empreiteiro / Frete / Dutos)
+                </button>
+              )}
+            </div>
+
+            {/* 3 KPIs Financeiros */}
+            {costControl?.summary && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-dark-850 p-4 rounded-2xl border border-dark-700">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Orçado na OP (Materiais + Serviços)</span>
+                  <div className="text-2xl font-black text-white mt-1">
+                    R$ {Number(costControl.summary.totalBudgeted || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Materiais: R$ {Number(costControl.summary.materialsBudgeted || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Serviços: R$ {Number(costControl.summary.servicesBudgeted || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                <div className="bg-dark-850 p-4 rounded-2xl border border-dark-700">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Realizado Efetivo (Total Gasto)</span>
+                  <div className="text-2xl font-black text-amber-400 mt-1">
+                    R$ {Number(costControl.summary.totalActual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1">
+                    {costControl.summary.variancePercent}% do orçamento executado
+                  </div>
+                </div>
+
+                <div className={`p-4 rounded-2xl border ${
+                  costControl.summary.isOverBudget
+                    ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
+                    : 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                }`}>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">
+                    {costControl.summary.isOverBudget ? 'Estouro de Orçamento' : 'Saldo / Margem Disponível'}
+                  </span>
+                  <div className="text-2xl font-black mt-1">
+                    R$ {Math.abs(Number(costControl.summary.variance || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] font-medium mt-1">
+                    {costControl.summary.isOverBudget ? '⚠️ A obra ultrapassou a previsão da OP' : '✓ Custo realizado dentro do teto previsto'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Breakdown de Custos Realizados por Categoria */}
+            {costControl?.summary && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-dark-850 p-3.5 rounded-2xl border border-dark-700">
+                <div>
+                  <span className="text-slate-400 block font-medium">1. Materiais (Compras):</span>
+                  <span className="font-bold text-white text-sm">
+                    R$ {Number(costControl.summary.materialsActual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block font-medium">2. Empreiteiros Terceirizados:</span>
+                  <span className="font-bold text-white text-sm">
+                    R$ {Number(costControl.summary.contractorsActual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block font-medium">3. Fretes & Logística:</span>
+                  <span className="font-bold text-white text-sm">
+                    R$ {Number(costControl.summary.freightActual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block font-medium">4. Fabricação de Dutos:</span>
+                  <span className="font-bold text-white text-sm">
+                    R$ {Number(costControl.summary.ductsActual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário Colapsável de Novo Custo Extra */}
+            {showAddCost && (
+              <form onSubmit={handleAddCost} className="bg-dark-850 border border-dark-700 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between border-b border-dark-700 pb-2">
+                  <h4 className="font-bold text-xs text-white flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-sabrar-400" />
+                    Lançar Custo Adicional na Obra
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCost(false)}
+                    className="text-xs text-slate-400 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Categoria do Custo *
+                    </label>
+                    <select
+                      value={costCategory}
+                      onChange={e => setCostCategory(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-xl bg-dark-800 border border-dark-700 text-white font-medium"
+                    >
+                      <option value="Empreiteiro / Terceirizado">Empreiteiro / Terceirizado</option>
+                      <option value="Frete / Transporte">Frete / Transporte</option>
+                      <option value="Fabricação de Dutos">Fabricação de Dutos</option>
+                      <option value="Outros">Outros Custos Indiretos</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Valor (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="0,00"
+                      value={costAmount}
+                      onChange={e => setCostAmount(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-xl bg-dark-800 border border-dark-700 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Fornecedor / Prestador / Motorista
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nome do terceiro"
+                      value={costSupplier}
+                      onChange={e => setCostSupplier(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-xl bg-dark-800 border border-dark-700 text-white"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Descrição do Serviço / Despesa *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Instalação de linha frigorígena 3º pavimento"
+                      value={costDesc}
+                      onChange={e => setCostDesc(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-xl bg-dark-800 border border-dark-700 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      N° Nota Fiscal / Recibo
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="N° NF"
+                      value={costInvoice}
+                      onChange={e => setCostInvoice(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-xl bg-dark-800 border border-dark-700 text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCost(false)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white rounded-xl bg-dark-800 hover:bg-dark-750"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCost}
+                    className="px-4 py-1.5 text-xs bg-sabrar-600 hover:bg-sabrar-500 text-white font-bold rounded-xl shadow-md transition-colors"
+                  >
+                    {savingCost ? 'Salvando...' : 'Gravar Custo na Obra'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Tabela de Custos Extras Cadastrados */}
+            {costControl?.extraCosts && costControl.extraCosts.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-dark-750">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
+                    <tr>
+                      <th className="p-3">Data</th>
+                      <th className="p-3">Categoria</th>
+                      <th className="p-3">Descrição</th>
+                      <th className="p-3">Fornecedor / Prestador</th>
+                      <th className="p-3">NF</th>
+                      <th className="p-3 text-right">Valor</th>
+                      <th className="p-3 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-750">
+                    {costControl.extraCosts.map((c: any) => (
+                      <tr key={c.id} className="hover:bg-dark-850/60">
+                        <td className="p-3 text-slate-400">{new Date(c.cost_date).toLocaleDateString('pt-BR')}</td>
+                        <td className="p-3 font-semibold text-sabrar-400">{c.category}</td>
+                        <td className="p-3 font-medium text-white">{c.description}</td>
+                        <td className="p-3 text-slate-300">{c.supplier_contractor_name || '--'}</td>
+                        <td className="p-3 text-slate-400">{c.invoice_number || '--'}</td>
+                        <td className="p-3 text-right font-black text-amber-400">
+                          R$ {Number(c.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCost(c.id)}
+                            className="p-1 text-slate-500 hover:text-rose-400 rounded transition-colors"
+                            title="Excluir custo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Header Explicativo da Regra Central */}
           <div className="p-4 sm:p-5 bg-dark-850 border border-dark-700 text-white rounded-3xl shadow-md">
             <div className="flex items-center gap-2 mb-1">

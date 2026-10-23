@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera, Layers, Check, X } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera, Layers, Check, X, DollarSign } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,7 @@ import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
 import { AdjustStockModal } from '../components/modals/AdjustStockModal';
+import { PriceIntelligenceModal } from '../components/modals/PriceIntelligenceModal';
 import { canUserViewPrices, canCreateMaterial, canImportXml } from '../utils/permissions';
 
 export const MaterialsPage: React.FC = () => {
@@ -25,7 +26,14 @@ export const MaterialsPage: React.FC = () => {
     /sabrina|emily/i.test(currentUser?.email || '')
   );
 
-  const canConfigureMinimumStock = canApproveAdjustment;
+  const canConfigureMinimumStock = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'compras' ||
+    currentUser?.role === 'compras_solicitacoes' ||
+    currentUser?.role === 'orcamento_engenharia' ||
+    /sabrina|emily/i.test(currentUser?.name || '') ||
+    /sabrina|emily/i.test(currentUser?.email || '')
+  );
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
@@ -46,6 +54,8 @@ export const MaterialsPage: React.FC = () => {
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedMaterialForAdjust, setSelectedMaterialForAdjust] = useState<Material | null>(null);
+  const [isPriceIntelOpen, setIsPriceIntelOpen] = useState(false);
+  const [selectedMaterialForIntel, setSelectedMaterialForIntel] = useState<Material | null>(null);
   const [pendingAdjustments, setPendingAdjustments] = useState<any[]>([]);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<number | null>(null);
@@ -808,7 +818,7 @@ export const MaterialsPage: React.FC = () => {
                         type="button"
                         onClick={() => handleConfigureMinimumStock(m)}
                         className="text-[10px] font-bold text-sabrar-400 hover:text-sabrar-300 bg-sabrar-950/60 hover:bg-sabrar-900 border border-sabrar-500/40 px-2 py-0.5 rounded-lg transition-colors cursor-pointer active:scale-95"
-                        title="Configurar estoque mínimo deste material (Apenas Admins, Sabrina e Emily)"
+                        title="Configurar estoque mínimo deste material (Compras, Admins, Sabrina e Emily)"
                       >
                         ⚙️ Alterar Mínimo
                       </button>
@@ -841,6 +851,21 @@ export const MaterialsPage: React.FC = () => {
                   )}
 
                   <div className="flex items-center gap-1.5">
+                    {canViewPrices && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMaterialForIntel(m);
+                          setIsPriceIntelOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-300 text-xs font-bold transition-colors active:scale-95"
+                        title="Inteligência de Preços (Último preço, Menor das 10 últimas compras, Orçado)"
+                      >
+                        <DollarSign className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Preços</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -921,6 +946,19 @@ export const MaterialsPage: React.FC = () => {
           fetchMaterials();
           fetchPendingAdjustments();
         }}
+      />
+
+      {/* Modal de Inteligência de Preços (Print 1) */}
+      <PriceIntelligenceModal
+        isOpen={isPriceIntelOpen}
+        onClose={() => {
+          setIsPriceIntelOpen(false);
+          setSelectedMaterialForIntel(null);
+        }}
+        materialId={selectedMaterialForIntel?.id || null}
+        materialName={selectedMaterialForIntel?.name}
+        materialCode={selectedMaterialForIntel?.code}
+        materialUnit={selectedMaterialForIntel?.unit}
       />
     </div>
   );

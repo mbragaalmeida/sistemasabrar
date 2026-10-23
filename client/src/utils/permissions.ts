@@ -13,6 +13,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
+  'bi-purchases-stock': ['admin', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'suppliers': ['admin', 'compras_solicitacoes'],
   'reports': ['admin'],
   'audit': ['admin'],

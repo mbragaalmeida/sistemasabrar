@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  FileSpreadsheet,
+  ClipboardCheck,
   ShoppingCart,
   Check,
   Filter,
@@ -28,6 +30,9 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { NewPurchaseModal } from '../components/modals/NewPurchaseModal';
 import { CreatePurchaseModal } from '../components/modals/CreatePurchaseModal';
 import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
+import { QuotationComparisonModal } from '../components/modals/QuotationComparisonModal';
+import { ReceivingChecklistModal } from '../components/modals/ReceivingChecklistModal';
+import { DirectBillingModal } from '../components/modals/DirectBillingModal';
 import { canImportXml } from '../utils/permissions';
 
 interface ProjectGroup {
@@ -58,12 +63,53 @@ export const PurchasesPage: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [selectedQuotationId, setSelectedQuotationId] = useState<number | null>(null);
+  const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
+  const [selectedChecklistId, setSelectedChecklistId] = useState<number | null>(null);
+  const [isDirectBillingModalOpen, setIsDirectBillingModalOpen] = useState(false);
+  const [quotationsList, setQuotationsList] = useState<any[]>([]);
+  const [checklistsList, setChecklistsList] = useState<any[]>([]);
+
+  const canApprovePurchases = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'compras_solicitacoes' ||
+    currentUser?.role === 'orcamento_engenharia' ||
+    /sabrina|emily/i.test(currentUser?.name || '') ||
+    /sabrina|emily/i.test(currentUser?.email || '')
+  );
+
+  const handleApprovePurchase = async (purchaseId: number, status: 'Aprovado' | 'Rejeitado') => {
+    let rejection_notes = undefined;
+    if (status === 'Rejeitado') {
+      const reason = window.prompt('Informe o motivo da rejeição da compra:');
+      if (reason === null) return;
+      rejection_notes = reason;
+    }
+    try {
+      await api.approvePurchase(purchaseId, {
+        approval_status: status,
+        userId: currentUser?.id,
+        rejection_notes
+      });
+      alert(`Compra ${status === 'Aprovado' ? 'aprovada' : 'rejeitada'} com sucesso!`);
+      await fetchPurchases();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao processar aprovação.');
+    }
+  };
 
   const fetchPurchases = async () => {
     setLoading(true);
     try {
-      const data = await api.getPurchases();
+      const [data, qList, cList] = await Promise.all([
+        api.getPurchases(),
+        api.getQuotations().catch(() => []),
+        api.getReceivingChecklists().catch(() => [])
+      ]);
       setAllPurchases(data);
+      setQuotationsList(qList || []);
+      setChecklistsList(cList || []);
     } catch (err) {
       console.error('Erro ao carregar compras:', err);
     } finally {
@@ -213,6 +259,43 @@ export const PurchasesPage: React.FC = () => {
               <span>Entrada via NF-e (XML)</span>
             </button>
           )}
+
+          
+          {/* Botão Mapa Comparativo de Cotações (Print 2) */}
+          <button
+            onClick={() => {
+              setSelectedQuotationId(quotationsList[0]?.id || 1);
+              setIsQuotationModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 active:scale-95 whitespace-nowrap"
+            title="Abrir mapa comparativo de preços entre até 3 fornecedores"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Mapa de Cotações</span>
+          </button>
+
+          {/* Botão Checklist de Recebimento (Print 3) */}
+          <button
+            onClick={() => {
+              setSelectedChecklistId(checklistsList[0]?.id || 1);
+              setIsChecklistModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 active:scale-95 whitespace-nowrap"
+            title="Conferência física na entrega de materiais"
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            <span>Checklist Recebimento</span>
+          </button>
+
+          {/* Botão Faturamento Direto & Compras Web (Print 4) */}
+          <button
+            onClick={() => setIsDirectBillingModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/30 active:scale-95 whitespace-nowrap"
+            title="Esteira Compras x Financeiro e compras sem CNPJ"
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Faturamento Direto & Web</span>
+          </button>
 
           {/* Botão Cadastrar Compra Manual */}
           <button
@@ -791,6 +874,35 @@ export const PurchasesPage: React.FC = () => {
           setIsXmlModalOpen(false);
           fetchPurchases();
         }}
+      />
+
+      {/* Modal de Mapa Comparativo de Cotações (Print 2) */}
+      <QuotationComparisonModal
+        isOpen={isQuotationModalOpen}
+        onClose={() => {
+          setIsQuotationModalOpen(false);
+          setSelectedQuotationId(null);
+        }}
+        quotationId={selectedQuotationId}
+        onSuccess={() => fetchPurchases()}
+      />
+
+      {/* Modal de Checklist de Recebimento de Materiais (Print 3) */}
+      <ReceivingChecklistModal
+        isOpen={isChecklistModalOpen}
+        onClose={() => {
+          setIsChecklistModalOpen(false);
+          setSelectedChecklistId(null);
+        }}
+        checklistId={selectedChecklistId}
+        onSuccess={() => fetchPurchases()}
+      />
+
+      {/* Modal de Faturamento Direto & Compras Web (Print 4) */}
+      <DirectBillingModal
+        isOpen={isDirectBillingModalOpen}
+        onClose={() => setIsDirectBillingModalOpen(false)}
+        onSuccess={() => fetchPurchases()}
       />
     </div>
   );

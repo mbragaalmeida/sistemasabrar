@@ -170,3 +170,48 @@ purchasesRouter.post('/:id/receive', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// Autorização de Compra (Emily / Admins - Documento Seção "Autorização de compras: Todas as compras passar para Emily autorizar")
+purchasesRouter.patch('/:id/approval', async (req, res) => {
+  try {
+    const purchaseId = req.params.id;
+    const { approval_status, userId, rejection_notes } = req.body;
+
+    const pur = await db.prepare('SELECT id, code, material_name FROM purchases WHERE id = ?').get(purchaseId);
+    if (!pur) return res.status(404).json({ error: 'Pedido de compra não encontrado.' });
+
+    await db.prepare(`
+      UPDATE purchases 
+      SET approval_status = ?,
+          approved_by = ?,
+          approved_at = CURRENT_TIMESTAMP,
+          rejection_notes = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      approval_status,
+      userId || null,
+      rejection_notes || null,
+      purchaseId
+    );
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+      VALUES (?, 'AUTORIZAR_COMPRA', 'COMPRAS', ?, ?)
+    `).run(
+      userId || 1,
+      purchaseId,
+      `Compra ${pur.code} (${pur.material_name}) marcada como ${approval_status}`
+    );
+
+    res.json({
+      success: true,
+      purchaseId,
+      approval_status,
+      message: `Compra ${pur.code} ${approval_status === 'Aprovado' ? 'autorizada com sucesso' : 'rejeitada'}.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
