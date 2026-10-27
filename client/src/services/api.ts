@@ -573,5 +573,39 @@ export const api = {
   addProjectExtraCost: (projectId: number, data: any) =>
     fetchJson<any>(`/cost-control/projects/${projectId}/costs`, { method: 'POST', body: JSON.stringify(data) }),
   deleteProjectExtraCost: (costId: number) =>
-    fetchJson<any>(`/cost-control/costs/${costId}`, { method: 'DELETE' })
+    fetchJson<any>(`/cost-control/costs/${costId}`, { method: 'DELETE' }),
+
+  // 7. Autodesk CAMduct & Gestão de Dutos (Pilar 3 do Fluxo HVAC)
+  getDuctsProjectSummary: (projectId: number) =>
+    fetchJson<any>(`/ducts/summary/${projectId}`),
+  getDuctDeliveryNotes: (params?: { projectId?: number; status?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return fetchJson<any[]>(`/ducts/delivery-notes${query ? `?${query}` : ''}`);
+  },
+  createDuctDeliveryNote: (data: any) =>
+    fetchJson<any>('/ducts/delivery-note', { method: 'POST', body: JSON.stringify(data) }),
+  approveDuctExcess: (noteId: number, data: { userId: number; userName: string; approved: boolean; approvalReason?: string }) =>
+    fetchJson<any>(`/ducts/delivery-note/${noteId}/approve-excess`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateDuctStatus: (noteId: number, data: { status: string; userId?: number; userName?: string }) =>
+    fetchJson<any>(`/ducts/delivery-note/${noteId}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 8. Logística, Frotas, Agenda e Romaneios Parciais (Pilar 4 do Fluxo HVAC)
+  getLogisticsAvailableItems: (projectId: number) =>
+    fetchJson<any>(`/logistics/available-items/${projectId}`),
+  getLogisticsTrips: (params?: { startDate?: string; endDate?: string; projectId?: number; status?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return fetchJson<any[]>(`/logistics/trips${query ? `?${query}` : ''}`);
+  },
+  getLogisticsTripDetails: (tripId: number) =>
+    fetchJson<any>(`/logistics/trips/${tripId}`),
+  createLogisticsTrip: (data: any) =>
+    fetchJson<any>('/logistics/trips', { method: 'POST', body: JSON.stringify(data) }),
+  approveLogisticsTripException: (tripId: number, data: { userId: number; userName: string; approved: boolean; reason?: string }) =>
+    fetchJson<any>(`/logistics/trips/${tripId}/approve-exception`, { method: 'PATCH', body: JSON.stringify(data) }),
+  signLogisticsLoadingChecklist: (tripId: number, data: { driverName: string; notes?: string; vehiclePlate?: string }) =>
+    fetchJson<any>(`/logistics/trips/${tripId}/checklist-loading`, { method: 'PATCH', body: JSON.stringify(data) }),
+  confirmLogisticsDeliveryChecklist: (tripId: number, data: { engineerId: number; engineerName: string; itemsDelivered: any[]; notes?: string; photoUrl?: string }) =>
+    fetchJson<any>(`/logistics/trips/${tripId}/checklist-delivery`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getLogisticsAiRoutePlan: (data: { date: string; tripIds?: number[] }) =>
+    fetchJson<any>('/logistics/ai-route-plan', { method: 'POST', body: JSON.stringify(data) })
 };

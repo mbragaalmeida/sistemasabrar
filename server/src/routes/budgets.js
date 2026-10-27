@@ -355,10 +355,35 @@ budgetsRouter.post('/:id/send-to-client', async (req, res) => {
 budgetsRouter.post('/:id/approve', async (req, res) => {
   try {
     const budgetId = req.params.id;
-    const { userId, userName } = req.body;
+    const { userId, userName, responsibleEngineer, engineerId, engineerIds } = req.body;
 
     const budget = await db.prepare('SELECT * FROM budgets WHERE id = ?').get(budgetId);
     if (!budget) return res.status(404).json({ error: 'Orçamento não encontrado' });
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(budget.project_id);
+    if (!project) return res.status(404).json({ error: 'Projeto associado não encontrado' });
+
+    // Pilar 1 do Fluxo HVAC: Atribuição Obrigatória do Engenheiro Responsável ao aprovar obra externa
+    let finalResponsible = responsibleEngineer || project.responsible_engineer;
+    if (!finalResponsible && project.code !== 'SAB-INTERNO') {
+      return res.status(400).json({
+        error: 'Para aprovar o orçamento e iniciar a obra oficialmente, é obrigatório designar o Engenheiro Responsável pelo projeto.'
+      });
+    }
+
+    // Se informou engenheiro, atualiza o projeto e a tabela de vínculos
+    if (finalResponsible && finalResponsible !== project.responsible_engineer) {
+      await db.prepare('UPDATE projects SET responsible_engineer = ? WHERE id = ?').run(finalResponsible, project.id);
+    }
+
+    // Vincula IDs de engenheiros em project_engineers se informados
+    const allEngineerIds = Array.isArray(engineerIds) ? engineerIds : (engineerId ? [engineerId] : []);
+    for (const engId of allEngineerIds) {
+      const exists = await db.prepare('SELECT 1 FROM project_engineers WHERE project_id = ? AND user_id = ?').get(project.id, engId);
+      if (!exists) {
+        await db.prepare('INSERT INTO project_engineers (project_id, user_id) VALUES (?, ?)').run(project.id, engId);
+      }
+    }
 
     const now = new Date().toISOString();
     await db.prepare(`
@@ -371,7 +396,6 @@ budgetsRouter.post('/:id/approve', async (req, res) => {
     await db.prepare("UPDATE projects SET status = 'Em execução', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(budget.project_id);
 
     // Notifica Engenharia que o projeto foi aprovado e solicitações estão liberadas
-    const project = await db.prepare('SELECT name FROM projects WHERE id = ?').get(budget.project_id);
     await db.prepare(`
       INSERT INTO notifications (role_target, title, message, type, link)
       VALUES ('Engenharia', 'Projeto Aprovado - Obras Liberadas', ?, 'success', ?)
@@ -383,10 +407,10 @@ budgetsRouter.post('/:id/approve', async (req, res) => {
       VALUES (?, ?, 'APROVAR_ORCAMENTO', 'ORCAMENTO', ?, ?, 'Enviado ao cliente', 'Aprovado', ?)
     `).run(
       userId || 1, userName || 'Diretoria', budgetId, budget.project_id,
-      `Orçamento ${budget.code} no valor total de R$ ${Number(budget.total_final).toFixed(2)} aprovado. Obra em execução.`
+      `Orçamento ${budget.code} no valor total de R$ ${Number(budget.total_final).toFixed(2)} aprovado. Engenheiro: ${finalResponsible || 'Sabrar Interno'}. Obra em execução.`
     );
 
-    res.json({ success: true, budgetId, status: 'Aprovado', projectStatus: 'Em execução' });
+    res.json({ success: true, budgetId, status: 'Aprovado', projectStatus: 'Em execução', responsibleEngineer: finalResponsible });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

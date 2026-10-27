@@ -41,6 +41,7 @@ import { quotationsRouter } from './routes/quotations.js';
 import { receivingChecklistsRouter } from './routes/receivingChecklists.js';
 import { directBillingsRouter } from './routes/directBillings.js';
 import { costControlRouter } from './routes/costControl.js';
+import { logisticsRouter } from './routes/logistics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +81,8 @@ const apiEndpoints = [
   ['/quotations', quotationsRouter],
   ['/receiving-checklists', receivingChecklistsRouter],
   ['/direct-billings', directBillingsRouter],
-  ['/cost-control', costControlRouter]
+  ['/cost-control', costControlRouter],
+  ['/logistics', logisticsRouter]
 ];
 
 for (const [routePath, router] of apiEndpoints) {

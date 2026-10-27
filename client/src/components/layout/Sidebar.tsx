@@ -8,6 +8,7 @@ import {
   ClipboardList,
   ShoppingCart,
   Truck,
+  Building2,
   Sparkles,
   BarChart3,
   History,
@@ -71,7 +72,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'materials', label: 'Base de Materiais', icon: Package },
         { id: 'stock', label: 'Almoxarifado', icon: Layers },
         { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },
-        { id: 'purchases', label: 'Compras & Cotações', icon: ShoppingCart }
+        { id: 'purchases', label: 'Compras & Cotações', icon: ShoppingCart },
+        { id: 'logistics', label: 'Logística & Frotas', icon: Truck, badge: 'Novo' }
       ]
     },
     {
@@ -89,7 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       group: 'GESTÃO & AUDITORIA',
       items: [
         { id: 'bi-purchases-stock', label: 'BI Compras & Estoque', icon: BarChart3, badge: 'BI' },
-        { id: 'suppliers', label: 'Fornecedores', icon: Truck },
+        { id: 'suppliers', label: 'Fornecedores', icon: Building2 },
         { id: 'reports', label: 'Relatórios', icon: BarChart3 },
         { id: 'audit', label: 'Auditoria & Logs', icon: History },
         { id: 'users', label: 'Usuários & Perfis', icon: Users }
