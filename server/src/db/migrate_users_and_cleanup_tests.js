@@ -183,8 +183,8 @@ async function migrate() {
     {
       name: 'Sabrina Gonçalves',
       email: 'sabrina@sabrar.com.br',
-      role_id: 6, // orcamento_engenharia
-      department: 'Engenharia & Custos',
+      role_id: 1, // admin (Acesso Geral Administrador)
+      department: 'Diretoria / Engenharia & Custos',
       phone: ''
     },
     {
