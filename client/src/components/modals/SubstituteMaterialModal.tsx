@@ -22,6 +22,8 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<any | null>(null);
+  const [isCustom, setIsCustom] = useState(false);
+  const [customName, setCustomName] = useState('');
   const [quantity, setQuantity] = useState<number>(item?.quantity_requested || 1);
   const [substituteUnit, setSubstituteUnit] = useState<string>(item?.material_unit || 'un');
   const [reason, setReason] = useState('');
@@ -36,6 +38,8 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
       setSubstituteUnit(item.material_unit || 'un');
       setSearchQuery('');
       setSelectedMaterial(null);
+      setIsCustom(false);
+      setCustomName('');
       setReason('');
       setError(null);
     }
@@ -66,8 +70,12 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMaterial) {
+    if (!isCustom && !selectedMaterial) {
       setError('Por favor, selecione o material substituto no catálogo.');
+      return;
+    }
+    if (isCustom && !customName.trim()) {
+      setError('Por favor, informe a descrição do material substituto fora da base.');
       return;
     }
     if (!reason.trim()) {
@@ -81,9 +89,10 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
       await api.createMaterialSubstitution({
         requestItemId: item.id,
         requestId: request.id,
-        substituteMaterialId: selectedMaterial.id,
+        substituteMaterialId: isCustom ? null : selectedMaterial.id,
+        substituteCustomName: isCustom ? customName.trim() : null,
         quantity: Number(quantity) || item.quantity_requested,
-        substituteUnit: substituteUnit.trim() || selectedMaterial.unit || 'un',
+        substituteUnit: substituteUnit.trim() || (isCustom ? 'un' : selectedMaterial.unit) || 'un',
         reason: reason.trim(),
         userId: currentUser?.id
       });
@@ -168,67 +177,119 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
             <ArrowRight className="w-5 h-5 rotate-90 sm:rotate-0 text-amber-400" />
           </div>
 
-          {/* Seleção do Material Substituto */}
-          <div className="space-y-1.5">
-            <label className="block text-slate-300 font-bold text-xs">
-              Selecionar Novo Material Substituto *
-            </label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={selectedMaterial ? selectedMaterial.name : searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Pesquisar por nome ou código na base SABRAR..."
-                className="w-full bg-dark-850 text-white placeholder-slate-500 text-xs rounded-xl pl-9 pr-4 py-2.5 border border-dark-700 focus:outline-none focus:border-amber-500"
-              />
-              {selectedMaterial && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMaterial(null);
-                    setSearchQuery('');
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+          {/* Alternador de Tipo de Material Substituto: Da Base vs Fora da Base */}
+          <div className="flex rounded-2xl bg-dark-950 p-1 border border-dark-700">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCustom(false);
+                setError(null);
+              }}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                !isCustom
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Material da Base (Catálogo)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCustom(true);
+                setSelectedMaterial(null);
+                setError(null);
+              }}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                isCustom
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Material Fora da Base (Novo / Não Cadastrado)
+            </button>
+          </div>
 
-            {/* Sugestões do Autocomplete */}
-            {suggestions.length > 0 && !selectedMaterial && (
-              <div className="max-h-48 overflow-y-auto bg-dark-850 border border-dark-700 rounded-2xl shadow-xl divide-y divide-dark-750">
-                {suggestions.map((sug) => (
+          {/* Seleção do Material Substituto */}
+          {!isCustom ? (
+            <div className="space-y-1.5">
+              <label className="block text-slate-300 font-bold text-xs">
+                Selecionar Novo Material Substituto no Catálogo *
+              </label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={selectedMaterial ? selectedMaterial.name : searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Pesquisar por nome ou código na base SABRAR..."
+                  className="w-full bg-dark-850 text-white placeholder-slate-500 text-xs rounded-xl pl-9 pr-4 py-2.5 border border-dark-700 focus:outline-none focus:border-amber-500"
+                />
+                {selectedMaterial && (
                   <button
-                    key={sug.id}
                     type="button"
                     onClick={() => {
-                      setSelectedMaterial(sug);
-                      if (sug.unit) setSubstituteUnit(sug.unit);
-                      setSuggestions([]);
+                      setSelectedMaterial(null);
+                      setSearchQuery('');
                     }}
-                    className="w-full text-left p-2.5 hover:bg-dark-800 transition-colors flex items-center justify-between gap-2 text-xs"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                   >
-                    <div>
-                      <div className="font-bold text-white">{sug.name}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        {sug.code} • Unid: {sug.unit}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-600/30 px-1.5 py-0.5 rounded">
-                        Estoque: {sug.stock_available ?? sug.stock_physical ?? 0}
-                      </span>
-                    </div>
+                    ✕
                   </button>
-                ))}
+                )}
               </div>
-            )}
-            {loadingSuggestions && (
-              <div className="text-[11px] text-slate-400 py-1 italic">Buscando materiais...</div>
-            )}
-          </div>
+
+              {/* Sugestões do Autocomplete */}
+              {suggestions.length > 0 && !selectedMaterial && (
+                <div className="max-h-48 overflow-y-auto bg-dark-850 border border-dark-700 rounded-2xl shadow-xl divide-y divide-dark-750">
+                  {suggestions.map((sug) => (
+                    <button
+                      key={sug.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMaterial(sug);
+                        if (sug.unit) setSubstituteUnit(sug.unit);
+                        setSuggestions([]);
+                      }}
+                      className="w-full text-left p-2.5 hover:bg-dark-800 transition-colors flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-white">{sug.name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {sug.code} • Unid: {sug.unit}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-600/30 px-1.5 py-0.5 rounded">
+                          R$ {Number(sug.reference_price || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="block text-slate-300 font-bold text-xs">
+                Nome / Especificação do Material Substituto Fora da Base *
+              </label>
+              <input
+                type="text"
+                required
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="Ex: Veneziana 400x200 alumínio sob medida, duto flexível especial..."
+                className="w-full bg-dark-850 text-white placeholder-slate-500 text-xs rounded-xl px-3.5 py-2.5 border border-dark-700 focus:outline-none focus:border-amber-500 font-medium"
+              />
+              <div className="p-2.5 bg-amber-950/40 border border-amber-600/40 rounded-xl text-[11px] text-amber-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Atenção:</strong> Como este material não está cadastrado na base oficial, a troca passará pela aprovação dos Administradores, Sabrina ou Emily antes de ser confirmada.
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Quantidade Substituta */}
           <div className="grid grid-cols-2 gap-3">

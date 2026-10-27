@@ -695,21 +695,21 @@ export const MaterialsPage: React.FC = () => {
                             type="button"
                             onClick={() => handleToggleAvailability(m)}
                             disabled={togglingAvailabilityId === m.id}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all active:scale-95 flex items-center gap-1 cursor-pointer ${
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border-2 transition-all active:scale-95 flex items-center gap-1 cursor-pointer ${
                               m.availability_status === 'em_falta'
-                                ? 'bg-rose-950/80 text-rose-300 border-rose-700/60 hover:bg-rose-900'
-                                : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/40 hover:bg-emerald-900'
+                                ? 'bg-rose-50 text-rose-800 border-rose-500 hover:bg-rose-100 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-500 dark:hover:bg-rose-900'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-500 dark:hover:bg-emerald-900'
                             }`}
                             title="Clique para alternar disponibilidade (Disponível / Em Falta)"
                           >
                             {m.availability_status === 'em_falta' ? (
                               <>
-                                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                <AlertTriangle className="w-3 h-3 text-rose-700 dark:text-rose-300 stroke-[2.5]" />
                                 <span>Em Falta</span>
                               </>
                             ) : (
                               <>
-                                <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                <CheckCircle className="w-3 h-3 text-emerald-700 dark:text-emerald-300 stroke-[2.5]" />
                                 <span>Disponível</span>
                               </>
                             )}
@@ -791,14 +791,29 @@ export const MaterialsPage: React.FC = () => {
                     <div>
                       <div className="text-[9px] uppercase font-bold text-slate-500">Físico</div>
                       <div className="font-black text-xs text-white">{m.stock_physical} {m.unit}</div>
+                      {m.package_content && m.converted_unit && (
+                        <div className="text-[10px] text-teal-400 font-semibold mt-0.5">
+                          ≈ {(Number(m.stock_physical || 0) * Number(m.package_content)).toLocaleString('pt-BR')} {m.converted_unit}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="text-[9px] uppercase font-bold text-slate-500">Reservado</div>
                       <div className="font-bold text-xs text-amber-400">{m.stock_reserved} {m.unit}</div>
+                      {m.package_content && m.converted_unit && (
+                        <div className="text-[10px] text-amber-400/80 font-medium mt-0.5">
+                          ≈ {(Number(m.stock_reserved || 0) * Number(m.package_content)).toLocaleString('pt-BR')} {m.converted_unit}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="text-[9px] uppercase font-bold text-slate-500">Disponível</div>
                       <div className="font-black text-xs text-sabrar-400">{m.stock_available} {m.unit}</div>
+                      {m.package_content && m.converted_unit && (
+                        <div className="text-[10px] text-sabrar-400 font-bold mt-0.5">
+                          ≈ {(Number(m.stock_available || 0) * Number(m.package_content)).toLocaleString('pt-BR')} {m.converted_unit}
+                        </div>
+                      )}
                     </div>
                   </div>
 

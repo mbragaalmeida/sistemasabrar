@@ -546,12 +546,12 @@ export const RequestsPage: React.FC = () => {
                     ) : (
                       <>
                         {it.availability_status === 'em_falta' ? (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700/60 flex items-center gap-1" title="Item em falta no estoque físico - Demanda enviada para Compras">
-                            <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> Em Falta
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-700/60 flex items-center gap-1" title="Item em falta no estoque físico - Demanda enviada para Compras">
+                            <AlertTriangle className="w-2.5 h-2.5 text-rose-700 dark:text-rose-400 stroke-[2.5]" /> Em Falta
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30" title="Item disponível no estoque do almoxarifado">
-                            ✓ Disponível
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-600/50 flex items-center gap-1" title="Item disponível no estoque do almoxarifado">
+                            <Check className="w-2.5 h-2.5 text-emerald-700 dark:text-emerald-400 stroke-[2.5]" /> Disponível
                           </span>
                         )}
                       </>

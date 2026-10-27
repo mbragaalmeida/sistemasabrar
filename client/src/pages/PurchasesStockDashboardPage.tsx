@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart3,
   TrendingUp,
@@ -16,7 +16,8 @@ import {
   Camera,
   Layers,
   Building,
-  RefreshCw
+  RefreshCw,
+  Search
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -37,6 +38,10 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [period, setPeriod] = useState('30');
+
+  // Filtros dedicados do Card "Saídas Recentes" (Material e Período)
+  const [exitMaterialSearch, setExitMaterialSearch] = useState('');
+  const [exitPeriodFilter, setExitPeriodFilter] = useState('all'); // 'all', '7', '15', '30', '90'
 
   useEffect(() => {
     loadProjects();
@@ -74,6 +79,31 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
   const kpis = data?.kpis || {};
   const charts = data?.charts || {};
   const tables = data?.tables || {};
+
+  // Filtro dinâmico de Saídas Recentes por Material e Período
+  const filteredStockExits = useMemo(() => {
+    const list = tables.recentStockExits || [];
+    const now = new Date().getTime();
+    return list.filter((e: any) => {
+      // Filtro de material / destino
+      if (exitMaterialSearch.trim()) {
+        const query = exitMaterialSearch.toLowerCase().trim();
+        const mat = (e.material_name || '').toLowerCase();
+        const proj = (e.project_name || '').toLowerCase();
+        if (!mat.includes(query) && !proj.includes(query)) return false;
+      }
+      // Filtro de período
+      if (exitPeriodFilter !== 'all') {
+        const days = parseInt(exitPeriodFilter, 10);
+        if (!isNaN(days) && days > 0) {
+          const itemDate = new Date(e.created_at).getTime();
+          const diffDays = (now - itemDate) / (1000 * 60 * 60 * 24);
+          if (diffDays > days) return false;
+        }
+      }
+      return true;
+    });
+  }, [tables.recentStockExits, exitMaterialSearch, exitPeriodFilter]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 text-slate-800 dark:text-slate-100">
@@ -464,7 +494,7 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
                 <Package className="w-4 h-4" />
                 Saídas Recentes
               </h3>
-              <p className="text-[11px] text-slate-500">Auditoria de movimentações</p>
+              <p className="text-[11px] text-slate-500">Auditoria de movimentações ({filteredStockExits.length})</p>
             </div>
             <button
               onClick={() => onNavigate('stock')}
@@ -474,14 +504,63 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
             </button>
           </div>
 
+          {/* Filtros de Material e Período */}
+          <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={exitMaterialSearch}
+                onChange={(e) => setExitMaterialSearch(e.target.value)}
+                placeholder="Filtrar por material ou destino..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              {exitMaterialSearch && (
+                <button
+                  type="button"
+                  onClick={() => setExitMaterialSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-bold px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Pílulas de Seleção de Período */}
+            <div className="flex items-center gap-1 flex-wrap text-[10px]">
+              <span className="text-slate-400 font-medium mr-0.5">Período:</span>
+              {[
+                { label: 'Todos', value: 'all' },
+                { label: 'Hoje', value: '1' },
+                { label: '7d', value: '7' },
+                { label: '15d', value: '15' },
+                { label: '30d', value: '30' },
+                { label: '90d', value: '90' }
+              ].map((pOption) => (
+                <button
+                  key={pOption.value}
+                  type="button"
+                  onClick={() => setExitPeriodFilter(pOption.value)}
+                  className={`px-2 py-0.5 rounded-lg font-bold transition-all ${
+                    exitPeriodFilter === pOption.value
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {pOption.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2.5 max-h-80 overflow-y-auto">
-            {(tables.recentStockExits || []).map((e: any) => (
+            {filteredStockExits.map((e: any) => (
               <div
                 key={e.id}
                 className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs space-y-1 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 dark:text-slate-100 line-clamp-1 max-w-[150px]">
+                  <span className="font-bold text-slate-900 dark:text-slate-100 line-clamp-1 max-w-[150px]" title={e.material_name}>
                     {e.material_name}
                   </span>
                   <span className="font-extrabold text-blue-600 dark:text-blue-400">
@@ -495,9 +574,11 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
               </div>
             ))}
 
-            {(!tables.recentStockExits || tables.recentStockExits.length === 0) && (
+            {filteredStockExits.length === 0 && (
               <div className="py-8 text-center text-slate-400 text-xs">
-                Nenhuma saída registrada recentemente.
+                {exitMaterialSearch || exitPeriodFilter !== 'all'
+                  ? 'Nenhuma saída encontrada para os filtros selecionados.'
+                  : 'Nenhuma saída registrada recentemente.'}
               </div>
             )}
           </div>

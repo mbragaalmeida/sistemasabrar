@@ -353,8 +353,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ userId, reason })
     }),
-  createMaterialSubstitution: (data: { requestItemId: number; requestId?: number; substituteMaterialId: number; quantity: number; substituteUnit?: string; reason: string; userId?: number }) =>
-    fetchJson<any>('/requests/substitutions', { method: 'POST', body: JSON.stringify(data) }),
+  createMaterialSubstitution: (data: {
+    requestItemId: number;
+    requestId?: number;
+    substituteMaterialId?: number | null;
+    substituteCustomName?: string | null;
+    quantity: number;
+    substituteUnit?: string;
+    reason: string;
+    userId?: number;
+  }) => fetchJson<any>('/requests/substitutions', { method: 'POST', body: JSON.stringify(data) }),
   getSubstitutions: () => fetchJson<any[]>('/requests/substitutions'),
   approveSubstitution: (id: number | string, userId?: number, notes?: string) =>
     fetchJson<any>(`/requests/substitutions/${id}/approve`, { method: 'POST', body: JSON.stringify({ userId, notes }) }),
@@ -407,6 +415,8 @@ export const api = {
   createSupplier: (data: any) => fetchJson<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
   updateSupplier: (id: number | string, data: any) =>
     fetchJson<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSupplier: (id: number | string, userId?: number | string) =>
+    fetchJson<any>(`/suppliers/${id}${userId ? `?userId=${userId}` : ''}`, { method: 'DELETE' }),
 
   // Dashboards & Relatórios
   getDashboardOverview: () => fetchJson<any>('/dashboard/overview'),
@@ -516,6 +526,12 @@ export const api = {
   getQuotationById: (id: number) => fetchJson<any>(`/quotations/${id}`),
   createQuotation: (data: any) =>
     fetchJson<any>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
+  addQuotationItem: (quotationId: number, data: any) =>
+    fetchJson<any>(`/quotations/${quotationId}/items`, { method: 'POST', body: JSON.stringify(data) }),
+  updateQuotationItem: (quotationId: number, itemId: number, data: any) =>
+    fetchJson<any>(`/quotations/${quotationId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteQuotationItem: (quotationId: number, itemId: number) =>
+    fetchJson<any>(`/quotations/${quotationId}/items/${itemId}`, { method: 'DELETE' }),
   addQuotationSupplier: (quotationId: number, data: any) =>
     fetchJson<any>(`/quotations/${quotationId}/suppliers`, { method: 'POST', body: JSON.stringify(data) }),
   setQuotationWinner: (quotationId: number, quotationSupplierId: number) =>

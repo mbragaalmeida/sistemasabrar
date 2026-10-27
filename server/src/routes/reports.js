@@ -254,7 +254,7 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
       percent: totalPurchasesAmount > 0 ? Math.round((amount / totalPurchasesAmount) * 100) : 0
     })).sort((a, b) => b.amount - a.amount).slice(0, 6);
 
-    // 7. Saídas de Materiais Recentes (Auditoria - Print 5)
+    // 7. Saídas de Materiais Recentes (Auditoria - Print 5) com suporte a filtros
     const recentStockExits = await db.prepare(`
       SELECT 
         sm.id,
@@ -271,7 +271,7 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
       LEFT JOIN users u ON u.id = sm.user_id
       WHERE sm.type = 'SAIDA_OBRA'
       ORDER BY sm.created_at DESC
-      LIMIT 6
+      LIMIT 200
     `).all();
 
     // 8. Histórico de Preços de Insumos Recorrentes para o gráfico de linha (Print 5)

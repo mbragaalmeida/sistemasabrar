@@ -167,12 +167,14 @@ quotationsRouter.post('/:id/suppliers', async (req, res) => {
     const taxTotal = Number(((subtotal * taxPercent) / 100).toFixed(2));
     const transport = Number(transport_cost) || 0;
     const totalCost = Number((subtotal + taxTotal + transport).toFixed(2));
+    const itemsPrices = req.body.items_prices || {};
+    const itemsPricesJson = typeof itemsPrices === 'object' ? JSON.stringify(itemsPrices) : String(itemsPrices);
 
     const insertSup = await db.prepare(`
       INSERT INTO purchase_quotation_suppliers (
         quotation_id, supplier_id, supplier_name, delivery_deadline_days,
-        tax_aliquot_percent, tax_total, transport_cost, subtotal, total_cost, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tax_aliquot_percent, tax_total, transport_cost, subtotal, total_cost, notes, items_prices
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       supplier_id || null,
@@ -183,7 +185,8 @@ quotationsRouter.post('/:id/suppliers', async (req, res) => {
       transport,
       subtotal,
       totalCost,
-      notes || null
+      notes || null,
+      itemsPricesJson
     );
 
     const supId = insertSup.lastInsertRowid;
@@ -215,6 +218,112 @@ quotationsRouter.post('/:id/suppliers', async (req, res) => {
       totalCost,
       message: `Proposta de ${supplier_name} cadastrada com sucesso.`
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/quotations/:id/items
+ * Adiciona um item para comparação na cotação
+ */
+quotationsRouter.post('/:id/items', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { material_id, material_description, quantity, unit, unit_price } = req.body;
+
+    let matName = material_description;
+    let matUnit = unit;
+    let matId = material_id ? parseInt(material_id, 10) : null;
+
+    if (matId) {
+      const mat = await db.prepare('SELECT name, unit FROM materials WHERE id = ?').get(matId);
+      if (mat) {
+        if (!matName) matName = mat.name;
+        if (!matUnit) matUnit = mat.unit;
+      }
+    }
+
+    if (!matName) {
+      return res.status(400).json({ error: 'Descrição ou material é obrigatório.' });
+    }
+
+    const q = Number(quantity) > 0 ? Number(quantity) : 1;
+    const p = Number(unit_price) >= 0 ? Number(unit_price) : 0;
+    const st = Number((q * p).toFixed(2));
+
+    const insert = await db.prepare(`
+      INSERT INTO purchase_quotation_items (
+        quotation_id, quotation_supplier_id, material_id, material_description,
+        quantity, unit, unit_price, subtotal
+      ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(id, matId, matName, q, matUnit || 'und', p, st);
+
+    res.status(201).json({ success: true, itemId: insert.lastInsertRowid, message: 'Item adicionado à cotação.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/quotations/:id/items/:itemId
+ * Atualiza um item da cotação (quantidade, unidade, descrição)
+ */
+quotationsRouter.put('/:id/items/:itemId', async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const { material_description, quantity, unit, material_id } = req.body;
+
+    const existing = await db.prepare('SELECT * FROM purchase_quotation_items WHERE id = ? AND quotation_id = ?').get(itemId, id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Item não encontrado na cotação.' });
+    }
+
+    const q = quantity !== undefined ? Number(quantity) : existing.quantity;
+    const u = unit || existing.unit;
+    const desc = material_description || existing.material_description;
+    const matId = material_id !== undefined ? material_id : existing.material_id;
+
+    if (existing.material_id) {
+      await db.prepare(`
+        UPDATE purchase_quotation_items
+        SET quantity = ?, unit = ?, material_description = ?, material_id = ?, subtotal = ROUND((unit_price * ?)::numeric, 2)
+        WHERE quotation_id = ? AND (id = ? OR material_id = ?)
+      `).run(q, u, desc, matId, q, id, itemId, existing.material_id);
+    } else {
+      await db.prepare(`
+        UPDATE purchase_quotation_items
+        SET quantity = ?, unit = ?, material_description = ?, material_id = ?, subtotal = ROUND((unit_price * ?)::numeric, 2)
+        WHERE quotation_id = ? AND id = ?
+      `).run(q, u, desc, matId, q, id, itemId);
+    }
+
+    res.json({ success: true, message: 'Item atualizado com sucesso.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/quotations/:id/items/:itemId
+ * Remove um item do mapa comparativo de cotações
+ */
+quotationsRouter.delete('/:id/items/:itemId', async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+
+    const existing = await db.prepare('SELECT * FROM purchase_quotation_items WHERE id = ? AND quotation_id = ?').get(itemId, id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Item não encontrado na cotação.' });
+    }
+
+    if (existing.material_id) {
+      await db.prepare(`DELETE FROM purchase_quotation_items WHERE quotation_id = ? AND (id = ? OR material_id = ?)`).run(id, itemId, existing.material_id);
+    } else {
+      await db.prepare(`DELETE FROM purchase_quotation_items WHERE quotation_id = ? AND id = ?`).run(id, itemId);
+    }
+
+    res.json({ success: true, message: 'Item removido da cotação com sucesso.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

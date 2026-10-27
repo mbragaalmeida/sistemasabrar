@@ -10,7 +10,12 @@ import {
   Percent,
   Calendar,
   Building,
-  Printer
+  Printer,
+  Trash2,
+  Edit2,
+  Search,
+  Package,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -62,6 +67,10 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
   const [suppliers, setSuppliers] = useState<QuotationSupplier[]>([]);
   const [items, setItems] = useState<QuotationItem[]>([]);
 
+  // Lista de fornecedores cadastrados na base (para autocompletar proposta opcionalmente)
+  const [registeredSuppliers, setRegisteredSuppliers] = useState<any[]>([]);
+  const [selectedRegisteredId, setSelectedRegisteredId] = useState<string>('');
+
   // Estado para adicionar novo fornecedor à cotação
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -75,8 +84,19 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
   const [newPaymentTerms, setNewPaymentTerms] = useState('28 DDL Boleto');
   const [submittingSupplier, setSubmittingSupplier] = useState(false);
 
+  // Estado para adicionar / gerenciar itens no comparativo de preços
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemMaterialId, setNewItemMaterialId] = useState<number | null>(null);
+  const [newItemQuantity, setNewItemQuantity] = useState<number>(1);
+  const [newItemUnit, setNewItemUnit] = useState<string>('und');
+  const [materialSuggestions, setMaterialSuggestions] = useState<any[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [submittingItem, setSubmittingItem] = useState(false);
+
   useEffect(() => {
     if (isOpen) {
+      loadRegisteredSuppliers();
       if (quotationId) {
         setActiveQuotationId(quotationId);
         loadQuotationDetails(quotationId);
@@ -90,6 +110,123 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
       }
     }
   }, [isOpen, quotationId]);
+
+  const loadRegisteredSuppliers = async () => {
+    try {
+      const sups = await api.getSuppliers();
+      setRegisteredSuppliers(sups || []);
+    } catch (err) {
+      console.error('Erro ao carregar fornecedores cadastrados:', err);
+    }
+  };
+
+  const handleSelectRegisteredSupplier = (supIdStr: string) => {
+    setSelectedRegisteredId(supIdStr);
+    if (!supIdStr) return;
+    const sup = registeredSuppliers.find(s => String(s.id) === supIdStr);
+    if (sup) {
+      setNewSupplierName(sup.name || '');
+      setNewCnpj(sup.cnpj || '');
+      setNewContact(sup.contact_person || '');
+      setNewPhone(sup.phone || '');
+    }
+  };
+
+  const handleMaterialSearch = async (val: string) => {
+    setNewItemName(val);
+    setNewItemMaterialId(null);
+    if (!val.trim() || val.length < 2) {
+      setMaterialSuggestions([]);
+      return;
+    }
+    try {
+      setLoadingSuggestions(true);
+      const res = await api.autocompleteMaterials(val.trim());
+      setMaterialSuggestions(res || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const handleSelectMaterialSuggestion = (mat: any) => {
+    setNewItemName(mat.name);
+    setNewItemMaterialId(mat.id);
+    if (mat.unit) setNewItemUnit(mat.unit);
+    setMaterialSuggestions([]);
+  };
+
+  const handleAddItemToQuotation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItemName.trim()) {
+      alert('Informe o nome ou selecione o material a comparar.');
+      return;
+    }
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) {
+      alert('Cotação não identificada.');
+      return;
+    }
+
+    try {
+      setSubmittingItem(true);
+      await api.addQuotationItem(qId, {
+        material_id: newItemMaterialId,
+        material_description: newItemName.trim(),
+        quantity: Number(newItemQuantity) || 1,
+        unit: newItemUnit.trim() || 'und'
+      });
+
+      setNewItemName('');
+      setNewItemMaterialId(null);
+      setNewItemQuantity(1);
+      setNewItemUnit('und');
+      setShowAddItem(false);
+      await loadQuotationDetails(qId);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao adicionar item ao comparativo.');
+    } finally {
+      setSubmittingItem(false);
+    }
+  };
+
+  const handleDeleteItem = async (itemId: number, desc: string) => {
+    if (!window.confirm(`Deseja remover o item "${desc}" deste mapa comparativo de preços?`)) {
+      return;
+    }
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+
+    try {
+      await api.deleteQuotationItem(qId, itemId);
+      await loadQuotationDetails(qId);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao remover item.');
+    }
+  };
+
+  const handleEditItemQuantity = async (it: QuotationItem) => {
+    const raw = window.prompt(`Alterar quantidade para "${it.mat_name || it.item_description}":`, String(it.quantity));
+    if (raw === null) return;
+    const newQty = parseFloat(raw.replace(',', '.'));
+    if (isNaN(newQty) || newQty <= 0) {
+      alert('Quantidade inválida.');
+      return;
+    }
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+
+    try {
+      await api.updateQuotationItem(qId, it.id, { quantity: newQty });
+      await loadQuotationDetails(qId);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar quantidade.');
+    }
+  };
 
   const loadQuotationDetails = async (idToLoad?: number) => {
     const qId = idToLoad || activeQuotationId || quotationId;
@@ -266,26 +403,143 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
             </div>
           ) : (
             <>
-              {/* Barra de Ações: Adicionar Fornecedor */}
-              <div className="flex items-center justify-between bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/30 p-3 rounded-xl">
+              {/* Barra de Ações: Adicionar Fornecedor e Gerenciar Itens */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/30 p-3 rounded-xl">
                 <div className="text-sm">
                   <span className="font-semibold text-blue-900 dark:text-blue-200">
-                    {suppliers.length} Fornecedor(es) cotados
+                    {suppliers.length} Fornecedor(es) cotados • {items.length} Item(ns) no comparativo
                   </span>
-                  <span className="text-xs text-blue-700 dark:text-blue-300 ml-2">
+                  <span className="text-xs text-blue-700 dark:text-blue-300 block sm:inline sm:ml-2">
                     (Compare lado a lado os preços unitários, impostos, frete e condições)
                   </span>
                 </div>
-                {!showAddSupplier && (
-                  <button
-                    onClick={() => setShowAddSupplier(true)}
-                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 !text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Inserir Proposta de Fornecedor
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {!showAddItem && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddItem(true);
+                        setShowAddSupplier(false);
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 !text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      + Adicionar Item ao Mapa
+                    </button>
+                  )}
+                  {!showAddSupplier && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddSupplier(true);
+                        setShowAddItem(false);
+                      }}
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 !text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Inserir Proposta de Fornecedor
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* Formulário Colapsável de Adicionar Item ao Comparativo */}
+              {showAddItem && (
+                <form onSubmit={handleAddItemToQuotation} className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800 p-4 rounded-xl space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800/80 pb-2">
+                    <h4 className="font-semibold text-sm text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                      <Package className="w-4 h-4 text-emerald-600" />
+                      Adicionar Item / Material ao Mapa Comparativo
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddItem(false)}
+                      className="text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      ✕ Cancelar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 relative">
+                    <div className="md:col-span-2 relative">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Material (Buscar no catálogo ou digitar especificação) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newItemName}
+                        onChange={e => handleMaterialSearch(e.target.value)}
+                        placeholder="Ex: Digite nome do material..."
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                      />
+                      {loadingSuggestions && (
+                        <div className="absolute right-3 top-8 text-[11px] text-slate-400">Buscando...</div>
+                      )}
+                      {materialSuggestions.length > 0 && (
+                        <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                          {materialSuggestions.map(mat => (
+                            <div
+                              key={mat.id}
+                              onClick={() => handleSelectMaterialSuggestion(mat)}
+                              className="p-2.5 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer text-xs border-b border-slate-100 dark:border-slate-700 last:border-0"
+                            >
+                              <div className="font-bold text-slate-900 dark:text-white">{mat.name}</div>
+                              <div className="text-[10px] text-slate-400">Cód: {mat.code} • Unid: {mat.unit} • Cat: {mat.category}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Quantidade *
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        required
+                        value={newItemQuantity}
+                        onChange={e => setNewItemQuantity(parseFloat(e.target.value) || 1)}
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Unidade *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newItemUnit}
+                        onChange={e => setNewItemUnit(e.target.value)}
+                        placeholder="und, m, kg..."
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddItem(false)}
+                      className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingItem}
+                      className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 !text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer"
+                    >
+                      {submittingItem ? 'Adicionando...' : 'Adicionar ao Mapa'}
+                    </button>
+                  </div>
+                </form>
+              )}
 
               {/* Formulário Colapsável de Novo Fornecedor */}
               {showAddSupplier && (
@@ -303,6 +557,31 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                       Cancelar
                     </button>
                   </div>
+
+                  {/* Seleção rápida de fornecedor cadastrado (Opcional - não obrigatório) */}
+                  {registeredSuppliers.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/40">
+                      <label className="block text-xs font-bold text-blue-900 dark:text-blue-200 mb-1 flex items-center gap-1.5">
+                        <Truck className="w-3.5 h-3.5 text-blue-600" />
+                        Autopreencher com Fornecedor Cadastrado (Opcional):
+                      </label>
+                      <select
+                        value={selectedRegisteredId}
+                        onChange={e => handleSelectRegisteredSupplier(e.target.value)}
+                        className="w-full text-xs px-3 py-1.5 rounded-lg border border-blue-300 dark:border-blue-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                      >
+                        <option value="">-- Digitar livremente abaixo (Não é obrigatório estar cadastrado) --</option>
+                        {registeredSuppliers.map(s => (
+                          <option key={s.id} value={String(s.id)}>
+                            {s.name} {s.cnpj ? `(CNPJ: ${s.cnpj})` : ''} {s.contact_person ? `- Contato: ${s.contact_person}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        Dica: O cadastro prévio do fornecedor <strong>não é obrigatório</strong>. Você pode digitar qualquer nome livremente abaixo.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
@@ -524,12 +803,34 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                         <tr key={it.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-2.5 px-3 text-center text-slate-400 font-medium">{idx + 1}</td>
                           <td className="py-2.5 px-3">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100">
-                              {it.mat_name || it.item_description}
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                                  {it.mat_name || it.item_description}
+                                </div>
+                                {it.mat_code && <div className="text-[10px] text-slate-400">Cód: {it.mat_code}</div>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(it.id, it.mat_name || it.item_description || 'Item')}
+                                className="opacity-40 hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 rounded transition-all shrink-0 cursor-pointer"
+                                title="Remover este item do comparativo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            {it.mat_code && <div className="text-[10px] text-slate-400">Cód: {it.mat_code}</div>}
                           </td>
-                          <td className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300">{it.quantity}</td>
+                          <td className="py-2.5 px-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleEditItemQuantity(it)}
+                              className="font-bold text-slate-700 dark:text-slate-300 hover:text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                              title="Clique para alterar a quantidade"
+                            >
+                              <span>{it.quantity}</span>
+                              <Edit2 className="w-2.5 h-2.5 text-slate-400 opacity-60" />
+                            </button>
+                          </td>
                           <td className="py-2.5 px-2 text-center text-slate-500 uppercase">{it.unit}</td>
 
                           {suppliers.map(s => {

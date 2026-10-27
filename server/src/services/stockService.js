@@ -592,24 +592,32 @@ export class StockService {
         totalReserved++;
       }
 
+      // FASE DE TRANSIÇÃO (Contagem de Estoque): Disparo automático para compras desarmado.
+      // A compra só é despachada para o setor de compras quando o Almoxarifado marcar manualmente
+      // no seletor individual ("✕ Não disponível" / em_falta).
+      // Após concluída a contagem física do estoque, reabilitar definindo a constante AUTO_DISPATCH_DEFICIT_TO_PURCHASES = true.
+      const AUTO_DISPATCH_DEFICIT_TO_PURCHASES = false;
+
       if (deficitInChosenUnit > 0) {
-        const purchaseCode = await generateNextPurchaseCode();
-        const unitPrice = conversion ? conversion.unitPrice : (mat ? Number(mat.reference_price || 0) : 0);
-        const totalPrice = Number((deficitInChosenUnit * unitPrice).toFixed(2));
+        if (AUTO_DISPATCH_DEFICIT_TO_PURCHASES) {
+          const purchaseCode = await generateNextPurchaseCode();
+          const unitPrice = conversion ? conversion.unitPrice : (mat ? Number(mat.reference_price || 0) : 0);
+          const totalPrice = Number((deficitInChosenUnit * unitPrice).toFixed(2));
 
-        await db.prepare(`
-          INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
-        `).run(
-          purchaseCode, project.id, it.id, mat ? mat.id : null,
-          mat ? null : matName, matUnit, deficitInChosenUnit,
-          mat ? mat.supplier_id : null, unitPrice,
-          totalPrice,
-          req.priority === 'Urgente' ? 'Alta' : req.priority,
-          `Compra automática por déficit em solicitação autorizada (${req.code}) para a obra ${project.name}. Solicitado: ${qty} ${matUnit}, Comprar: ${deficitInChosenUnit} ${matUnit}.`
-        );
+          await db.prepare(`
+            INSERT INTO purchases (code, project_id, request_item_id, material_id, custom_name, custom_unit, quantity, supplier_id, unit_price, total_price, status, priority, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Solicitado', ?, ?)
+          `).run(
+            purchaseCode, project.id, it.id, mat ? mat.id : null,
+            mat ? null : matName, matUnit, deficitInChosenUnit,
+            mat ? mat.supplier_id : null, unitPrice,
+            totalPrice,
+            req.priority === 'Urgente' ? 'Alta' : req.priority,
+            `Compra automática por déficit em solicitação autorizada (${req.code}) para a obra ${project.name}. Solicitado: ${qty} ${matUnit}, Comprar: ${deficitInChosenUnit} ${matUnit}.`
+          );
 
-        purchasesCreated.push({ code: purchaseCode, materialName: matName, deficitQuantity: deficitInChosenUnit });
+          purchasesCreated.push({ code: purchaseCode, materialName: matName, deficitQuantity: deficitInChosenUnit });
+        }
         totalDeficit++;
       }
     }

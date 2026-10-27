@@ -717,21 +717,21 @@ export const StockPage: React.FC = () => {
                                   type="button"
                                   disabled={togglingItemAvailabilityId === it.id || req.status === 'Entregue'}
                                   onClick={() => handleToggleItemAvailability(it)}
-                                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl border transition-all active:scale-95 shadow-xs cursor-pointer ${
+                                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl border-2 transition-all active:scale-95 shadow-xs cursor-pointer ${
                                     it.availability_status === 'em_falta'
-                                      ? 'bg-rose-950/90 text-rose-300 border-rose-600 hover:bg-rose-900 shadow-rose-950/50'
-                                      : 'bg-emerald-950/70 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900'
+                                      ? 'bg-rose-50 text-rose-800 border-rose-500 hover:bg-rose-100 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-500 dark:hover:bg-rose-900 shadow-rose-950/30'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-500 dark:hover:bg-emerald-900'
                                   }`}
                                   title="Clique para alternar: Disponível ou Não disponível (Em falta). Ao marcar Não disponível, a compra é enviada ao setor de compras."
                                 >
                                   {it.availability_status === 'em_falta' ? (
                                     <>
-                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300 stroke-[2.5]" />
                                       <span>✕ Não disponível</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 stroke-[2.5]" />
                                       <span>✓ Disponível</span>
                                     </>
                                   )}
