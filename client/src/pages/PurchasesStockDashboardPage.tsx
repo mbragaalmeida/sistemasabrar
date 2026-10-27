@@ -80,19 +80,69 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
   const charts = data?.charts || {};
   const tables = data?.tables || {};
 
-  // Filtro dinâmico de Saídas Recentes por Material e Período
+  // Normalizador flexível sem acentos e pontuação rígida
+  const normalizeSearchString = (str: any) => {
+    return String(str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove diacríticos e acentos
+      .toLowerCase()
+      .replace(/[×*]/g, 'x') // unifica multiplicador unicode '×' ou '*' com 'x'
+      .replace(/["'”]/g, '') // remove aspas de polegadas
+      .trim();
+  };
+
+  const SEARCH_STOPWORDS = new Set([
+    'de', 'da', 'do', 'das', 'dos', 'para', 'pra', 'com', 'em', 'na', 'no',
+    'nas', 'nos', 'a', 'o', 'as', 'os', 'e', 'ou', 'por', 'sem', 'sob', 'sobre'
+  ]);
+
+  // Filtro dinâmico de Saídas Recentes por Material e Período (com inteligência de sinônimos e busca ampla da Base de Materiais)
   const filteredStockExits = useMemo(() => {
     const list = tables.recentStockExits || [];
     const now = new Date().getTime();
+
+    // Prepara tokens da busca
+    const rawSearch = normalizeSearchString(exitMaterialSearch)
+      .replace(/[()[\]{},;:]/g, ' ')
+      .replace(/[-/]/g, ' '); // permite buscar frações ou traços sem rigidez
+
+    const rawTokens = rawSearch.split(/\s+/).filter(Boolean);
+    let searchTokens = rawTokens.filter(t => !SEARCH_STOPWORDS.has(t));
+    if (searchTokens.length === 0) searchTokens = rawTokens;
+
     return list.filter((e: any) => {
-      // Filtro de material / destino
-      if (exitMaterialSearch.trim()) {
-        const query = exitMaterialSearch.toLowerCase().trim();
-        const mat = (e.material_name || '').toLowerCase();
-        const proj = (e.project_name || '').toLowerCase();
-        if (!mat.includes(query) && !proj.includes(query)) return false;
+      // 1. Filtro inteligente de material / destino / sinônimos / marca / código
+      if (searchTokens.length > 0) {
+        // Concatena todos os campos pesquisáveis do material e da saída
+        const searchableText = normalizeSearchString([
+          e.material_name,
+          e.material_code,
+          e.material_synonyms,
+          e.material_brand,
+          e.material_category,
+          e.material_description,
+          e.project_name,
+          e.project_code,
+          e.reason,
+          e.user_name
+        ].filter(Boolean).join(' '));
+
+        const compactSearchable = searchableText.replace(/[^a-z0-9]/g, '');
+
+        // Cada palavra digitada deve estar presente em algum dos campos (ou fração compactada)
+        const matchesAllTokens = searchTokens.every(token => {
+          if (searchableText.includes(token)) return true;
+          const cleanToken = token.replace(/[^a-z0-9]/g, '');
+          if (cleanToken.length >= 2 && compactSearchable.includes(cleanToken)) {
+            return true;
+          }
+          return false;
+        });
+
+        if (!matchesAllTokens) return false;
       }
-      // Filtro de período
+
+      // 2. Filtro de período
       if (exitPeriodFilter !== 'all') {
         const days = parseInt(exitPeriodFilter, 10);
         if (!isNaN(days) && days > 0) {
@@ -559,17 +609,19 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
                 key={e.id}
                 className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs space-y-1 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 dark:text-slate-100 line-clamp-1 max-w-[150px]" title={e.material_name}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate flex-1" title={e.material_name}>
                     {e.material_name}
                   </span>
-                  <span className="font-extrabold text-blue-600 dark:text-blue-400">
+                  <span className="font-extrabold text-blue-600 dark:text-blue-400 shrink-0">
                     -{e.quantity} {e.material_unit}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-slate-400">
-                  <span>Destino: {e.project_name || 'Almoxarifado'}</span>
-                  <span>{new Date(e.created_at).toLocaleDateString('pt-BR')}</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 gap-2">
+                  <span className="truncate flex-1" title={e.project_name ? `${e.project_code ? e.project_code + ' - ' : ''}${e.project_name}` : 'Almoxarifado'}>
+                    Destino: {e.project_code ? `${e.project_code} - ` : ''}{e.project_name || 'Almoxarifado'}
+                  </span>
+                  <span className="shrink-0">{new Date(e.created_at).toLocaleDateString('pt-BR')}</span>
                 </div>
               </div>
             ))}

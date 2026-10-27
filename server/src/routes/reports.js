@@ -261,8 +261,16 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
         sm.created_at,
         sm.quantity,
         sm.notes as reason,
+        m.id as material_id,
+        m.code as material_code,
         m.name as material_name,
+        m.category as material_category,
+        m.brand as material_brand,
+        m.synonyms as material_synonyms,
+        m.description as material_description,
         m.unit as material_unit,
+        p.id as project_id,
+        p.code as project_code,
         p.name as project_name,
         u.name as user_name
       FROM stock_movements sm
@@ -271,7 +279,7 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
       LEFT JOIN users u ON u.id = sm.user_id
       WHERE sm.type = 'SAIDA_OBRA'
       ORDER BY sm.created_at DESC
-      LIMIT 200
+      LIMIT 500
     `).all();
 
     // 8. Histórico de Preços de Insumos Recorrentes para o gráfico de linha (Print 5)
