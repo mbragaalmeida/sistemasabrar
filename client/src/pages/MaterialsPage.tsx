@@ -695,22 +695,22 @@ export const MaterialsPage: React.FC = () => {
                             type="button"
                             onClick={() => handleToggleAvailability(m)}
                             disabled={togglingAvailabilityId === m.id}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border-2 transition-all active:scale-95 flex items-center gap-1 cursor-pointer ${
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 flex items-center gap-1 cursor-pointer shadow-xs ${
                               m.availability_status === 'em_falta'
-                                ? 'bg-rose-50 text-rose-800 border-rose-500 hover:bg-rose-100 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-500 dark:hover:bg-rose-900'
-                                : 'bg-emerald-50 text-emerald-800 border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-500 dark:hover:bg-emerald-900'
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white border border-rose-600'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
                             }`}
                             title="Clique para alternar disponibilidade (Disponível / Em Falta)"
                           >
                             {m.availability_status === 'em_falta' ? (
                               <>
-                                <AlertTriangle className="w-3 h-3 text-rose-700 dark:text-rose-300 stroke-[2.5]" />
-                                <span>Em Falta</span>
+                                <AlertTriangle className="w-3 h-3 text-white stroke-[2.5]" />
+                                <span className="text-white">Em Falta</span>
                               </>
                             ) : (
                               <>
-                                <CheckCircle className="w-3 h-3 text-emerald-700 dark:text-emerald-300 stroke-[2.5]" />
-                                <span>Disponível</span>
+                                <CheckCircle className="w-3 h-3 text-white stroke-[2.5]" />
+                                <span className="text-white">Disponível</span>
                               </>
                             )}
                           </button>
@@ -832,7 +832,7 @@ export const MaterialsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleConfigureMinimumStock(m)}
-                        className="text-[10px] font-bold text-sabrar-400 hover:text-sabrar-300 bg-sabrar-950/60 hover:bg-sabrar-900 border border-sabrar-500/40 px-2 py-0.5 rounded-lg transition-colors cursor-pointer active:scale-95"
+                        className="text-[10px] font-bold text-white bg-slate-700 hover:bg-slate-800 dark:bg-dark-750 dark:hover:bg-dark-700 border border-slate-600 dark:border-dark-600 px-2.5 py-1 rounded-lg transition-colors cursor-pointer active:scale-95 shadow-xs"
                         title="Configurar estoque mínimo deste material (Compras, Admins, Sabrina e Emily)"
                       >
                         ⚙️ Alterar Mínimo
@@ -873,11 +873,11 @@ export const MaterialsPage: React.FC = () => {
                           setSelectedMaterialForIntel(m);
                           setIsPriceIntelOpen(true);
                         }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-300 text-xs font-bold transition-colors active:scale-95"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 border border-blue-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
                         title="Inteligência de Preços (Último preço, Menor das 10 últimas compras, Orçado)"
                       >
-                        <DollarSign className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Preços</span>
+                        <DollarSign className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                        <span className="text-white">Preços</span>
                       </button>
                     )}
 
@@ -887,11 +887,11 @@ export const MaterialsPage: React.FC = () => {
                         setSelectedMaterialForAdjust(m);
                         setIsAdjustModalOpen(true);
                       }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/50 text-amber-300 text-xs font-bold transition-colors active:scale-95"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 border border-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
                       title="Corrigir quantidade deste material no estoque"
                     >
-                      <Layers className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Ajustar</span>
+                      <Layers className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                      <span className="text-white">Ajustar</span>
                     </button>
 
                     <button
@@ -899,10 +899,10 @@ export const MaterialsPage: React.FC = () => {
                         setSelectedMaterialId(m.id);
                         setIsQuickEntryOpen(true);
                       }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-sabrar-950/80 hover:bg-sabrar-900 border border-sabrar-500/40 text-sabrar-300 text-xs font-bold transition-colors"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
                     >
-                      <Plus className="w-3.5 h-3.5 text-sabrar-400" />
-                      <span>+ Entrada</span>
+                      <Plus className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                      <span className="text-white">+ Entrada</span>
                     </button>
                   </div>
                 </div>

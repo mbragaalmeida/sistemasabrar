@@ -717,22 +717,22 @@ export const StockPage: React.FC = () => {
                                   type="button"
                                   disabled={togglingItemAvailabilityId === it.id || req.status === 'Entregue'}
                                   onClick={() => handleToggleItemAvailability(it)}
-                                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl border-2 transition-all active:scale-95 shadow-xs cursor-pointer ${
+                                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl transition-all active:scale-95 shadow-xs cursor-pointer ${
                                     it.availability_status === 'em_falta'
-                                      ? 'bg-rose-50 text-rose-800 border-rose-500 hover:bg-rose-100 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-500 dark:hover:bg-rose-900 shadow-rose-950/30'
-                                      : 'bg-emerald-50 text-emerald-800 border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-500 dark:hover:bg-emerald-900'
+                                      ? 'bg-rose-600 hover:bg-rose-700 text-white border border-rose-600 shadow-rose-900/20'
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-emerald-900/20'
                                   }`}
                                   title="Clique para alternar: Disponível ou Não disponível (Em falta). Ao marcar Não disponível, a compra é enviada ao setor de compras."
                                 >
                                   {it.availability_status === 'em_falta' ? (
                                     <>
-                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300 stroke-[2.5]" />
-                                      <span>✕ Não disponível</span>
+                                      <AlertTriangle className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                                      <span className="text-white">✕ Não disponível</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 stroke-[2.5]" />
-                                      <span>✓ Disponível</span>
+                                      <Check className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                                      <span className="text-white">✓ Disponível</span>
                                     </>
                                   )}
                                 </button>
@@ -742,11 +742,11 @@ export const StockPage: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => setSubstituteItemData({ request: req, item: it })}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    className="flex items-center gap-1 text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-700 border border-amber-600 px-2.5 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
                                     title="Solicitar troca deste material por outro disponível no almoxarifado"
                                   >
-                                    <RefreshCw className="w-3 h-3" />
-                                    <span>Trocar Material</span>
+                                    <RefreshCw className="w-3 h-3 text-white stroke-[2.5]" />
+                                    <span className="text-white">Trocar Material</span>
                                   </button>
                                 )}
 
@@ -755,11 +755,11 @@ export const StockPage: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => setQuantityChangeItemData({ request: req, item: it })}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/40 hover:bg-sky-950/80 border border-sky-600/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    className="flex items-center gap-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 border border-blue-600 px-2.5 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
                                     title="Solicitar alteração da quantidade deste material"
                                   >
-                                    <Hash className="w-3 h-3" />
-                                    <span>Alterar Qtd</span>
+                                    <Hash className="w-3 h-3 text-white stroke-[2.5]" />
+                                    <span className="text-white">Alterar Qtd</span>
                                   </button>
                                 )}
 
@@ -771,11 +771,11 @@ export const StockPage: React.FC = () => {
                                       setCancellingItemData({ item: it, request: req });
                                       setCancelReason('');
                                     }}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/80 border border-rose-700/40 px-2 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
+                                    className="flex items-center gap-1 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 border border-rose-600 px-2.5 py-1 rounded-xl transition-colors shadow-xs active:scale-95"
                                     title="Cancelar este item por duplicidade ou erro (registrado em auditoria imutável)"
                                   >
-                                    <X className="w-3 h-3 text-rose-400" />
-                                    <span>Cancelar Item</span>
+                                    <X className="w-3 h-3 text-white stroke-[2.5]" />
+                                    <span className="text-white">Cancelar Item</span>
                                   </button>
                                 )}
                               </>
