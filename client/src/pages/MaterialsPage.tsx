@@ -873,7 +873,7 @@ export const MaterialsPage: React.FC = () => {
                           setSelectedMaterialForIntel(m);
                           setIsPriceIntelOpen(true);
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 border border-blue-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
+                        className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 h-[34px] rounded-xl bg-blue-600 hover:bg-blue-700 border border-blue-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs whitespace-nowrap"
                         title="Inteligência de Preços (Último preço, Menor das 10 últimas compras, Orçado)"
                       >
                         <DollarSign className="w-3.5 h-3.5 text-white stroke-[2.5]" />
@@ -887,7 +887,7 @@ export const MaterialsPage: React.FC = () => {
                         setSelectedMaterialForAdjust(m);
                         setIsAdjustModalOpen(true);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 border border-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
+                      className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 h-[34px] rounded-xl bg-amber-600 hover:bg-amber-700 border border-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs whitespace-nowrap"
                       title="Corrigir quantidade deste material no estoque"
                     >
                       <Layers className="w-3.5 h-3.5 text-white stroke-[2.5]" />
@@ -899,10 +899,10 @@ export const MaterialsPage: React.FC = () => {
                         setSelectedMaterialId(m.id);
                         setIsQuickEntryOpen(true);
                       }}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs"
+                      className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 h-[34px] rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs whitespace-nowrap"
                     >
                       <Plus className="w-3.5 h-3.5 text-white stroke-[2.5]" />
-                      <span className="text-white">+ Entrada</span>
+                      <span className="text-white">Entrada</span>
                     </button>
                   </div>
                 </div>
