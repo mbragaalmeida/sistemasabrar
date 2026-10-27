@@ -25,16 +25,18 @@ import {
   RefreshCw,
   ArrowRight,
   Hash,
-  X
+  X,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { canUserViewPrices, canUserApproveOperations } from '../utils/permissions';
+import { canUserViewPrices, canUserApproveOperations, canRegisterReturn } from '../utils/permissions';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { SubstituteMaterialModal } from '../components/modals/SubstituteMaterialModal';
 import { QuantityChangeModal } from '../components/modals/QuantityChangeModal';
 import { MaterialTransferModal } from '../components/modals/MaterialTransferModal';
+import { NewReturnModal } from '../components/modals/NewReturnModal';
 import { sanitizeUnit } from '../utils/unitConverter';
 
 export const StockPage: React.FC = () => {
@@ -44,6 +46,7 @@ export const StockPage: React.FC = () => {
   const [transfers, setTransfers] = useState<any[]>([]);
   const [reservedByProject, setReservedByProject] = useState<any[]>([]);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isNewReturnModalOpen, setIsNewReturnModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
@@ -1387,10 +1390,23 @@ export const StockPage: React.FC = () => {
 
       {/* TAB 2: DEVOLUÇÕES */}
       {!loading && activeTab === 'devolucoes' && (
-        <div className="bg-dark-900 rounded-3xl border border-dark-750 p-4 shadow-md">
-          <div className="mb-4">
-            <h3 className="font-extrabold text-sm text-white">Devoluções ao Almoxarifado</h3>
-            <p className="text-xs text-slate-400">Materiais reaproveitáveis que retornaram ao estoque da empresa</p>
+        <div className="bg-dark-900 rounded-3xl border border-dark-750 p-4 sm:p-5 shadow-md space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-dark-750 pb-3">
+            <div>
+              <h3 className="font-extrabold text-sm text-white">Devoluções ao Almoxarifado</h3>
+              <p className="text-xs text-slate-400">Materiais reaproveitáveis que retornaram ao estoque da empresa</p>
+            </div>
+            {canRegisterReturn(currentUser) && (
+              <button
+                type="button"
+                onClick={() => setIsNewReturnModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all shadow-md shadow-teal-600/20 active:scale-95 cursor-pointer self-start sm:self-auto"
+                title="Registrar devolução de materiais ao almoxarifado"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Registrar Devolução</span>
+              </button>
+            )}
           </div>
 
           <div className="divide-y divide-dark-750">
@@ -1762,6 +1778,16 @@ export const StockPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Registro de Devolução */}
+      <NewReturnModal
+        isOpen={isNewReturnModalOpen}
+        onClose={() => setIsNewReturnModalOpen(false)}
+        onSuccess={() => {
+          loadData();
+          setIsNewReturnModalOpen(false);
+        }}
+      />
     </div>
   );
 };

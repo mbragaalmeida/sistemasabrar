@@ -113,6 +113,28 @@ export function canDeleteProject(user: { role?: string; email?: string; name?: s
   return email.includes('sabrina') || name.includes('sabrina');
 }
 
+/**
+ * Permissão para registrar devolução de materiais ao almoxarifado:
+ * Liberado para Jennifer (compras/compras3@sabrar.com.br), Almoxarifado,
+ * todo o setor de Compras (compras e compras_solicitacoes/Emily),
+ * Orçamento/Engenharia (Sabrina) e Administradores.
+ */
+export function canRegisterReturn(user?: { role?: string; email?: string; name?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (
+    user.role === 'admin' ||
+    user.role === 'almoxarifado' ||
+    user.role === 'compras' ||
+    user.role === 'compras_solicitacoes' ||
+    user.role === 'orcamento_engenharia'
+  ) {
+    return true;
+  }
+  const name = String(user.name || '').toLowerCase();
+  const email = String(user.email || '').toLowerCase();
+  return /jennifer|sabrina|emily/i.test(name) || /jennifer|sabrina|emily/i.test(email);
+}
+
 
 export interface BottomNavItem {
   id: string;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera, Layers, Check, X, DollarSign } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, CheckCircle, ArrowDown, ArrowUp, PlusCircle, Filter, PackagePlus, RotateCcw, FileCode, Maximize2, Image as ImageIcon, Camera, Layers, Check, X, DollarSign, Settings } from 'lucide-react';
 import { Material } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -10,7 +10,7 @@ import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { MaterialPhotoModal } from '../components/modals/MaterialPhotoModal';
 import { AdjustStockModal } from '../components/modals/AdjustStockModal';
 import { PriceIntelligenceModal } from '../components/modals/PriceIntelligenceModal';
-import { canUserViewPrices, canCreateMaterial, canImportXml } from '../utils/permissions';
+import { canUserViewPrices, canCreateMaterial, canImportXml, canRegisterReturn } from '../utils/permissions';
 
 export const MaterialsPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -266,25 +266,24 @@ export const MaterialsPage: React.FC = () => {
           )}
 
           {allowCreateMaterial && (
-            <>
-              {/* BOTÃO CADASTRAR NOVO PRODUTO (Solicitação 2 do usuário) */}
-              <button
-                onClick={() => setIsNewMaterialModalOpen(true)}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Cadastrar Novo Produto</span>
-              </button>
+            <button
+              onClick={() => setIsNewMaterialModalOpen(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Cadastrar Novo Produto</span>
+            </button>
+          )}
 
-              {/* BOTÃO REGISTRAR DEVOLUÇÃO */}
-              <button
-                onClick={() => setIsReturnModalOpen(true)}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>Registrar Devolução</span>
-              </button>
-            </>
+          {canRegisterReturn(currentUser) && (
+            <button
+              onClick={() => setIsReturnModalOpen(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-xs"
+              title="Registrar devolução de sobras de materiais ao almoxarifado"
+            >
+              <RotateCcw className="w-4 h-4 text-teal-400" />
+              <span>Registrar Devolução</span>
+            </button>
           )}
 
           {/* BOTÃO ENTRADA RÁPIDA DE ESTOQUE */}
@@ -832,10 +831,11 @@ export const MaterialsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleConfigureMinimumStock(m)}
-                        className="text-[10px] font-bold text-white bg-slate-700 hover:bg-slate-800 dark:bg-dark-750 dark:hover:bg-dark-700 border border-slate-600 dark:border-dark-600 px-2.5 py-1 rounded-lg transition-colors cursor-pointer active:scale-95 shadow-xs"
+                        className="text-xs font-bold text-white bg-sabrar-600 hover:bg-sabrar-700 border border-sabrar-600 px-2.5 py-1 rounded-lg transition-all cursor-pointer active:scale-95 shadow-xs flex items-center gap-1.5"
                         title="Configurar estoque mínimo deste material (Compras, Admins, Sabrina e Emily)"
                       >
-                        ⚙️ Alterar Mínimo
+                        <Settings className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                        <span className="text-white font-bold">Alterar Mínimo</span>
                       </button>
                     )}
                   </div>

@@ -352,14 +352,22 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={submitting || !selectedMaterial || !reason.trim()}
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-md shadow-amber-600/30 disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
-            >
-              <CheckCircle className="w-4 h-4" />
-              <span>{submitting ? 'Enviando...' : 'Solicitar Autorização de Troca'}</span>
-            </button>
+            {(() => {
+              const isFormValid = isCustom
+                ? Boolean(customName.trim() && substituteUnit.trim() && Number(quantity) > 0)
+                : Boolean(selectedMaterial && Number(quantity) > 0);
+
+              return (
+                <button
+                  type="submit"
+                  disabled={submitting || !isFormValid || !reason.trim()}
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-md shadow-amber-600/30 disabled:opacity-50 flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{submitting ? 'Enviando...' : 'Solicitar Autorização de Troca'}</span>
+                </button>
+              );
+            })()}
           </div>
         </form>
       </div>
