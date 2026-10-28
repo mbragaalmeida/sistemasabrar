@@ -3,17 +3,20 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { db } from '../db/connection.js';
+import { OC_MODELO_NOVO_BASE64 } from '../templates/ocTemplateBase64.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Busca template na pasta do servidor ou na pasta de arquivos externa
+// Busca template na pasta do servidor, na raiz ou usa o embutido
 function getTemplatePath() {
   const localTemplate = path.join(__dirname, '../templates/OC_MODELO_NOVO.xlsx');
   if (fs.existsSync(localTemplate)) return localTemplate;
+  const cwdTemplate = path.join(process.cwd(), 'server/src/templates/OC_MODELO_NOVO.xlsx');
+  if (fs.existsSync(cwdTemplate)) return cwdTemplate;
   const externalTemplate = 'C:/Users/Casa/OneDrive/Área de Trabalho/Matheus/Market Making/Sabrar Engenharia/Arquivos Sabrar/OC MODELO NOVO.xlsx';
   if (fs.existsSync(externalTemplate)) return externalTemplate;
-  throw new Error('Template OC MODELO NOVO.xlsx não foi encontrado.');
+  return null;
 }
 
 /**
@@ -192,9 +195,23 @@ export class PurchaseOrderExportService {
    * Preenche a planilha modelo com os dados preservando a formatação exata
    */
   static async buildWorkbook(data) {
-    const templatePath = getTemplatePath();
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(templatePath);
+    let loaded = false;
+    try {
+      const templatePath = getTemplatePath();
+      if (templatePath && fs.existsSync(templatePath)) {
+        await workbook.xlsx.readFile(templatePath);
+        loaded = true;
+      }
+    } catch (e) {
+      // Ignora erro de leitura em disco e usa template embutido
+    }
+
+    if (!loaded) {
+      const buffer = Buffer.from(OC_MODELO_NOVO_BASE64, 'base64');
+      await workbook.xlsx.load(buffer);
+    }
+
     const ws = workbook.getWorksheet(1);
 
     // 1. Cabeçalho da Ordem de Compra
