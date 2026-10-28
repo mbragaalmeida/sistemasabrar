@@ -35,7 +35,7 @@ const ICON_MAP = {
 export const BottomNav: React.FC<BottomNavProps> = ({ currentPage, onNavigate, onOpenSidebar }) => {
   const { currentUser } = useAuth();
   const userRole = currentUser?.role || 'admin';
-  const navItems = getBottomNavItemsForRole(userRole, currentUser);
+  const navItems = getBottomNavItemsForRole(userRole);
 
 
   return (

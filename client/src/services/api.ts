@@ -589,34 +589,9 @@ export const api = {
   updateDuctStatus: (noteId: number, data: { status: string; userId?: number; userName?: string }) =>
     fetchJson<any>(`/ducts/delivery-note/${noteId}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  // Solicitações de Dutos pelos Engenheiros
-  getDuctRequests: (params?: { projectId?: number; status?: string; requested_by?: number }) => {
-    const query = new URLSearchParams(params as any).toString();
-    return fetchJson<any[]>(`/ducts/requests${query ? `?${query}` : ''}`);
-  },
-  createDuctRequest: (data: { projectId: number; items: any[]; priority?: string; notes?: string; requestedBy?: number }) =>
-    fetchJson<any>('/ducts/requests', { method: 'POST', body: JSON.stringify(data) }),
-  updateDuctRequestStatus: (requestId: number, data: { status: string; userId?: number; userName?: string } | string, notes?: string) => {
-    const payload = typeof data === 'string' ? { status: data, notes } : data;
-    return fetchJson<any>(`/ducts/requests/${requestId}/status`, { method: 'PATCH', body: JSON.stringify(payload) });
-  },
-
   // 8. Logística, Frotas, Agenda e Romaneios Parciais (Pilar 4 do Fluxo HVAC)
   getLogisticsAvailableItems: (projectId: number) =>
     fetchJson<any>(`/logistics/available-items/${projectId}`),
-  getLogisticsReadyItems: (projectId: number) =>
-    fetchJson<any>(`/logistics/ready-items/${projectId}`),
-  createLogisticsRequest: (data: any) =>
-    fetchJson<any>('/logistics/requests', { method: 'POST', body: JSON.stringify(data) }),
-  getLogisticsRequests: (params?: { projectId?: number; status?: string; requestedBy?: number }) => {
-    const query = new URLSearchParams(params as any).toString();
-    return fetchJson<any[]>(`/logistics/requests${query ? `?${query}` : ''}`);
-  },
-  updateLogisticsRequestStatus: (requestId: number, data: { status: string; tripId?: number; userId?: number; userName?: string } | string) => {
-    const payload = typeof data === 'string' ? { status: data } : data;
-    return fetchJson<any>(`/logistics/requests/${requestId}/status`, { method: 'PATCH', body: JSON.stringify(payload) });
-  },
-
   getLogisticsTrips: (params?: { startDate?: string; endDate?: string; projectId?: number; status?: string }) => {
     const query = new URLSearchParams(params as any).toString();
     return fetchJson<any[]>(`/logistics/trips${query ? `?${query}` : ''}`);
@@ -632,31 +607,5 @@ export const api = {
   confirmLogisticsDeliveryChecklist: (tripId: number, data: { engineerId: number; engineerName: string; itemsDelivered: any[]; notes?: string; photoUrl?: string }) =>
     fetchJson<any>(`/logistics/trips/${tripId}/checklist-delivery`, { method: 'PATCH', body: JSON.stringify(data) }),
   getLogisticsAiRoutePlan: (data: { date: string; tripIds?: number[] }) =>
-    fetchJson<any>('/logistics/ai-route-plan', { method: 'POST', body: JSON.stringify(data) }),
-
-  // 9. Exportação de Ordem de Compra (OC) em Excel editável
-  exportQuotationOCUrl: (quotationId: number, supplierId?: number, userId?: number) => {
-    const params = new URLSearchParams();
-    if (supplierId) params.append('supplierId', String(supplierId));
-    if (userId) params.append('userId', String(userId));
-    return `/api/quotations/${quotationId}/export-oc?${params.toString()}`;
-  },
-  exportPurchasesOCUrl: (options: number[] | { purchaseIds?: number[]; projectId?: number; requestCode?: string }, userId?: number) => {
-    const params = new URLSearchParams();
-    if (Array.isArray(options)) {
-      params.append('purchaseIds', options.join(','));
-    } else if (options) {
-      if (options.purchaseIds && options.purchaseIds.length > 0) {
-        params.append('purchaseIds', options.purchaseIds.join(','));
-      }
-      if (options.projectId) {
-        params.append('projectId', String(options.projectId));
-      }
-      if (options.requestCode) {
-        params.append('requestCode', options.requestCode);
-      }
-    }
-    if (userId) params.append('userId', String(userId));
-    return `/api/purchases/export-oc?${params.toString()}`;
-  }
+    fetchJson<any>('/logistics/ai-route-plan', { method: 'POST', body: JSON.stringify(data) })
 };

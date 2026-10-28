@@ -492,7 +492,7 @@ export const PurchasesPage: React.FC = () => {
                     </div>
 
                     {/* Lado Direito: Total Estimado e Botão Expansor */}
-                    <div className="flex items-center justify-between md:justify-end gap-3 border-t md:border-t-0 pt-2 md:pt-0 border-dark-750">
+                    <div className="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-2 md:pt-0 border-dark-750">
                       {group.totalEstimated > 0 && (
                         <div className="text-left md:text-right">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
@@ -503,19 +503,6 @@ export const PurchasesPage: React.FC = () => {
                           </span>
                         </div>
                       )}
-
-                      <a
-                        href={api.exportPurchasesOCUrl({
-                          projectId: group.projectId !== 'geral' ? Number(group.projectId) : undefined
-                        })}
-                        download
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-sm border border-emerald-500/40 cursor-pointer"
-                        title="Exportar Ordem de Compra consolidada desta obra em formato Excel editável (.xlsx modelo Sabrar)"
-                      >
-                        <FileSpreadsheet className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Exportar OC (Excel)</span>
-                      </a>
 
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-dark-800 border border-dark-700 text-xs font-bold text-slate-300 group-hover:text-white">
                         <span>{isExpanded ? 'Recolher' : 'Ver Materiais'}</span>
@@ -595,18 +582,6 @@ export const PurchasesPage: React.FC = () => {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs self-end sm:self-center">
-                                  <a
-                                    href={api.exportPurchasesOCUrl({
-                                      projectId: group.projectId !== 'geral' ? Number(group.projectId) : undefined,
-                                      requestCode: subGroup.requestCode !== 'AVULSO' ? subGroup.requestCode : undefined
-                                    })}
-                                    download
-                                    className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-lg font-bold text-[11px] transition-all shadow-sm border border-emerald-500/40 cursor-pointer"
-                                    title="Exportar Ordem de Compra desta solicitação em Excel editável (Modelo Oficial Sabrar)"
-                                  >
-                                    <FileSpreadsheet className="w-3 h-3" />
-                                    <span>Exportar OC</span>
-                                  </a>
                                   <span className="font-bold text-slate-400 bg-dark-800 px-2 py-0.5 rounded-lg border border-dark-700">
                                     {subGroup.items.length} {subGroup.items.length === 1 ? 'material' : 'materiais'}
                                   </span>

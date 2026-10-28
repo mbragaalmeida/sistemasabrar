@@ -377,17 +377,6 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
           </div>
           
           <div className="flex items-center gap-2">
-            {activeQuotationId && (
-              <a
-                href={api.exportQuotationOCUrl(activeQuotationId)}
-                download
-                className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Exportar Ordem de Compra em formato Excel editável (.xlsx modelo Sabrar)"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Exportar OC (Excel)</span>
-              </a>
-            )}
             <button
               onClick={() => window.print()}
               className="px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
@@ -1000,15 +989,6 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                               Definir Vencedor
                             </button>
                           )}
-                          <a
-                            href={api.exportQuotationOCUrl(activeQuotationId!, s.supplier_id || s.id)}
-                            download
-                            className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-700 rounded-lg transition-all"
-                            title={`Exportar Ordem de Compra para ${s.supplier_name} em Excel editável`}
-                          >
-                            <FileSpreadsheet className="w-3 h-3" />
-                            <span>Exportar OC (Excel)</span>
-                          </a>
                         </td>
                       ))}
                     </tr>

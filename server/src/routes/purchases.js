@@ -1,42 +1,8 @@
 import express from 'express';
 import { db } from '../db/connection.js';
 import { StockService, generateNextPurchaseCode } from '../services/stockService.js';
-import { PurchaseOrderExportService } from '../services/purchaseOrderExportService.js';
 
 export const purchasesRouter = express.Router();
-
-/**
- * GET /api/purchases/export-oc
- * Exporta uma Ordem de Compra em formato Excel editável (.xlsx)
- * preenchida com as compras/itens informados
- */
-purchasesRouter.get('/export-oc', async (req, res) => {
-  try {
-    const { purchaseIds, userId } = req.query;
-    if (!purchaseIds) {
-      return res.status(400).json({ error: 'Parâmetro purchaseIds é obrigatório' });
-    }
-
-    const ids = String(purchaseIds).split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0);
-    if (ids.length === 0) {
-      return res.status(400).json({ error: 'Nenhum ID de compra válido fornecido' });
-    }
-
-    let buyerUser = null;
-    if (userId) {
-      buyerUser = await db.prepare('SELECT id, name, email, phone FROM users WHERE id = ?').get(Number(userId));
-    }
-
-    const buffer = await PurchaseOrderExportService.exportFromPurchases(ids, buyerUser);
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Ordem_de_Compra_${Date.now()}.xlsx"`);
-    res.send(buffer);
-  } catch (err) {
-    console.error('[Export OC Purchases Error]', err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Lista fila de demandas e pedidos de compra
 purchasesRouter.get('/', async (req, res) => {

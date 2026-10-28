@@ -68,12 +68,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
         { id: 'budgets', label: 'Orçamentos Aprovados', icon: Calculator },
-        { id: 'ducts', label: 'Gestão de Dutos & CAMduct', icon: Wind },
+        { id: 'ducts', label: 'Dutos', icon: Wind },
         { id: 'materials', label: 'Base de Materiais', icon: Package },
         { id: 'stock', label: 'Almoxarifado', icon: Layers },
-        { id: 'requests', label: userRole === 'engenharia' ? 'Área do Engenheiro' : 'Solicitar Material', icon: ClipboardList },
+        { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },
         { id: 'purchases', label: 'Compras & Cotações', icon: ShoppingCart },
-        { id: 'logistics', label: 'Logística & Frotas', icon: Truck }
+        { id: 'logistics', label: 'Logística & Frotas', icon: Truck, badge: 'Novo' }
       ]
     },
     {
@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navGroups: NavGroup[] = rawNavGroups
     .map(group => ({
       ...group,
-      items: group.items.filter(item => isPageAllowed(item.id, userRole, currentUser))
+      items: group.items.filter(item => isPageAllowed(item.id, userRole))
     }))
     .filter(group => group.items.length > 0);
 

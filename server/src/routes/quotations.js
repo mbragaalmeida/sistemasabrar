@@ -1,6 +1,5 @@
 import express from 'express';
 import { db } from '../db/connection.js';
-import { PurchaseOrderExportService } from '../services/purchaseOrderExportService.js';
 
 export const quotationsRouter = express.Router();
 
@@ -345,33 +344,6 @@ quotationsRouter.patch('/:id/winner', async (req, res) => {
 
     res.json({ success: true, message: 'Proposta vencedora definida.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * GET /api/quotations/:id/export-oc
- * Exporta uma Ordem de Compra editável em formato Excel (.xlsx)
- * preenchida com os dados da cotação e da proposta do fornecedor selecionado
- */
-quotationsRouter.get('/:id/export-oc', async (req, res) => {
-  try {
-    const quotationId = Number(req.params.id);
-    const supplierId = req.query.supplierId ? Number(req.query.supplierId) : null;
-    const buyerUserId = req.query.userId ? Number(req.query.userId) : null;
-
-    let buyerUser = null;
-    if (buyerUserId) {
-      buyerUser = await db.prepare('SELECT id, name, email, phone FROM users WHERE id = ?').get(buyerUserId);
-    }
-
-    const buffer = await PurchaseOrderExportService.exportFromQuotation(quotationId, supplierId, buyerUser);
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Ordem_de_Compra_Cotacao_${quotationId}.xlsx"`);
-    res.send(buffer);
-  } catch (err) {
-    console.error('[Export OC Quotation Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
