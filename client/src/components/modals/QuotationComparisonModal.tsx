@@ -380,7 +380,7 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
             {activeQuotationId && (
               <a
                 href={api.exportQuotationOCUrl(activeQuotationId)}
-                download
+                download={`Ordem_de_Compra_Cotacao_${activeQuotationId}.xlsx`}
                 className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
                 title="Exportar Ordem de Compra em formato Excel editável (.xlsx modelo Sabrar)"
               >
@@ -1002,7 +1002,7 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                           )}
                           <a
                             href={api.exportQuotationOCUrl(activeQuotationId!, s.supplier_id || s.id)}
-                            download
+                            download={`Ordem_de_Compra_${(s.supplier_name || 'Fornecedor').replace(/[^a-zA-Z0-9_-]/g, '_')}.xlsx`}
                             className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-700 rounded-lg transition-all"
                             title={`Exportar Ordem de Compra para ${s.supplier_name} em Excel editável`}
                           >

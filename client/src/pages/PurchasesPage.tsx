@@ -506,9 +506,10 @@ export const PurchasesPage: React.FC = () => {
 
                       <a
                         href={api.exportPurchasesOCUrl({
-                          projectId: group.projectId !== 'geral' ? Number(group.projectId) : undefined
+                          projectId: group.projectId !== 'geral' ? Number(group.projectId) : undefined,
+                          purchaseIds: group.items.map(p => p.id)
                         })}
-                        download
+                        download={`Ordem_de_Compra_${group.projectCode || group.projectName?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Sabrar'}.xlsx`}
                         onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-sm border border-emerald-500/40 cursor-pointer"
                         title="Exportar Ordem de Compra consolidada desta obra em formato Excel editável (.xlsx modelo Sabrar)"
@@ -598,9 +599,10 @@ export const PurchasesPage: React.FC = () => {
                                   <a
                                     href={api.exportPurchasesOCUrl({
                                       projectId: group.projectId !== 'geral' ? Number(group.projectId) : undefined,
-                                      requestCode: subGroup.requestCode !== 'AVULSO' ? subGroup.requestCode : undefined
+                                      requestCode: subGroup.requestCode !== 'AVULSO' ? subGroup.requestCode : undefined,
+                                      purchaseIds: subGroup.items.map(p => p.id)
                                     })}
-                                    download
+                                    download={`Ordem_de_Compra_${subGroup.requestCode !== 'AVULSO' ? subGroup.requestCode : (group.projectCode || 'Sabrar')}.xlsx`}
                                     className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-lg font-bold text-[11px] transition-all shadow-sm border border-emerald-500/40 cursor-pointer"
                                     title="Exportar Ordem de Compra desta solicitação em Excel editável (Modelo Oficial Sabrar)"
                                   >

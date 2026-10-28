@@ -58,7 +58,14 @@ export class PurchaseOrderExportService {
       `).get(quotationId);
     }
 
-    if (!supplierRow) throw new Error('Nenhuma proposta de fornecedor encontrada para exportação');
+    // Se não houver proposta cadastrada, gera uma OC rascunho com os itens cotados
+    const supplierName = supplierRow
+      ? (supplierRow.custom_supplier_name || supplierRow.reg_supplier_name || 'Fornecedor')
+      : 'Fornecedor a Definir / Em Cotação';
+    const supplierCnpj = supplierRow?.cnpj || '';
+    const supplierPhone = supplierRow?.phone || '';
+    const supplierEmail = supplierRow?.email || '';
+    const proposalNumber = supplierRow?.proposal_number || quotation.quotation_number || `PROP-${quotation.id}`;
 
     // Busca itens da cotação com os preços deste fornecedor
     const items = await db.prepare(`
@@ -77,17 +84,11 @@ export class PurchaseOrderExportService {
 
     // Mapeamento de preços do fornecedor
     let pricesMap = {};
-    if (supplierRow.items_prices) {
+    if (supplierRow?.items_prices) {
       pricesMap = typeof supplierRow.items_prices === 'string'
         ? JSON.parse(supplierRow.items_prices)
         : supplierRow.items_prices;
     }
-
-    const supplierName = supplierRow.custom_supplier_name || supplierRow.reg_supplier_name || 'Fornecedor';
-    const supplierCnpj = supplierRow.cnpj || '';
-    const supplierPhone = supplierRow.phone || '';
-    const supplierEmail = supplierRow.email || '';
-    const proposalNumber = supplierRow.proposal_number || quotation.quotation_number || `PROP-${quotation.id}`;
 
     // Monta itens com preço
     const ocItems = items.map(it => {
@@ -132,6 +133,9 @@ export class PurchaseOrderExportService {
   /**
    * Exporta a OC a partir de uma lista de compras/pedidos de uma obra
    */
+  /**
+   * Exporta a OC a partir de uma lista de compras/pedidos de uma obra
+   */
   static async exportFromPurchases(purchaseIds, buyerUser = null) {
     if (!purchaseIds || purchaseIds.length === 0) throw new Error('Nenhuma compra informada');
 
@@ -150,6 +154,7 @@ export class PurchaseOrderExportService {
       LEFT JOIN material_request_items mri ON p.request_item_id = mri.id
       LEFT JOIN material_requests mr ON mri.request_id = mr.id
       WHERE p.id IN (${purchaseIds.map(() => '?').join(',')})
+      ORDER BY p.id ASC
     `).all(...purchaseIds);
 
     if (purchases.length === 0) throw new Error('Nenhuma compra encontrada');
@@ -167,15 +172,21 @@ export class PurchaseOrderExportService {
     const buyerEmail = buyerUser?.email || 'emily@sabrar.com.br';
     const buyerPhone = buyerUser?.phone || '(21) 97016-8717';
 
+    // Se houver fornecedores identificados
+    const uniqueSuppliers = [...new Set(purchases.map(p => p.supplier_name).filter(Boolean))];
+    const supplierName = uniqueSuppliers.length === 1 
+      ? uniqueSuppliers[0] 
+      : (uniqueSuppliers.length > 1 ? uniqueSuppliers.join(' / ') : (first.supplier_name || 'Fornecedor a Definir'));
+
     return await this.buildWorkbook({
-      ocCode: first.code || `OC-${first.id}`,
-      orderCode: first.request_code || first.code || `PED-${first.id}`,
+      ocCode: first.code || (first.project_code ? `OC-${first.project_code}` : `OC-${first.id}`),
+      orderCode: first.request_code || first.project_code || first.code || `PED-${first.id}`,
       projectName: first.project_name || 'Obra Sabrar',
       projectAddress: first.project_address,
       projectCity: first.project_city,
       proposalNumber: `PROP-${first.id}`,
       rmNumber: first.request_code || `RM-${first.id}`,
-      supplierName: first.supplier_name || 'Fornecedor',
+      supplierName,
       supplierCnpj: first.cnpj || '',
       supplierPhone: first.phone || '',
       supplierEmail: first.email || '',
@@ -235,9 +246,25 @@ export class PurchaseOrderExportService {
     // 4. Obra, Proposta, RM
     ws.getCell('B22').value = `OBRA: ${data.projectName || ''}                       PROPOSTA: ${data.proposalNumber || ''}                                      RM: ${data.rmNumber || ''}`;
 
-    // 5. Itens do Pedido (Linhas 26 a 45)
+    // 5. Itens do Pedido
     const items = data.items || [];
-    for (let i = 0; i < 20; i++) {
+    const extraCount = items.length > 20 ? items.length - 20 : 0;
+
+    // Se houver mais de 20 itens, insere linhas mantendo estilo das células
+    if (extraCount > 0) {
+      for (let e = 0; e < extraCount; e++) {
+        const targetRow = 46 + e;
+        ws.insertRow(targetRow, []);
+        const sourceRow = ws.getRow(45);
+        const newRow = ws.getRow(targetRow);
+        sourceRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          newRow.getCell(colNumber).style = Object.assign({}, cell.style);
+        });
+      }
+    }
+
+    const totalRowsCount = Math.max(items.length, 20);
+    for (let i = 0; i < totalRowsCount; i++) {
       const rowNum = 26 + i;
       const it = items[i];
       if (it) {
@@ -259,19 +286,22 @@ export class PurchaseOrderExportService {
       }
     }
 
-    // Subtotal, Desconto, Acréscimos (Frete)
-    ws.getCell('K47').value = Number(data.discount || 0);
-    ws.getCell('K48').value = Number(data.freight || 0);
+    // Subtotal, Desconto, Acréscimos (Frete) e Total
+    const subtotalRow = 26 + totalRowsCount;
+    ws.getCell(`K${subtotalRow}`).value = { formula: `SUM(K26:K${subtotalRow - 1})` };
+    ws.getCell(`K${subtotalRow + 1}`).value = Number(data.discount || 0);
+    ws.getCell(`K${subtotalRow + 2}`).value = Number(data.freight || 0);
+    ws.getCell(`K${subtotalRow + 3}`).value = { formula: `K${subtotalRow}-K${subtotalRow + 1}+K${subtotalRow + 2}` };
 
     // Condições de pagamento
     if (data.paymentTerms) {
-      ws.getCell('B52').value = data.paymentTerms;
+      ws.getCell(`B${subtotalRow + 6}`).value = data.paymentTerms;
     }
 
     // Dados do Comprador
-    ws.getCell('B55').value = `NOME: ${data.buyerName || 'Emily Bueno'}`;
-    ws.getCell('B56').value = `E-MAIL: ${data.buyerEmail || 'emily@sabrar.com.br'}`;
-    ws.getCell('B57').value = `TELEFONE: ${data.buyerPhone || '(21) 97016-8717'}`;
+    ws.getCell(`B${subtotalRow + 9}`).value = `NOME: ${data.buyerName || 'Emily Bueno'}`;
+    ws.getCell(`B${subtotalRow + 10}`).value = `E-MAIL: ${data.buyerEmail || 'emily@sabrar.com.br'}`;
+    ws.getCell(`B${subtotalRow + 11}`).value = `TELEFONE: ${data.buyerPhone || '(21) 97016-8717'}`;
 
     return await workbook.xlsx.writeBuffer();
   }

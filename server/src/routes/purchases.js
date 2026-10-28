@@ -12,14 +12,46 @@ export const purchasesRouter = express.Router();
  */
 purchasesRouter.get('/export-oc', async (req, res) => {
   try {
-    const { purchaseIds, userId } = req.query;
-    if (!purchaseIds) {
-      return res.status(400).json({ error: 'Parâmetro purchaseIds é obrigatório' });
+    const { purchaseIds, projectId, requestCode, userId } = req.query;
+
+    let ids = [];
+    if (purchaseIds) {
+      ids = String(purchaseIds)
+        .split(',')
+        .map(s => Number(s.trim()))
+        .filter(n => !isNaN(n) && n > 0);
     }
 
-    const ids = String(purchaseIds).split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0);
+    // Se não passou purchaseIds ou a lista estiver vazia, mas passou projectId ou requestCode, busca do banco
+    if (ids.length === 0 && (projectId || requestCode)) {
+      let query = `
+        SELECT p.id
+        FROM purchases p
+        LEFT JOIN material_request_items mri ON p.request_item_id = mri.id
+        LEFT JOIN material_requests mr ON mri.request_id = mr.id
+        WHERE (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
+      `;
+      const params = [];
+      if (projectId && projectId !== 'geral') {
+        query += ' AND p.project_id = ?';
+        params.push(Number(projectId));
+      }
+      if (requestCode) {
+        if (requestCode === 'AVULSO') {
+          query += ' AND (mr.code IS NULL OR p.request_item_id IS NULL)';
+        } else {
+          query += ' AND mr.code = ?';
+          params.push(requestCode);
+        }
+      }
+      query += ' ORDER BY p.id ASC';
+
+      const rows = await db.prepare(query).all(...params);
+      ids = rows.map(r => r.id);
+    }
+
     if (ids.length === 0) {
-      return res.status(400).json({ error: 'Nenhum ID de compra válido fornecido' });
+      return res.status(404).json({ error: 'Nenhum item de compra encontrado para os parâmetros informados' });
     }
 
     let buyerUser = null;
@@ -29,8 +61,9 @@ purchasesRouter.get('/export-oc', async (req, res) => {
 
     const buffer = await PurchaseOrderExportService.exportFromPurchases(ids, buyerUser);
 
+    const filename = `Ordem_de_Compra_${Date.now()}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Ordem_de_Compra_${Date.now()}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (err) {
     console.error('[Export OC Purchases Error]', err);
