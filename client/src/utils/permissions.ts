@@ -7,10 +7,13 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
-  'ducts': ['admin', 'engenharia', 'orcamento', 'orcamento_engenharia'],
-  'logistics': ['admin', 'engenharia', 'almoxarifado', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
+  // Gestão de Dutos & CAMduct: Dedicada a Vinicius Gomes, Admins e Diretoria
+  'ducts': ['admin', 'orcamento_engenharia'],
+  // Equipe de Logística: Dedicada a Sirlene Leal, Almoxarifado e Admins
+  'logistics': ['admin', 'almoxarifado', 'orcamento_engenharia', 'compras_solicitacoes'],
   'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes', 'orcamento_engenharia'],
   'stock': ['admin', 'almoxarifado', 'compras_solicitacoes', 'orcamento_engenharia'],
+  // Tela do Engenheiro com as 3 abas: Solicitar Material, Solicitar Duto, Solicitar Logística
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
@@ -22,14 +25,39 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'notifications': ['admin', 'orcamento', 'engenharia', 'almoxarifado', 'compras', 'orcamento_engenharia', 'compras_solicitacoes']
 };
 
-export function isPageAllowed(page: string, role: UserRole): boolean {
+export function isPageAllowed(page: string, role: UserRole, user?: { role?: string; email?: string; name?: string } | null): boolean {
   if (role === 'admin') return true;
+  const email = (user?.email || '').toLowerCase();
+  const name = (user?.name || '').toLowerCase();
+
+  // Tela Gestão de Dutos & Autodesk CAMduct (atribuída ao usuário Vinicius Gomes)
+  if (page === 'ducts') {
+    if (email.includes('vinicius') || name.includes('vinicius')) return true;
+    return role === 'orcamento_engenharia';
+  }
+
+  // Tela da equipe de logística (atribuída à usuária Sirlene Leal)
+  if (page === 'logistics') {
+    if (email.includes('sirlene') || name.includes('sirlene')) return true;
+    return role === 'almoxarifado' || role === 'compras_solicitacoes' || role === 'orcamento_engenharia';
+  }
+
   const allowed = PAGE_PERMISSIONS[page];
   if (!allowed) return true;
   return allowed.includes(role);
 }
 
-export function getDefaultPageForRole(role?: UserRole): string {
+export function getDefaultPageForRole(role?: UserRole, user?: { role?: string; email?: string; name?: string } | null): string {
+  const email = (user?.email || '').toLowerCase();
+  const name = (user?.name || '').toLowerCase();
+
+  if (email.includes('vinicius') || name.includes('vinicius')) {
+    return 'ducts';
+  }
+  if (email.includes('sirlene') || name.includes('sirlene')) {
+    return 'logistics';
+  }
+
   switch (role) {
     case 'admin':
     case 'orcamento_engenharia':
@@ -143,7 +171,23 @@ export interface BottomNavItem {
   iconName: 'dashboard' | 'projects' | 'budgets' | 'materials' | 'stock' | 'requests' | 'purchases' | 'ai-hub' | 'suppliers';
 }
 
-export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
+export function getBottomNavItemsForRole(role: UserRole, user?: { role?: string; email?: string; name?: string } | null): BottomNavItem[] {
+  const email = (user?.email || '').toLowerCase();
+  const name = (user?.name || '').toLowerCase();
+
+  if (email.includes('vinicius') || name.includes('vinicius')) {
+    return [
+      { id: 'ducts', label: 'CAMduct', iconName: 'dashboard' },
+      { id: 'requests', label: 'Solicitações', iconName: 'requests' }
+    ];
+  }
+  if (email.includes('sirlene') || name.includes('sirlene')) {
+    return [
+      { id: 'logistics', label: 'Logística', iconName: 'suppliers' },
+      { id: 'requests', label: 'Solicitações', iconName: 'requests' }
+    ];
+  }
+
   switch (role) {
     case 'orcamento':
       return [
@@ -153,7 +197,7 @@ export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
       ];
     case 'engenharia':
       return [
-        { id: 'requests', label: 'Solicitar Material', iconName: 'requests' }
+        { id: 'requests', label: 'Solicitações', iconName: 'requests' }
       ];
     case 'orcamento_engenharia':
       return [
