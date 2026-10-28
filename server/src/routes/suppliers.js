@@ -10,9 +10,10 @@ suppliersRouter.get('/', async (req, res) => {
     let query = 'SELECT * FROM suppliers WHERE 1=1';
     const params = [];
 
-    if (search) {
-      query += ' AND (name LIKE ? OR corporate_name LIKE ? OR cnpj LIKE ? OR materials_supplied LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      query += ' AND (name ILIKE ? OR corporate_name ILIKE ? OR cnpj ILIKE ? OR materials_supplied ILIKE ? OR contact_person ILIKE ? OR notes ILIKE ?)';
+      params.push(q, q, q, q, q, q);
     }
 
     query += ' ORDER BY id ASC';

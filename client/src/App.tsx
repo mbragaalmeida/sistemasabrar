@@ -19,6 +19,8 @@ import { DuctsPage } from './pages/DuctsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
 import { StockPage } from './pages/StockPage';
 import { RequestsPage } from './pages/RequestsPage';
+import { DuctRequestsPage } from './pages/DuctRequestsPage';
+import { LogisticsRequestsPage } from './pages/LogisticsRequestsPage';
 import { PurchasesPage } from './pages/PurchasesPage';
 import { PurchasesStockDashboardPage } from './pages/PurchasesStockDashboardPage';
 import { SuppliersPage } from './pages/SuppliersPage';
@@ -176,6 +178,14 @@ const AppContent: React.FC = () => {
 
           {currentPage === 'requests' && (
             <RequestsPage />
+          )}
+
+          {currentPage === 'solicitar-duto' && (
+            <DuctRequestsPage onNavigate={handleNavigate} />
+          )}
+
+          {currentPage === 'solicitar-logistica' && (
+            <LogisticsRequestsPage onNavigate={handleNavigate} />
           )}
 
           {currentPage === 'purchases' && (

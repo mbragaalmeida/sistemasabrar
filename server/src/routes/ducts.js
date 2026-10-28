@@ -267,7 +267,8 @@ ductsRouter.post('/delivery-note', async (req, res) => {
       fileUrl,
       notes,
       taggerId,
-      taggerName
+      taggerName,
+      ductRequestId
     } = req.body;
 
     if (!projectId) {
@@ -345,8 +346,8 @@ ductsRouter.post('/delivery-note', async (req, res) => {
         code, delivery_note_number, project_id, tagger_id, tagger_name,
         file_url, file_name, total_weight_kg, sheet_type,
         budget_total_kg, accumulated_kg, exceeds_budget, excess_kg,
-        status, approval_status, approved_at, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, approval_status, approved_at, notes, duct_request_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       code,
       cleanDnNumber,
@@ -364,10 +365,21 @@ ductsRouter.post('/delivery-note', async (req, res) => {
       status,
       approvalStatus,
       approvedAt,
-      notes || null
+      notes || null,
+      ductRequestId ? Number(ductRequestId) : null
     );
 
     const newId = result.lastInsertRowid;
+
+    // Se vinculado a uma solicitação de duto do engenheiro, sincroniza o status
+    if (ductRequestId) {
+      const nextRequestStatus = exceedsBudget ? 'Aguardando Aprovação' : 'Aprovado';
+      await db.prepare(`
+        UPDATE duct_requests 
+        SET status = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(nextRequestStatus, Number(ductRequestId));
+    }
 
     // 6. Se ultrapassou o orçamento, dispara notificações urgentes para Diretoria/Sabrina/Emily
     if (exceedsBudget) {
@@ -449,6 +461,15 @@ ductsRouter.patch('/delivery-note/:id/approve-excess', async (req, res) => {
       WHERE id = ?
     `).run(newStatus, newApprovalStatus, userId || 1, userName || 'Diretoria/Responsável', now, approvalReason || null, noteId);
 
+    // Se vinculado a uma solicitação de dutos, atualiza o status correspondente
+    if (note.duct_request_id) {
+      await db.prepare(`
+        UPDATE duct_requests
+        SET status = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(approved ? 'Aprovado' : 'Rejeitado', note.duct_request_id);
+    }
+
     // Auditoria
     await db.prepare(`
       INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, project_id, details)
@@ -516,6 +537,23 @@ ductsRouter.patch('/delivery-note/:id/status', async (req, res) => {
       WHERE id = ?
     `).run(status, noteId);
 
+    // Se vinculado a uma solicitação de dutos, sincroniza o status
+    if (note.duct_request_id) {
+      let mappedRequestStatus = null;
+      if (status === 'em_fabricacao') mappedRequestStatus = 'Em Fabricação';
+      else if (status === 'pronto_logistica') mappedRequestStatus = 'Pronto';
+      else if (status === 'entregue') mappedRequestStatus = 'Entregue';
+      else if (status === 'cancelado') mappedRequestStatus = 'Cancelado';
+
+      if (mappedRequestStatus) {
+        await db.prepare(`
+          UPDATE duct_requests
+          SET status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(mappedRequestStatus, note.duct_request_id);
+      }
+    }
+
     // Auditoria
     await db.prepare(`
       INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, project_id, details)
@@ -528,17 +566,297 @@ ductsRouter.patch('/delivery-note/:id/status', async (req, res) => {
       `Status da Delivery Note ${note.delivery_note_number} alterado de '${note.status}' para '${status}'.`
     );
 
-    // Se mudou para pronto_logistica, notifica Logística
+    // Se mudou para pronto_logistica, notifica Logística e Engenharia
     if (status === 'pronto_logistica') {
       await db.prepare(`
         INSERT INTO notifications (role_target, title, message, type, link)
         VALUES ('almoxarifado', 'Lote de Dutos Pronto para Envio', ?, 'info', '/logistica')
       `).run(`A Delivery Note ${note.delivery_note_number} (${note.total_weight_kg} KG) da obra ${note.project_name} está fabricada e liberada para romaneio na Logística.`);
+
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('engenharia', 'Dutos Prontos no Galpão', ?, 'success', '/solicitacoes')
+      `).run(`Os dutos da Delivery Note ${note.delivery_note_number} da obra ${note.project_name} estão prontos! Já estão disponíveis para solicitação de logística.`);
     }
 
     res.json({ success: true, id: noteId, status });
   } catch (err) {
     console.error('[Update Duct Status Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// SOLICITAÇÕES DE DUTOS PELOS ENGENHEIROS (ÁREA DO ENGENHEIRO / CAMDUCT)
+// ============================================================================
+
+/**
+ * GET /api/ducts/requests
+ * Lista as solicitações de dutos feitas pelos engenheiros:
+ * - Quem solicitou
+ * - Obra correspondente
+ * - Dutos solicitados e quantidades
+ * - Delivery note anexada (se houver)
+ * - Status atual
+ */
+ductsRouter.get('/requests', async (req, res) => {
+  try {
+    const { projectId, status, requested_by } = req.query;
+    let sql = `
+      SELECT 
+        dr.*,
+        p.name as project_name,
+        p.code as project_code,
+        p.client as client_name,
+        p.responsible_engineer,
+        u.name as requested_by_name,
+        u.email as requested_by_email,
+        u.avatar as requested_by_avatar,
+        dn.id as delivery_note_id,
+        dn.delivery_note_number,
+        dn.total_weight_kg,
+        dn.sheet_type,
+        dn.file_url as delivery_note_file_url,
+        dn.file_name as delivery_note_file_name,
+        dn.exceeds_budget,
+        dn.excess_kg,
+        dn.approval_status as dn_approval_status
+      FROM duct_requests dr
+      JOIN projects p ON dr.project_id = p.id
+      LEFT JOIN users u ON dr.requested_by = u.id
+      LEFT JOIN duct_delivery_notes dn ON dn.duct_request_id = dr.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (projectId) {
+      sql += ' AND dr.project_id = ?';
+      params.push(Number(projectId));
+    }
+    if (status) {
+      sql += ' AND dr.status = ?';
+      params.push(status);
+    }
+    if (requested_by) {
+      sql += ' AND dr.requested_by = ?';
+      params.push(Number(requested_by));
+    }
+
+    sql += ' ORDER BY dr.id DESC';
+
+    const requests = await db.prepare(sql).all(...params);
+
+    // Carrega os itens de cada solicitação
+    const fullRequests = [];
+    for (const r of requests) {
+      const items = await db.prepare(`
+        SELECT * FROM duct_request_items WHERE request_id = ? ORDER BY id ASC
+      `).all(r.id);
+
+      fullRequests.push({
+        id: r.id,
+        code: r.code,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectCode: r.project_code,
+        clientName: r.client_name,
+        responsibleEngineer: r.responsible_engineer,
+        requestedBy: r.requested_by,
+        requestedByName: r.requested_by_name,
+        requestedByEmail: r.requested_by_email,
+        requestedByAvatar: r.requested_by_avatar,
+        priority: r.priority,
+        status: r.status,
+        notes: r.notes,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        deliveryNote: r.delivery_note_id ? {
+          id: r.delivery_note_id,
+          deliveryNoteNumber: r.delivery_note_number,
+          totalWeightKg: Number(r.total_weight_kg || 0),
+          sheetType: r.sheet_type,
+          fileUrl: r.delivery_note_file_url,
+          fileName: r.delivery_note_file_name,
+          exceedsBudget: Boolean(r.exceeds_budget),
+          excessKg: Number(r.excess_kg || 0),
+          approvalStatus: r.dn_approval_status
+        } : null,
+        items: items.map(it => ({
+          id: it.id,
+          requestId: it.request_id,
+          itemDescription: it.item_description,
+          dimension: it.dimension,
+          unit: it.unit,
+          quantityRequested: Number(it.quantity_requested),
+          quantityTagged: Number(it.quantity_tagged || 0),
+          notes: it.notes
+        }))
+      });
+    }
+
+    res.json(fullRequests);
+  } catch (err) {
+    console.error('[Get Duct Requests Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/ducts/requests
+ * Cria uma nova solicitação de dutos (Engenheiro seleciona a obra e informa itens e quantidades)
+ */
+ductsRouter.post('/requests', async (req, res) => {
+  try {
+    const { projectId, items, priority = 'Normal', notes, requestedBy } = req.body;
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Selecione a obra de destino para a solicitação de dutos.' });
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Informe ao menos um item de duto na solicitação.' });
+    }
+
+    const project = await db.prepare('SELECT id, name, code, responsible_engineer FROM projects WHERE id = ?').get(projectId);
+    if (!project) return res.status(404).json({ error: 'Projeto não encontrado.' });
+
+    // Gera numeração sequencial SD-2026-XXXX
+    const countRes = await db.prepare('SELECT COUNT(*) as count FROM duct_requests').get();
+    const seq = (countRes?.count || 0) + 1;
+    const year = new Date().getFullYear();
+    const code = `SD-${year}-${String(seq).padStart(4, '0')}`;
+
+    const insertResult = await db.prepare(`
+      INSERT INTO duct_requests (code, project_id, requested_by, priority, status, notes)
+      VALUES (?, ?, ?, ?, 'Pendente', ?)
+    `).run(
+      code,
+      projectId,
+      requestedBy || null,
+      priority,
+      notes || null
+    );
+
+    const requestId = insertResult.lastInsertRowid;
+
+    for (const it of items) {
+      if (!it.itemDescription || !it.itemDescription.trim()) continue;
+      await db.prepare(`
+        INSERT INTO duct_request_items (request_id, item_description, dimension, unit, quantity_requested, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        requestId,
+        it.itemDescription.trim(),
+        it.dimension ? it.dimension.trim() : null,
+        it.unit || 'un',
+        Number(it.quantityRequested) || 1,
+        it.notes || null
+      );
+    }
+
+    // Notifica Vinicius Gomes e Admins sobre a nova solicitação de dutos
+    const requesterUser = requestedBy ? await db.prepare('SELECT name FROM users WHERE id = ?').get(requestedBy) : null;
+    const requesterName = requesterUser?.name || 'Engenheiro';
+
+    await db.prepare(`
+      INSERT INTO notifications (role_target, title, message, type, link)
+      VALUES ('admin', 'Nova Solicitação de Dutos', ?, 'info', '/dutos')
+    `).run(`O engenheiro ${requesterName} solicitou ${items.length} itens de dutos para a obra ${project.name} (${code}).`);
+
+    // Notificação direta para Vinicius Gomes
+    const vinicius = await db.prepare("SELECT id FROM users WHERE email ILIKE '%vinicius%' OR name ILIKE '%vinicius%' LIMIT 1").get();
+    if (vinicius?.id) {
+      await db.prepare(`
+        INSERT INTO notifications (user_id, role_target, title, message, type, link)
+        VALUES (?, 'engenharia', 'Nova Demanda de Dutos CAMduct', ?, 'warning', '/dutos')
+      `).run(vinicius.id, `Nova solicitação ${code} de dutos para a obra ${project.name} recebida para tagueamento.`);
+    }
+
+    res.status(201).json({
+      success: true,
+      id: requestId,
+      code,
+      message: 'Solicitação de dutos registrada com sucesso! Ela já está disponível na Gestão de Dutos & Autodesk CAMduct.'
+    });
+  } catch (err) {
+    console.error('[Create Duct Request Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/ducts/requests/:id/status
+ * Vinicius Gomes / Admins alteram o andamento da solicitação de dutos:
+ * Ex: 'Pendente' -> 'Em Tagueamento' -> 'Em Fabricação' -> 'Pronto' -> 'Entregue'
+ * Quando 'Pronto': libera automaticamente para solicitação de logística correspondente pelo engenheiro!
+ */
+ductsRouter.patch('/requests/:id/status', async (req, res) => {
+  try {
+    const requestId = Number(req.params.id);
+    const { status, userId, userName } = req.body;
+
+    const allowed = ['Pendente', 'Em Tagueamento', 'Aguardando Aprovação', 'Aprovado', 'Em Fabricação', 'Pronto', 'Entregue', 'Cancelado'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: `Status inválido. Permitidos: ${allowed.join(', ')}` });
+    }
+
+    const reqRow = await db.prepare(`
+      SELECT dr.*, p.name as project_name, u.name as requester_name 
+      FROM duct_requests dr
+      JOIN projects p ON dr.project_id = p.id
+      LEFT JOIN users u ON dr.requested_by = u.id
+      WHERE dr.id = ?
+    `).get(requestId);
+
+    if (!reqRow) return res.status(404).json({ error: 'Solicitação de dutos não encontrada.' });
+
+    await db.prepare(`
+      UPDATE duct_requests
+      SET status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, requestId);
+
+    // Se houver Delivery Note vinculada, atualiza seu status sincronizadamente
+    if (status === 'Pronto') {
+      await db.prepare(`
+        UPDATE duct_delivery_notes
+        SET status = 'pronto_logistica', updated_at = CURRENT_TIMESTAMP
+        WHERE duct_request_id = ?
+      `).run(requestId);
+
+      // Notifica o engenheiro solicitante que os dutos estão prontos para logística
+      if (reqRow.requested_by) {
+        await db.prepare(`
+          INSERT INTO notifications (user_id, role_target, title, message, type, link)
+          VALUES (?, 'engenharia', 'Dutos Prontos para Logística!', ?, 'success', '/solicitacoes')
+        `).run(
+          reqRow.requested_by,
+          `Os dutos da solicitação ${reqRow.code} da obra ${reqRow.project_name} foram marcados como prontos por Vinicius Gomes! Você já pode solicitar a logística correspondente na aba "Solicitar Logística".`
+        );
+      }
+    } else if (status === 'Em Fabricação') {
+      await db.prepare(`
+        UPDATE duct_delivery_notes
+        SET status = 'em_fabricacao', updated_at = CURRENT_TIMESTAMP
+        WHERE duct_request_id = ?
+      `).run(requestId);
+    }
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, project_id, details)
+      VALUES (?, ?, 'STATUS_SOLICITACAO_DUTO', 'DUTOS', ?, ?, ?)
+    `).run(
+      userId || 1,
+      userName || 'Vinicius Gomes',
+      requestId,
+      reqRow.project_id,
+      `Status da solicitação de dutos ${reqRow.code} alterado de '${reqRow.status}' para '${status}'.`
+    );
+
+    res.json({ success: true, id: requestId, status });
+  } catch (err) {
+    console.error('[Update Duct Request Status Error]', err);
     res.status(500).json({ error: err.message });
   }
 });

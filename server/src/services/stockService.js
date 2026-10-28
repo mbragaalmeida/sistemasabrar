@@ -170,14 +170,16 @@ export class StockService {
       budgetItems = await db.prepare('SELECT * FROM budget_items WHERE budget_id = ?').all(budget.id);
     }
 
-    // Item 3: Obras sem lista prévia de materiais (ex: manutenções ou obras cadastradas sem lista de materiais prévia):
-    // Solicitações avulsas dessas obras NÃO devem exigir aprovação item a item de Administradores/Emily/Sabrina!
+    // Item 3: Obras sem lista prévia de materiais (ex: manutenções ou obras cadastradas sem lista de materiais prévia levantada por IA ou upload de OP):
+    // Solicitações dessas obras NÃO devem exigir aprovação item a item de Administradores/Emily/Sabrina!
     const isMaintenanceOrNoList = !isInternal && (
       !budget ||
       budgetItems.length === 0 ||
       /manuten/i.test(project.name || '') ||
+      /manuten/i.test(project.project_type || '') ||
       /manuten/i.test(project.type || '') ||
       /manuten/i.test(project.category || '') ||
+      /manuten/i.test(project.notes || '') ||
       /avulso|avulsa/i.test(project.name || '')
     );
 
@@ -229,16 +231,18 @@ export class StockService {
       if (isCustom || !materialId) {
         if (!customName) continue;
         materialId = null;
-        hasCustomItems = true;
-        hasExtraItems = true;
+        if (!isMaintenanceOrNoList) {
+          hasCustomItems = true;
+          hasExtraItems = true;
+        }
 
         itemsQuotaAnalysis.push({
           materialId: null,
           quantity: qty,
-          isExtra: true,
+          isExtra: isMaintenanceOrNoList ? false : true,
           budgetQuantity: 0,
           previouslyRequested: 0,
-          extraQuantity: qty,
+          extraQuantity: isMaintenanceOrNoList ? 0 : qty,
           isCustom: true,
           customName,
           customUnit
@@ -318,12 +322,13 @@ export class StockService {
     }
 
     // Se houver itens fora da base ou itens extras acima do orçamento da obra, exige aprovação (Admin, Sabrina ou Emily).
-    // Para obras de manutenção ou sem lista prévia (Item 3), materiais da base NÃO exigem aprovação!
+    // Para obras de manutenção ou sem lista prévia (Item 3), NÃO exige aprovação!
     const requiresAdminApproval = isMaintenanceOrNoList
       ? false
       : (hasCustomItems || (!isInternal && hasExtraItems));
     const initialStatus = requiresAdminApproval ? 'Aguardando aprovação' : 'Solicitado';
     const initialApprovalStatus = requiresAdminApproval ? 'Pendente' : 'Aprovado';
+    const finalHasExtraItems = isMaintenanceOrNoList ? false : hasExtraItems;
 
     // Cria a solicitação no banco
     const reqResult = await db.prepare(`
@@ -333,7 +338,7 @@ export class StockService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       reqCode, projectId, userId, priority || 'Média', initialStatus, notes,
-      requiresAdminApproval, initialApprovalStatus, hasExtraItems, pickupDate || null
+      requiresAdminApproval, initialApprovalStatus, finalHasExtraItems, pickupDate || null
     );
 
     const requestId = reqResult.lastInsertRowid;

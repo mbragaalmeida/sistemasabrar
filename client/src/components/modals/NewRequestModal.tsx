@@ -134,6 +134,19 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [stockTabFilter, setStockTabFilter] = useState<'todos' | 'com_estoque' | 'deficit'>('todos');
 
+  // Identifica se é obra de manutenção ou sem lista de material levantada
+  const isMaintenanceOrNoList = useMemo(() => {
+    if (!selectedProject) return false;
+    if (selectedProjectId === 'internal') return true;
+    const name = (selectedProject.name || '').toLowerCase();
+    const pType = ((selectedProject as any).project_type || selectedProject.type || '').toLowerCase();
+    const category = ((selectedProject as any).category || '').toLowerCase();
+    const notes = ((selectedProject as any).notes || '').toLowerCase();
+    const isManut = /manuten/i.test(name) || /manuten/i.test(pType) || /manuten/i.test(category) || /manuten/i.test(notes) || /avulso|avulsa/i.test(name);
+    const hasNoBudget = !budgetItems || budgetItems.length === 0;
+    return isManut || hasNoBudget;
+  }, [selectedProject, selectedProjectId, budgetItems]);
+
   // Adição de Item Extra no Orçamento
   const [isAddingExtra, setIsAddingExtra] = useState(false);
   const [extraSearch, setExtraSearch] = useState('');
@@ -340,8 +353,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : Math.max(0, budgetQuantity - previouslyRequested);
 
-      const isOverBudget = it.isExtra || it.isCustom || standardRequestedQty > remainingQuota;
-      const extraQuantity = (it.isExtra || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = isMaintenanceOrNoList ? false : (it.isExtra || it.isCustom || standardRequestedQty > remainingQuota);
+      const extraQuantity = isMaintenanceOrNoList ? 0 : ((it.isExtra || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2))));
 
       const unitPrice = getUnitPriceForUnit(chosenUnit, pkgInfo);
       const totalPrice = Number((requestedQty * unitPrice).toFixed(2));
@@ -367,7 +380,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         extraQuantity
       };
     });
-  }, [budgetItems, materials, itemQuantities, selectedItemIds, quotasMap, budgetUnits]);
+  }, [budgetItems, materials, itemQuantities, selectedItemIds, quotasMap, budgetUnits, isMaintenanceOrNoList]);
 
   const filteredBatchItems = useMemo(() => {
     return batchItemsWithMetrics.filter(it => {
@@ -387,15 +400,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const selected = batchItemsWithMetrics.filter(it => it.isSelected);
     const fullyAvailable = selected.filter(it => it.deficit === 0).length;
     const withDeficit = selected.filter(it => it.deficit > 0).length;
-    const overBudgetCount = selected.filter(it => it.isOverBudget).length;
+    const overBudgetCount = isMaintenanceOrNoList ? 0 : selected.filter(it => it.isOverBudget).length;
     return {
       totalSelected: selected.length,
       fullyAvailable,
       withDeficit,
       overBudgetCount,
-      requiresAdminApproval: overBudgetCount > 0
+      requiresAdminApproval: isMaintenanceOrNoList ? false : overBudgetCount > 0
     };
-  }, [batchItemsWithMetrics]);
+  }, [batchItemsWithMetrics, isMaintenanceOrNoList]);
 
   // Handlers da Aba 1 (Orçamento)
   const handleToggleBudgetItem = (id: number) => {
@@ -565,8 +578,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       const previouslyRequested = quota ? Number(quota.previouslyRequested || 0) : 0;
       const remainingQuota = quota ? Number(quota.remainingQuota || 0) : 0;
 
-      const isOverBudget = !isInBudget || standardRequestedQty > remainingQuota || it.isCustom;
-      const extraQuantity = (!isInBudget || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2)));
+      const isOverBudget = isMaintenanceOrNoList ? false : (!isInBudget || standardRequestedQty > remainingQuota || it.isCustom);
+      const extraQuantity = isMaintenanceOrNoList ? 0 : ((!isInBudget || it.isCustom) ? requestedQty : Math.max(0, Number((standardRequestedQty - remainingQuota).toFixed(2))));
 
       const unitPrice = getUnitPriceForUnit(chosenUnit, pkgInfo);
       const totalPrice = Number((requestedQty * unitPrice).toFixed(2));
@@ -593,7 +606,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         extraQuantity
       };
     });
-  }, [customItems, materials, customQuantities, selectedCustomIds, quotasMap, customItemUnits]);
+  }, [customItems, materials, customQuantities, selectedCustomIds, quotasMap, customItemUnits, isMaintenanceOrNoList]);
 
   const filteredCustomItems = useMemo(() => {
     return customItemsWithMetrics.filter(it => {
@@ -613,15 +626,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const selected = customItemsWithMetrics.filter(it => it.isSelected);
     const fullyAvailable = selected.filter(it => it.deficit === 0).length;
     const withDeficit = selected.filter(it => it.deficit > 0).length;
-    const overBudgetCount = selected.filter(it => it.isOverBudget).length;
+    const overBudgetCount = isMaintenanceOrNoList ? 0 : selected.filter(it => it.isOverBudget).length;
     return {
       totalSelected: selected.length,
       fullyAvailable,
       withDeficit,
       overBudgetCount,
-      requiresAdminApproval: overBudgetCount > 0
+      requiresAdminApproval: isMaintenanceOrNoList ? false : overBudgetCount > 0
     };
-  }, [customItemsWithMetrics]);
+  }, [customItemsWithMetrics, isMaintenanceOrNoList]);
 
   // Handlers da Aba 2 (Avulsos)
   const handleAddCustomItem = () => {
@@ -2233,6 +2246,19 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Banner Informativo para Obras de Manutenção / Sem Lista Prévia */}
+          {isMaintenanceOrNoList && selectedProjectId && selectedProjectId !== 'internal' && (
+            <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl flex items-start gap-2.5 text-emerald-200 text-xs">
+              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-white">Obra de Manutenção / Sem Lista Prévia: </span>
+                <span className="text-emerald-300/90 text-[11px]">
+                  Os materiais solicitados para esta obra não exigem aprovação prévia — liberação direta para separação no Almoxarifado!
+                </span>
+              </div>
             </div>
           )}
 

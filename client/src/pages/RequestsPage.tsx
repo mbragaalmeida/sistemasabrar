@@ -17,6 +17,7 @@ export const RequestsPage: React.FC = () => {
   const [quantityChanges, setQuantityChanges] = useState<any[]>([]);
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
   const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
@@ -184,7 +185,10 @@ export const RequestsPage: React.FC = () => {
   const visibleRequests = useMemo(() => {
     let list = requests;
 
-    if (currentUser?.role === 'engenharia') {
+    // Filtro por obra selecionada
+    if (selectedProjectId !== 'all') {
+      list = list.filter((r: any) => String(r.project_id) === String(selectedProjectId));
+    } else if (currentUser?.role === 'engenharia') {
       const normUser = (currentUser.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
       const allowedProjectIds = new Set<number>();
 
@@ -205,17 +209,23 @@ export const RequestsPage: React.FC = () => {
         }
       });
 
-      list = list.filter((r: any) => {
-        if (r.project_code === 'SAB-INTERNO') {
-          return Number(r.requested_by) === Number(currentUser.id);
+      // Se houver obras atribuídas, filtra; caso contrário, preserva para visualização
+      if (allowedProjectIds.size > 0) {
+        const filtered = list.filter((r: any) => {
+          if (r.project_code === 'SAB-INTERNO') {
+            return Number(r.requested_by) === Number(currentUser.id);
+          }
+          if (r.project_id && allowedProjectIds.has(Number(r.project_id))) return true;
+          if (r.responsible_engineer && normUser) {
+            const normReqEng = String(r.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+            if (normReqEng.includes(normUser) || normUser.includes(normReqEng)) return true;
+          }
+          return false;
+        });
+        if (filtered.length > 0) {
+          list = filtered;
         }
-        if (r.project_id && allowedProjectIds.has(Number(r.project_id))) return true;
-        if (r.responsible_engineer && normUser) {
-          const normReqEng = String(r.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
-          if (normReqEng.includes(normUser) || normUser.includes(normReqEng)) return true;
-        }
-        return false;
-      });
+      }
     }
 
     if (searchQuery.trim()) {
@@ -383,7 +393,7 @@ export const RequestsPage: React.FC = () => {
             )}
             <StatusBadge status={r.priority} size="sm" />
             <StatusBadge status={r.status} size="sm" />
-            {r.requires_admin_approval && (
+            {r.requires_admin_approval && !/manuten/i.test(r.project_name || '') && (
               r.admin_approval_status === 'Aprovado' ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -434,7 +444,7 @@ export const RequestsPage: React.FC = () => {
             )}
 
             {/* Ações de Aprovação da Gestão (Admin, Sabrina ou Emily) */}
-            {canApproveExtra && (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')) && (
+            {canApproveExtra && !/manuten/i.test(r.project_name || '') && (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')) && (
               <div className="flex items-center gap-1.5 ml-1">
                 <button
                   type="button"
@@ -462,7 +472,7 @@ export const RequestsPage: React.FC = () => {
         </div>
 
         {/* Banner de Aviso quando aguarda aprovação */}
-        {(r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')) && (
+        {!/manuten/i.test(r.project_name || '') && (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')) && (
           <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl flex items-start gap-2.5 text-xs text-amber-300">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
@@ -682,6 +692,20 @@ export const RequestsPage: React.FC = () => {
           </div>
 
           <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-sabrar-500 max-w-[220px] truncate"
+            title="Filtrar por obra específica"
+          >
+            <option value="all">Todas as Obras ({projects.filter(p => p.code !== 'SAB-INTERNO').length})</option>
+            {projects.filter(p => p.code !== 'SAB-INTERNO').map(p => (
+              <option key={p.id} value={p.id}>
+                {p.code ? `${p.code} - ` : ''}{p.name}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
             className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
@@ -728,7 +752,7 @@ export const RequestsPage: React.FC = () => {
 
       {/* Central Unificada de Aprovações Pendentes no Topo da Página (Item 6 & Item 4 - Admins, Sabrina e Emily) */}
       {!loading && (() => {
-        const pendingExtraReqs = requests.filter(r => r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente'));
+        const pendingExtraReqs = requests.filter(r => !/manuten/i.test(r.project_name || '') && (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')));
         const pendingSubs = substitutions.filter(s => s.status === 'Pendente');
         const pendingQty = quantityChanges.filter(q => q.status === 'Pendente');
         const grandTotalPending = pendingExtraReqs.length + pendingSubs.length + pendingQty.length;

@@ -68,12 +68,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
         { id: 'budgets', label: 'Orçamentos Aprovados', icon: Calculator },
-        { id: 'ducts', label: 'Dutos', icon: Wind },
+        // 3 Abas solicitadas pelo usuário para a Engenharia
+        { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },
+        { id: 'solicitar-duto', label: 'Solicitar Duto', icon: Wind },
+        { id: 'solicitar-logistica', label: 'Solicitar Logística', icon: Truck },
+        // Telas de Operação e Gestão Especializada
+        { id: 'ducts', label: 'Gestão de Dutos & CAMduct', icon: Wind },
+        { id: 'logistics', label: 'Gestão de Logística & Frotas', icon: Truck, badge: 'Novo' },
         { id: 'materials', label: 'Base de Materiais', icon: Package },
         { id: 'stock', label: 'Almoxarifado', icon: Layers },
-        { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },
-        { id: 'purchases', label: 'Compras & Cotações', icon: ShoppingCart },
-        { id: 'logistics', label: 'Logística & Frotas', icon: Truck, badge: 'Novo' }
+        { id: 'purchases', label: 'Compras & Cotações', icon: ShoppingCart }
       ]
     },
     {

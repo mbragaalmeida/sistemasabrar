@@ -7,11 +7,15 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
-  'ducts': ['admin', 'engenharia', 'orcamento', 'orcamento_engenharia'],
+  // 3 Abas da Engenharia: Solicitar Material, Solicitar Duto, Solicitar Logística
+  'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras', 'almoxarifado'],
+  'solicitar-duto': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
+  'solicitar-logistica': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras', 'almoxarifado'],
+  // Telas de Gestão: Vinicius Gomes (Dutos) e Sirlene Leal (Logística)
+  'ducts': ['admin', 'engenharia', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'logistics': ['admin', 'engenharia', 'almoxarifado', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'materials': ['admin', 'almoxarifado', 'compras', 'compras_solicitacoes', 'orcamento_engenharia'],
   'stock': ['admin', 'almoxarifado', 'compras_solicitacoes', 'orcamento_engenharia'],
-  'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],
   'purchases': ['admin', 'compras', 'compras_solicitacoes'],
   'ai-hub': ['admin', 'orcamento', 'orcamento_engenharia'],
   'bi-purchases-stock': ['admin', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],

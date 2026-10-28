@@ -24,7 +24,8 @@ import {
   X,
   Navigation,
   ShieldCheck,
-  ExternalLink
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -90,10 +91,14 @@ interface AvailableItem {
 
 export const LogisticsPage: React.FC = () => {
   const { currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'calendar' | 'new-romaneio' | 'trips'>('calendar');
+  const [activeTab, setActiveTab] = useState<'requests' | 'calendar' | 'new-romaneio' | 'trips'>('requests');
   const [loading, setLoading] = useState(false);
   const [trips, setTrips] = useState<LogisticsTrip[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+
+  // Solicitações de Logística dos Engenheiros (Requisito 6 - Sirlene Leal)
+  const [logisticsRequests, setLogisticsRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
 
   // Filtros de busca
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>('all');
@@ -106,7 +111,8 @@ export const LogisticsPage: React.FC = () => {
   // Estado da Criação de Novo Romaneio
   const [newRomaneioProject, setNewRomaneioProject] = useState<number | null>(null);
   const [scheduledDate, setScheduledDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [shift, setShift] = useState<'manha' | 'tarde' | 'integral'>('integral');
+  const [timeOption, setTimeOption] = useState<'qualquer' | 'especifico'>('qualquer');
+  const [customTime, setCustomTime] = useState<string>('08:00');
   const [vehicleModel, setVehicleModel] = useState('Caminhão Sabrar HR');
   const [vehiclePlate, setVehiclePlate] = useState('SAB-2026');
   const [driverName, setDriverName] = useState('Motorista Logística');
@@ -137,7 +143,36 @@ export const LogisticsPage: React.FC = () => {
   useEffect(() => {
     loadProjects();
     loadTrips();
+    fetchLogisticsRequests();
   }, []);
+
+  const fetchLogisticsRequests = async () => {
+    setLoadingRequests(true);
+    try {
+      const data = await api.getLogisticsRequests();
+      setLogisticsRequests(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar solicitações de logística:', err);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const handleUpdateLogisticsRequestStatus = async (id: number, nextStatus: string) => {
+    try {
+      await api.updateLogisticsRequestStatus(id, nextStatus);
+      await fetchLogisticsRequests();
+      alert(`Status da solicitação de transporte atualizado para: ${nextStatus}`);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar status da solicitação');
+    }
+  };
+
+  const handleAttendRequest = (req: any) => {
+    setNewRomaneioProject(Number(req.projectId));
+    setTripNotes(`Atendimento à solicitação de logística ${req.code} (Solicitante: ${req.requestedByName})`);
+    setActiveTab('new-romaneio');
+  };
 
   const loadProjects = async () => {
     try {
@@ -220,13 +255,14 @@ export const LogisticsPage: React.FC = () => {
   // Checagem de Conflito de Frota
   const fleetConflict = useMemo(() => {
     if (!vehiclePlate || !scheduledDate) return null;
+    const effectiveShift = timeOption === 'qualquer' ? 'Qualquer horário' : (customTime || '08:00');
     return trips.find(t => 
       t.vehiclePlate.trim().toLowerCase() === vehiclePlate.trim().toLowerCase() &&
       t.scheduledDate === scheduledDate &&
       t.status !== 'cancelado' &&
-      (t.shift === shift || t.shift === 'integral' || shift === 'integral')
+      (t.shift === effectiveShift || t.shift === 'Qualquer horário' || effectiveShift === 'Qualquer horário' || t.shift === 'integral')
     );
-  }, [vehiclePlate, scheduledDate, shift, trips]);
+  }, [vehiclePlate, scheduledDate, timeOption, customTime, trips]);
 
   // Dias da Semana atual para a visão do Calendário
   const weekDays = useMemo(() => {
@@ -327,10 +363,11 @@ export const LogisticsPage: React.FC = () => {
 
     setSubmittingRomaneio(true);
     try {
+      const effectiveShift = timeOption === 'qualquer' ? 'Qualquer horário' : (customTime || '08:00');
       const res = await api.createLogisticsTrip({
         projectId: newRomaneioProject,
         scheduledDate,
-        shift,
+        shift: effectiveShift,
         vehiclePlate,
         vehicleModel,
         driverName,
@@ -537,11 +574,28 @@ export const LogisticsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Navegação entre Abas */}
-      <div className="flex items-center gap-2 border-b border-dark-800 pb-2">
+      {/* Navegação entre Abas (Requisito 6 - Área Própria da Logística / Sirlene Leal) */}
+      <div className="flex items-center gap-2 border-b border-dark-800 pb-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === 'requests'
+              ? 'bg-purple-600 text-white shadow-md font-extrabold'
+              : 'text-slate-400 hover:text-white hover:bg-dark-850'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>Solicitações Recebidas da Engenharia</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+            activeTab === 'requests' ? 'bg-white/20 text-white font-extrabold' : 'bg-dark-800 text-slate-400'
+          }`}>
+            {logisticsRequests.length}
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveTab('calendar')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'calendar'
               ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
               : 'text-slate-400 hover:text-white hover:bg-dark-850'
@@ -553,19 +607,19 @@ export const LogisticsPage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('new-romaneio')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'new-romaneio'
               ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
               : 'text-slate-400 hover:text-white hover:bg-dark-850'
           }`}
         >
-          <ClipboardList className="w-4 h-4" />
+          <Package className="w-4 h-4" />
           <span>Novo Romaneio Parcial</span>
         </button>
 
         <button
           onClick={() => setActiveTab('trips')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'trips'
               ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
               : 'text-slate-400 hover:text-white hover:bg-dark-850'
@@ -575,6 +629,189 @@ export const LogisticsPage: React.FC = () => {
           <span>Romaneios Emitidos ({trips.length})</span>
         </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* ABA 0: SOLICITAÇÕES RECEBIDAS DA ENGENHARIA (REQUISITO 6 - SIRLENE LEAL)  */}
+      {/* ========================================================================= */}
+      {activeTab === 'requests' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-dark-900 border border-dark-750 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-purple-950/70 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">Demandas de Transporte Recebidas dos Engenheiros</h3>
+                <p className="text-xs text-slate-400">
+                  Responsável: <strong>Sirlene Leal</strong> • Recebe materiais com OK do Almoxarifado e dutos prontos da fábrica (Vinicius) para agendamento e entrega no canteiro
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => fetchLogisticsRequests()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 rounded-xl text-xs font-bold transition self-start sm:self-auto cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+              <span>Atualizar</span>
+            </button>
+          </div>
+
+          {loadingRequests ? (
+            <div className="py-20 text-center text-xs text-slate-500">
+              Carregando solicitações de logística...
+            </div>
+          ) : logisticsRequests.length === 0 ? (
+            <div className="py-16 text-center bg-dark-900 rounded-3xl border border-dark-750 p-6 space-y-2">
+              <Truck className="w-8 h-8 text-slate-600 mx-auto" />
+              <h4 className="text-xs font-bold text-white">Nenhuma solicitação de logística pendente</h4>
+              <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                Quando os engenheiros solicitarem transporte de materiais liberados ou dutos prontos, os pedidos aparecerão aqui para atendimento.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {logisticsRequests.map((req: any) => {
+                const getStatusBadge = (st: string) => {
+                  switch (st) {
+                    case 'Pendente':
+                      return <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">Pendente de Agendamento</span>;
+                    case 'Agendado':
+                      return <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-700">Viagem Agendada</span>;
+                    case 'Em Trânsito':
+                      return <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-700">Em Rota de Entrega</span>;
+                    case 'Entregue':
+                      return <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-600 flex items-center gap-1"><Check className="w-3 h-3 text-emerald-400" /> Entregue no Canteiro</span>;
+                    default:
+                      return <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-dark-800 text-slate-300 border border-dark-700">{st}</span>;
+                  }
+                };
+
+                return (
+                  <div key={req.id} className="bg-dark-900 border border-dark-750 rounded-3xl p-5 shadow-lg space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-dark-800">
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className="font-mono text-xs font-black text-purple-400 bg-purple-950/80 px-2.5 py-0.5 rounded-lg border border-purple-800">
+                            {req.code}
+                          </span>
+                          <h4 className="text-sm font-black text-white">{req.projectName}</h4>
+                          {req.projectCode && (
+                            <span className="text-[10px] text-slate-400 font-mono">({req.projectCode})</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap mt-1">
+                          <span>Solicitante: <strong className="text-white">{req.requestedByName || 'Engenharia'}</strong></span>
+                          <span>•</span>
+                          <span>Data: {new Date(req.createdAt).toLocaleDateString('pt-BR')}</span>
+                          {req.targetDate && (
+                            <>
+                              <span>•</span>
+                              <span className="text-amber-300 font-bold">Entrega Desejada: {new Date(req.targetDate).toLocaleDateString('pt-BR')}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {getStatusBadge(req.status)}
+                      </div>
+                    </div>
+
+                    {/* Detalhes de Destino */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-dark-850 p-3.5 rounded-2xl border border-dark-700">
+                      <div>
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Endereço de Entrega:</span>
+                        <span className="text-slate-200 font-medium">{req.deliveryAddress || 'Endereço da obra'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Contato no Canteiro:</span>
+                        <span className="text-slate-200 font-medium">
+                          {req.contactName || 'Não informado'} {req.contactPhone ? `(${req.contactPhone})` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Itens a Transportar: Materiais do Almoxarifado e Dutos da Fábrica */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold text-slate-300 block">Itens Liberados para Transporte:</span>
+                      <div className="divide-y divide-dark-800 bg-dark-850 rounded-2xl border border-dark-750 overflow-hidden">
+                        {req.items?.map((it: any, idx: number) => (
+                          <div key={idx} className="p-3 text-xs flex items-center justify-between gap-3">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                  it.originType === 'duto'
+                                    ? 'bg-blue-950 text-blue-300 border-blue-800'
+                                    : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                                }`}>
+                                  {it.originType === 'duto' ? 'Duto CAMduct (Vinicius)' : 'Material Almoxarifado (OK)'}
+                                </span>
+                                <span className="font-bold text-white">{it.itemDescription}</span>
+                              </div>
+                              {it.notes && (
+                                <p className="text-[11px] text-slate-400">{it.notes}</p>
+                              )}
+                            </div>
+                            <span className="font-mono font-bold text-purple-300 bg-purple-950/80 px-2.5 py-1 rounded-lg border border-purple-900 shrink-0">
+                              {it.quantity} {it.unit || 'un'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Ações da Equipe de Logística */}
+                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-dark-800">
+                      <div className="text-[11px] text-slate-400">
+                        {req.status === 'Pendente' && 'Demanda pendente. Clique em "Atender / Emitir Romaneio" para programar o veículo.'}
+                        {req.status === 'Agendado' && 'Viagem agendada. Quando o veículo sair para entrega, marque "Em Trânsito".'}
+                        {req.status === 'Em Trânsito' && 'Veículo em rota de entrega no canteiro. Ao descarregar, confirme a entrega.'}
+                        {req.status === 'Entregue' && '✅ Carga entregue no canteiro de obras.'}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {req.status === 'Pendente' && (
+                          <button
+                            type="button"
+                            onClick={() => handleAttendRequest(req)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition shadow-md shadow-emerald-600/30 cursor-pointer active:scale-95"
+                          >
+                            <Package className="w-4 h-4" />
+                            <span>Atender / Emitir Romaneio</span>
+                          </button>
+                        )}
+
+                        {req.status === 'Agendado' && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateLogisticsRequestStatus(req.id, 'Em Trânsito')}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs transition shadow-md cursor-pointer active:scale-95"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            <span>Marcar em Trânsito</span>
+                          </button>
+                        )}
+
+                        {req.status === 'Em Trânsito' && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateLogisticsRequestStatus(req.id, 'Entregue')}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xs transition shadow-lg shadow-emerald-600/30 cursor-pointer active:scale-95"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Confirmar Entrega na Obra</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* ABA 1: AGENDA SEMANAL DA FROTA (CALENDÁRIO)                               */}
@@ -684,14 +921,8 @@ export const LogisticsPage: React.FC = () => {
                             <span className="font-mono font-black text-[10px] text-sabrar-400">
                               {trip.code}
                             </span>
-                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
-                              trip.shift === 'manha'
-                                ? 'bg-sky-950 text-sky-400 border border-sky-800'
-                                : trip.shift === 'tarde'
-                                ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                : 'bg-purple-950 text-purple-400 border border-purple-800'
-                            }`}>
-                              {trip.shift}
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">
+                              ⏰ {trip.shift || 'Qualquer horário'}
                             </span>
                           </div>
 
@@ -798,17 +1029,69 @@ export const LogisticsPage: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">Turno de Entrega *</label>
-                <select
-                  value={shift}
-                  onChange={(e: any) => setShift(e.target.value)}
-                  className="w-full bg-dark-800 border border-dark-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                >
-                  <option value="manha">Manhã (08h às 12h)</option>
-                  <option value="tarde">Tarde (13h às 17h)</option>
-                  <option value="integral">Integral (Comercial)</option>
-                </select>
+              <div className="space-y-1.5 p-3 bg-dark-850 rounded-2xl border border-dark-700">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Horário Programado *</span>
+                  </label>
+                  <div className="flex items-center gap-1 bg-dark-900 p-1 rounded-xl border border-dark-750">
+                    <button
+                      type="button"
+                      onClick={() => setTimeOption('qualquer')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        timeOption === 'qualquer'
+                          ? 'bg-amber-500 text-dark-950 font-black shadow-xs'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Qualquer horário
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTimeOption('especifico')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        timeOption === 'especifico'
+                          ? 'bg-amber-500 text-dark-950 font-black shadow-xs'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Horário específico
+                    </button>
+                  </div>
+                </div>
+
+                {timeOption === 'qualquer' ? (
+                  <p className="text-[11px] text-slate-400">
+                    Sem restrição — entrega em qualquer horário disponível do dia.
+                  </p>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
+                    <input
+                      type="time"
+                      value={customTime}
+                      onChange={(e) => setCustomTime(e.target.value)}
+                      className="w-full sm:w-36 bg-dark-800 border border-dark-700 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-white focus:outline-none focus:border-amber-500"
+                    />
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase">Atalhos:</span>
+                      {['08:00', '10:00', '14:00', '17:00', '22:00'].map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setCustomTime(t)}
+                          className={`text-[10px] px-2 py-0.5 rounded-lg border font-mono transition-colors cursor-pointer ${
+                            customTime === t
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold'
+                              : 'bg-dark-800 text-slate-400 border-dark-700 hover:text-white'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -1242,7 +1525,7 @@ export const LogisticsPage: React.FC = () => {
               <div>
                 <p><strong>Veículo / Placa:</strong> {selectedTripDetails.trip.vehicleModel} ({selectedTripDetails.trip.vehiclePlate})</p>
                 <p><strong>Motorista:</strong> {selectedTripDetails.trip.driverName}</p>
-                <p><strong>Turno:</strong> {selectedTripDetails.trip.shift}</p>
+                <p><strong>Horário de Entrega:</strong> {selectedTripDetails.trip.shift || 'Qualquer horário'}</p>
                 <p><strong>Viagem da Semana:</strong> {selectedTripDetails.trip.tripNumberWeek}ª viagem</p>
               </div>
             </div>
