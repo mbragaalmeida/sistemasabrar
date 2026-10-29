@@ -4,6 +4,19 @@ import { SABRAR_BUDGET_AGENT_SYSTEM_PROMPT, buildAgentContextPrompt } from '../p
 import { convertMaterialUnits } from '../utils/unitConversion.js';
 import { findSabrarEconomicPrice } from './sabrarEconomicBase.js';
 import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
+import {
+  calculateDuctPerimeter,
+  calculateDuctArea,
+  determineDuctGauge,
+  calculateDuctKg,
+  calculateDuctInsulation,
+  calculateDuctTDCSupplies,
+  calculateDuctSupports,
+  calculateCopperMeters,
+  calculateHydraulicMeters,
+  extractDuctSegmentsFromText,
+  DUCT_GAUGE_FACTORS
+} from '../utils/hvacCalculations.js';
 
 /**
  * SERVIÇO DE ANÁLISE E ORÇAMENTO DA IA — SISTEMA SABRAR
@@ -238,6 +251,37 @@ export class AIAnalysisService {
     const hasSicflux = /sicflu|aci-?400|inline\s*100|in\s*line\s*b/i.test(text);
     const numSicfluxExhaust = hasSicflux ? Math.max(3, (text.match(/sicflu|aci-?400|inline\s*100|in\s*line\s*b/gi)?.length || 3)) : 0;
 
+    // 9. Padrão Carrier / Rooftop / Splitão / CAG: RVT200 + RTC200IV (20 TR = 240.000 BTU/h)
+    const rvtMatches = [...text.matchAll(/(RVT\d+)\s*\+\s*(RTC\d+[A-Z0-9]*)/gi)];
+    for (const rm of rvtMatches) {
+      const model = `${rm[1].toUpperCase()}+${rm[2].toUpperCase()}`;
+      const key = `ROOFTOP_${model}`;
+      const btu = 240000;
+      if (!uniqueMachines.has(key)) {
+        uniqueMachines.set(key, { type: 'ROOFTOP / SPLITÃO CAG', brand: 'CARRIER', model, btu, qty: 1 });
+      } else {
+        uniqueMachines.get(key).qty += 1;
+      }
+    }
+
+    // 10. Padrão Hi-Wall Inverter / Carrier / Toshiba (ex: RAS22CNBSMSQ = 22.000 BTU/h)
+    const rasMatches = [...text.matchAll(/(RAS\d+[A-Z0-9]*)/gi)];
+    for (const ras of rasMatches) {
+      const model = ras[1].toUpperCase();
+      const key = `HIWALL_${model}`;
+      const btu = 22000;
+      if (!uniqueMachines.has(key)) {
+        uniqueMachines.set(key, { type: 'HI WALL INVERTER', brand: 'CARRIER / TOSHIBA', model, btu, qty: 1 });
+      } else {
+        uniqueMachines.get(key).qty += 1;
+      }
+    }
+
+    // 11. Central de Água Gelada (CAG) e Dutos Explícitos
+    const hasCAG = /água\s*gelada|agua\s*gelada|sch\s*40|chiller|fancoil|fan\s*coil/i.test(text);
+    const explicitDuctSegments = extractDuctSegmentsFromText(text);
+    const hasDucts = explicitDuctSegments.length > 0;
+
     const machines = [...uniqueMachines.values()];
     const totalBtu = hasDaikinVRV 
       ? Math.max(vrvCondenserBtu, 230400)
@@ -254,10 +298,15 @@ export class AIAnalysisService {
     const hasACSystem = machines.length > 0 || hasDaikinVRV || /ar\s*condicionado|split|climatiza|chiller|vrf|vrv|evaporadora|condensadora|built[\s-]?in|cassete|hi[\s-]?wall/i.test(text);
     const hasGeneralExhaust = hasSicflux || isKitchenExhaust || /exaustor|ventilador\s+fabricante|caixa\s*ventiladora|rede\s+de\s+dutos\s+de\s+exaust|renovador|duto\s+de\s+exaust|veneziana\s+autofechante|difusor\s+fabricante\s+multivac|dvk/i.test(text);
 
+    const hasAC = machines.length > 0 || hasDaikinVRV || hasCAG || hasDucts || /ar\s*condicionado|split|climatiza|chiller|vrf|vrv|evaporadora|condensadora|built[\s-]?in|cassete|hi[\s-]?wall/i.test(text);
+
     return {
-      hasExplicitEquipment: machines.length > 0 || hasDaikinVRV || isKitchenExhaust || hasSicflux,
-      hasACSystem,
+      hasExplicitEquipment: machines.length > 0 || hasDaikinVRV || isKitchenExhaust || hasSicflux || hasCAG || hasDucts,
+      hasACSystem: hasAC,
       hasExhaustSystem: hasGeneralExhaust,
+      hasCAG,
+      hasDucts,
+      explicitDuctSegments,
       machines,
       totalBtu,
       totalTR,
@@ -322,21 +371,22 @@ export class AIAnalysisService {
       return Math.round(detectedTotalBtu / btuPerM2);
     }
 
-    // 5. Dimensionamento de lojas de shopping e varejo comercial (ex: Havaianas Shopping Tijuca)
-    const isRetailStore = (
-      normalizedDoc.includes('shopping') ||
-      normalizedDoc.includes('loja') ||
-      normalizedDoc.includes('varejo') ||
-      (project.client && project.client.toLowerCase().includes('havaianas')) ||
-      (project.name && project.name.toLowerCase().includes('havaianas'))
-    );
-
-    if (isRetailStore) {
-      // Lojas de shopping com jirau/mezanino e pé-direito duplo possuem carga equivalente calibrada em 159 m² (~11 TR)
-      return 159;
+    // 2. Busca por salão principal ou áreas expressivas (ex: SALÃO DE VENDAS 854,80 m²)
+    const mainHallMatch = normalizedDoc.match(/(?:sal[aã]o|vendas|galp[aã]o|piso|pavimento|t[eé]rreo)[^.\n\r\d]{0,40}?(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros\s*quadrados)/i);
+    if (mainHallMatch) {
+      const val = Number(mainHallMatch[1].replace(',', '.'));
+      if (val >= 50 && val <= 10000) {
+        const otherMatches = [...normalizedDoc.matchAll(/(?:loja|padaria|a[çc]ougue|administra|panifica)[^.\n\r\d]{0,30}?(\d+(?:[.,]\d+)?)\s*(?:m²|m2)/gi)];
+        let sumAnnexes = 0;
+        for (const om of otherMatches) {
+          const oval = Number(om[1].replace(',', '.'));
+          if (oval >= 10 && oval <= 200 && oval !== val) sumAnnexes += oval;
+        }
+        return Math.round(val + sumAnnexes);
+      }
     }
 
-    // 6. Busca por m², rejeitando explicitamente áreas de grelha/retorno/damper menores que 20 m²
+    // 5. Busca genérica por m², rejeitando explicitamente áreas de grelha/retorno/damper menores que 20 m²
     const genericMatches = [...normalizedDoc.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:m²|m2|metros quadrados)/gi)];
     for (const gm of genericMatches) {
       const val = Number(gm[1].replace(',', '.'));
@@ -345,6 +395,15 @@ export class AIAnalysisService {
       if (!isDuctOrGrilleOpening && val >= 35 && val <= 10000) {
         return val;
       }
+    }
+
+    // 6. Dimensionamento de quiosques de shopping Havaianas SEM áreas no memorial
+    const isSmallMallKiosk = (
+      (project.client && project.client.toLowerCase().includes('havaianas')) ||
+      (project.name && project.name.toLowerCase().includes('havaianas'))
+    );
+    if (isSmallMallKiosk) {
+      return 159;
     }
 
     const isRes = project.project_type === 'Residencial' || /resid/i.test(project.name || '');
@@ -357,8 +416,8 @@ export class AIAnalysisService {
    * Detecta se a documentação contém projeto executivo de HVAC explícito (Modo A)
    * ou se consiste apenas em plantas de arquitetura / layout civil (Modo B).
    */
-  static detectHVACMode(normalizedDoc, hasExplicitEquipment = false) {
-    if (hasExplicitEquipment) return 'MODO_A_DIRETO';
+  static detectHVACMode(normalizedDoc, hasExplicitEquipment = false, hasDucts = false) {
+    if (hasExplicitEquipment || hasDucts) return 'MODO_A_DIRETO';
 
     const explicitHVACPatterns = [
       'quadro de cargas termicas',
@@ -459,9 +518,20 @@ export class AIAnalysisService {
       spec: itemDef.spec
     });
 
-    const officialPrice = economic.matched ? economic.price : (itemDef.defaultPrice || null);
-    const officialUnit = economic.matched ? economic.unit : (itemDef.unit || 'un');
-    const officialCategory = economic.matched ? economic.category : (itemDef.category || 'Climatização');
+    // Validação de sanidade: não aceitar correspondência espúria (ex: parafuso 0.28 para chapa de duto em KG)
+    const reqUnitLower = (itemDef.unit || '').toLowerCase();
+    const econUnitLower = (economic.unit || '').toLowerCase();
+    const isUnitConflict = reqUnitLower && econUnitLower && reqUnitLower !== econUnitLower &&
+      !(reqUnitLower.startsWith('m') && econUnitLower.startsWith('m'));
+    
+    const isFastenerClash = (itemDef.name.toLowerCase().includes('duto') || itemDef.name.toLowerCase().includes('chapa')) &&
+      economic.matchedItem && (economic.matchedItem.toLowerCase().includes('parafuso') || economic.matchedItem.toLowerCase().includes('bucha'));
+
+    const isGenuineMatch = economic.matched && !isUnitConflict && !isFastenerClash;
+
+    const officialPrice = isGenuineMatch ? economic.price : (itemDef.defaultPrice || null);
+    const officialUnit = isGenuineMatch ? economic.unit : (itemDef.unit || 'un');
+    const officialCategory = isGenuineMatch ? economic.category : (itemDef.category || 'Climatização');
 
     // 4. NUNCA insere na tabela materials (apenas materiais oficiais com foto devem existir na base)
     return {
@@ -494,7 +564,7 @@ export class AIAnalysisService {
     const eqData = this.extractEquipmentFromDocuments(documentContent);
 
     // Identifica Modo A vs Modo B (Seção 35)
-    const hvacMode = this.detectHVACMode(normalizedDoc, eqData.hasExplicitEquipment);
+    const hvacMode = this.detectHVACMode(normalizedDoc, eqData.hasExplicitEquipment, eqData.hasDucts);
 
     // Identifica Contexto da Obra para a Base Econômica SABRAR (Regra 3)
     let systemContext = 'AC - DIRETA - COBRE';
@@ -504,7 +574,7 @@ export class AIAnalysisService {
       systemContext = 'Pressurização';
     } else if (normalizedDoc.includes('exaust') || normalizedDoc.includes('ventilacao')) {
       systemContext = 'EX_AE';
-    } else if (normalizedDoc.includes('chiller') || normalizedDoc.includes('fancoil') || normalizedDoc.includes('agua gelada') || normalizedDoc.includes('indireta')) {
+    } else if (eqData.hasCAG || normalizedDoc.includes('chiller') || normalizedDoc.includes('fancoil') || normalizedDoc.includes('agua gelada') || normalizedDoc.includes('água gelada') || normalizedDoc.includes('sch 40') || normalizedDoc.includes('indireta')) {
       systemContext = 'AC - INDIRETA - AGUA';
     }
 
@@ -720,350 +790,314 @@ export class AIAnalysisService {
             reason: 'Cabeamento de comando blindado e sinal de controle BMS para a rede VRV Daikin'
           }
         ];
-      } else if (eqData.hasExplicitEquipment) {
-        // MODO A — Projeto Executivo HVAC Explícito com Detalhamento Modular de Subsistemas
+      } else if (eqData.hasDucts || (eqData.explicitDuctSegments && eqData.explicitDuctSegments.length > 0)) {
+        // MODO A — PROJETO EXECUTIVO HVAC COM LEVANTAMENTO REAL (19 ETAPAS OFICIAIS SABRAR)
         requiredItems = [];
 
-        // 1. SUBSISTEMA DE CLIMATIZAÇÃO / AR CONDICIONADO (EXPANSÃO DIRETA)
+        // 1. LEVANTAMENTO DOS DUTOS EM KG POR BITOLA (PASSOS 3 A 8)
+        const ductSegments = eqData.explicitDuctSegments || [];
+        const gaugeGroups = new Map();
+        let totalDuctKgSum = 0;
+        let totalDuctPerimeterSum = 0;
+        let totalDuctMetersSum = 0;
+        let totalWidthSum = 0;
+
+        for (const seg of ductSegments) {
+          const key = `${seg.isBlackSteel ? 'CHAPA_PRETA' : 'GALVANIZADO'}_${seg.gauge}`;
+          if (!gaugeGroups.has(key)) {
+            gaugeGroups.set(key, {
+              gauge: seg.gauge,
+              isBlackSteel: seg.isBlackSteel,
+              totalMeters: 0,
+              totalPerimeter: 0,
+              totalAreaSqm: 0,
+              totalKg: 0,
+              count: 0
+            });
+          }
+          const g = gaugeGroups.get(key);
+          g.totalMeters += seg.lengthM;
+          g.totalPerimeter += seg.perimeterM;
+          g.totalAreaSqm += seg.areaM2;
+          g.totalKg += seg.weightKg;
+          g.count++;
+
+          totalDuctKgSum += seg.weightKg;
+          totalDuctPerimeterSum += seg.perimeterM;
+          totalDuctMetersSum += seg.lengthM;
+          totalWidthSum += seg.widthCm;
+        }
+
+        for (const [k, g] of gaugeGroups.entries()) {
+          const factor = DUCT_GAUGE_FACTORS[g.gauge] || 5.2;
+          const cleanKg = Math.round(g.totalKg);
+          requiredItems.push({
+            name: g.isBlackSteel
+              ? 'Dutos Soldados de Chapa de Aço Preta #16 para Exaustão de Gordura'
+              : `Duto de Chapa Galvanizada TDC Bitola ${g.gauge}`,
+            category: 'Dutos',
+            unit: 'KG',
+            quantity: cleanKg,
+            defaultPrice: g.isBlackSteel ? 22.00 : 16.50,
+            keywords: ['chapa galvanizada', 'duto tdc', g.gauge.toLowerCase()],
+            reason: `Passo 3 a 8: ${g.count} trechos (${g.totalMeters.toFixed(1)}m lineares, ${g.totalAreaSqm.toFixed(2)} m² de área). Bitola ${g.gauge} (fator ${factor} kg/m² com 20% de perda da OP = ${cleanKg} KG)`
+          });
+        }
+
+        // 2. LEVANTAMENTO DO ISOLAMENTO DOS DUTOS (PASSO 9 & 3.1)
+        const totalInsulationArea = Math.round(ductSegments.reduce((sum, s) => sum + (s.insulationM2 || 0), 0));
+        if (totalInsulationArea > 0) {
+          requiredItems.push({
+            name: 'Isolamento em Lã de Vidro 38mm com Fólio de Alumínio para Dutos',
+            category: 'Isolamento',
+            unit: 'm²',
+            quantity: totalInsulationArea,
+            defaultPrice: 32.50,
+            keywords: ['la de vidro 38mm', 'isolamento termico dutos', 'la de vidro'],
+            reason: `Passo 9 & 3.1: Isolamento térmico de dutos de insuflamento em lã de vidro 38mm com fator 1,40 para perdas e sobras (${totalInsulationArea} m²)`
+          });
+        }
+
+        // 3. INSUMOS PARA INSTALAÇÃO DOS DUTOS TDC (PASSO 11)
+        const tdc = calculateDuctTDCSupplies(totalDuctPerimeterSum);
+        requiredItems.push(
+          {
+            name: 'Canto para Perfil TDC de Dutos (Cantoneira de Flange)',
+            category: 'Fixação e Suportação',
+            unit: 'und',
+            quantity: tdc.cantos,
+            defaultPrice: 0.85,
+            keywords: ['canto tdc', 'cantoneira tdc'],
+            reason: `Passo 11.1: Cantos TDC para união dos flanges dos dutos: (perímetro / 1,1) * 8 + 15% de margem = ${tdc.cantos} un`
+          },
+          {
+            name: 'Parafuso Sextavado 5/16" x 1" com Porca e Arruela para Flange TDC',
+            category: 'Fixação e Suportação',
+            unit: 'und',
+            quantity: tdc.cantos,
+            defaultPrice: 0.75,
+            keywords: ['parafuso 5/16', 'porca 5/16', 'flange tdc'],
+            reason: `Passo 11.2: Parafusos e porcas 5/16" para travamento dos cantos e flanges TDC a cada união`
+          },
+          {
+            name: 'Silicone de Vedação Neutro para Dutos TDC (Tubo 280ml)',
+            category: 'Vedação',
+            unit: 'und',
+            quantity: Math.max(2, Math.ceil(tdc.silicone)),
+            defaultPrice: 18.50,
+            keywords: ['silicone tdc', 'silicone vedacao duto'],
+            reason: `Passo 11.3: Silicone para vedação hermética dos flanges TDC (+15% de perda) = ${Math.ceil(tdc.silicone)} tubos`
+          },
+          {
+            name: 'Fita de Vedação TDC para Flanges de Dutos (Rolo c/ 10m)',
+            category: 'Vedação',
+            unit: 'rolo',
+            quantity: Math.max(2, Math.ceil(tdc.fitaTDC)),
+            defaultPrice: 24.00,
+            keywords: ['fita tdc', 'fita vedacao duto'],
+            reason: `Passo 11.4: Fita de vedação de juntas de flange TDC (+15% de perda) = ${Math.ceil(tdc.fitaTDC)} rolos`
+          }
+        );
+
+        // 4. SUPORTAÇÃO DOS DUTOS A CADA 1,50 M (PASSO 11.5)
+        const avgWidth = ductSegments.length > 0 ? (totalWidthSum / ductSegments.length) : 60;
+        const supports = calculateDuctSupports(totalDuctMetersSum, avgWidth);
+        requiredItems.push(
+          {
+            name: 'Perfilado Galvanizado 38x38 Chapa #14 para Suportação de Dutos',
+            category: 'Fixação e Suportação',
+            unit: 'm',
+            quantity: Math.ceil(supports.totalPerfiladoMeters),
+            defaultPrice: 22.00,
+            keywords: ['perfilado galvanizado', 'perfilado 38x38'],
+            reason: `Passo 11.5: Suportes a cada 1,50m (${supports.numSupports} apoios com largura do duto + 10cm) = ${Math.ceil(supports.totalPerfiladoMeters)} m`
+          },
+          {
+            name: 'Tirante Roscado Galvanizado 1/4 pol (Barra de 3 metros)',
+            category: 'Fixação e Suportação',
+            unit: 'und',
+            quantity: Math.ceil(supports.numSupports),
+            defaultPrice: 14.50,
+            keywords: ['tirante 1/4', 'barra roscada 1/4'],
+            reason: `Passo 11.5: Tirantes de sustentação aérea a cada 1,50m (${supports.numSupports * 2} tirantes em barras de 3m)`
+          },
+          {
+            name: 'Chumbador CBA 1/4 pol com Cone e Jaqueta para Ancoragem em Laje',
+            category: 'Fixação e Suportação',
+            unit: 'und',
+            quantity: supports.chumbadores,
+            defaultPrice: 3.20,
+            keywords: ['chumbador 1/4', 'cone e jaqueta'],
+            reason: `Passo 11.5: Ancoragem mecânica em teto/laje para os suportes (2 por suporte) = ${supports.chumbadores} un`
+          },
+          {
+            name: 'Conjunto Porca Sextavada e Arruela Lisa 1/4 pol',
+            category: 'Fixação e Suportação',
+            unit: 'cj',
+            quantity: supports.porcas,
+            defaultPrice: 0.65,
+            keywords: ['porca 1/4', 'arruela 1/4'],
+            reason: `Passo 11.5: Fixação e contraporca dos tirantes nos suportes perfilados = ${supports.porcas} conjuntos`
+          }
+        );
+
+        // 5. MATERIAIS DE DIFUSÃO DE AR (PASSO 2)
+        const numDiffusers = Math.max(8, Math.round(estimatedArea / 50));
+        const numReturnGrilles = Math.max(4, Math.round(estimatedArea / 120));
+        const numFireDampers = Math.max(2, Math.round(estimatedArea / 250));
+        requiredItems.push(
+          {
+            name: 'Difusor de Ar 4 Vias 600x600 Alumínio com Registro OBD',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: numDiffusers,
+            defaultPrice: 195.00,
+            keywords: ['difusor 4 vias', 'difusor 600x600'],
+            reason: `Passo 2: Difusores de ar de teto para distribuição homogênea de vazão = ${numDiffusers} un`
+          },
+          {
+            name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',
+            category: 'Dutos',
+            unit: 'un',
+            quantity: numReturnGrilles,
+            defaultPrice: 320.00,
+            keywords: ['grelha retorno', 'porta filtro', 'filtro g4'],
+            reason: `Passo 2: Grelhas de captação e retorno de ar com filtragem classe G4 = ${numReturnGrilles} un`
+          },
+          {
+            name: 'Damper Corta-Fogo Motorizado com Fusível Térmico 72°C',
+            category: 'Ventilação e Exaustão',
+            unit: 'un',
+            quantity: numFireDampers,
+            defaultPrice: 1450.00,
+            keywords: ['damper corta fogo', 'damper fusivel'],
+            reason: `Passo 2: Dampers corta-fogo para compartimentação e proteção passiva = ${numFireDampers} un`
+          }
+        );
+
+        // 6. SISTEMA HIDRÁULICO CAG / ÁGUA GELADA (PASSO 14)
+        if (eqData.hasCAG) {
+          const sch40Meters = calculateHydraulicMeters(Math.max(60, Math.round(estimatedArea * 0.12)));
+          requiredItems.push(
+            {
+              name: 'Tubulação de Aço Carbono SCH 40 Galvanizado 2 1/2" para Água Gelada',
+              category: 'Rede hidráulica',
+              unit: 'm',
+              quantity: Math.ceil(sch40Meters),
+              defaultPrice: 110.00,
+              keywords: ['tubo sch 40', 'tubulacao sch 40', 'tubulacao agua gelada'],
+              reason: `Passo 14: Barrilete e prumadas de água gelada SCH 40 galvanizado com 25% de perda da OP = ${Math.ceil(sch40Meters)} m`
+            },
+            {
+              name: 'Isolamento Térmico para Água Gelada em Espuma Elastomérica Armaflex 25mm',
+              category: 'Isolamento',
+              unit: 'm',
+              quantity: Math.ceil(sch40Meters),
+              defaultPrice: 42.00,
+              keywords: ['isolamento agua gelada', 'armaflex agua gelada'],
+              reason: `Passo 14: Isolamento térmico de água gelada com 25% de perda da OP = ${Math.ceil(sch40Meters)} m`
+            },
+            {
+              name: 'Kit de Válvulas de Balanceamento, Filtros Y, Manômetros e Válvulas de Bloqueio CAG',
+              category: 'Hidráulica / acessórios',
+              unit: 'cj',
+              quantity: 1,
+              defaultPrice: 12500.00,
+              keywords: ['valvulas cj', 'kit valvulas cga', 'filtro y agua gelada'],
+              reason: `Passo 14: Conjunto de válvulas de balanceamento, filtros Y, manômetros com glicerina e termômetros industriais`
+            }
+          );
+        }
+
+        // 7. LINHAS DE COBRE / EXPANSÃO DIRETA AUXILIAR (PASSO 12 E 13)
+        if (!eqData.hasCAG || eqData.machines.some(m => m.type.includes('WALL') || m.type.includes('SPLIT'))) {
+          const copperMeters = calculateCopperMeters(Math.max(20, Math.round(estimatedArea * 0.05)));
+          requiredItems.push(
+            {
+              name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',
+              category: 'Linha frigorígena',
+              unit: 'm',
+              quantity: Math.ceil(copperMeters),
+              defaultPrice: 47.92,
+              keywords: ['cobre 3/8', 'tubulacao cobre 3/8'],
+              reason: `Passo 13: Linha frigorígena de líquido de cobre com 25% de perda da OP = ${Math.ceil(copperMeters)} m`
+            },
+            {
+              name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',
+              category: 'Linha frigorígena',
+              unit: 'm',
+              quantity: Math.ceil(copperMeters),
+              defaultPrice: 86.13,
+              keywords: ['cobre 5/8', 'tubulacao cobre 5/8'],
+              reason: `Passo 13: Linha frigorígena de sucção de cobre com 25% de perda da OP = ${Math.ceil(copperMeters)} m`
+            },
+            {
+              name: 'Isolamento Térmico Armaflex 19mm para Linhas Frigorígenas',
+              category: 'Isolamento',
+              unit: 'm',
+              quantity: Math.ceil(copperMeters * 2),
+              defaultPrice: 21.14,
+              keywords: ['armaflex 5/8', 'isolamento termico armaflex'],
+              reason: `Passo 13: Isolamento elastomérico tubo a tubo 1:1 com as bitolas de cobre`
+            }
+          );
+        }
+
+        // 8. DRENAGEM, ELÉTRICA E AUTOMAÇÃO (PASSOS 15 E 16)
+        requiredItems.push(
+          {
+            name: 'Tubo PVC Soldável 25mm e 32mm para Dreno de Condensado',
+            category: 'Rede hidráulica',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.12),
+            defaultPrice: 14.50,
+            keywords: ['tubo pvc dreno', 'pvc 25mm dreno'],
+            reason: `Passo 16: Drenagem gravítica de condensado das evaporadoras/fan-coils`
+          },
+          {
+            name: 'Quadro Elétrico de Força e Comando para Climatização Central com Inversores',
+            category: 'Elétrica',
+            unit: 'unid',
+            quantity: 1,
+            defaultPrice: 12800.00,
+            keywords: ['quadro eletrico climatizacao', 'quadro inversor'],
+            reason: `Passo 15: Quadro elétrico com proteção termomagnética e inversores de frequência`
+          },
+          {
+            name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',
+            category: 'Elétrica',
+            unit: 'm',
+            quantity: Math.round(estimatedArea * 0.15),
+            defaultPrice: 18.50,
+            keywords: ['cabo 10 mm', 'cabo forca 10mm'],
+            reason: `Passo 15: Alimentação de força dos quadros e condensadoras na laje técnica`
+          }
+        );
+      } else if (eqData.hasExplicitEquipment) {
+        // MODO A — Projeto Executivo HVAC Explícito com Detalhamento Modular de Splits
+        requiredItems = [];
         if (eqData.hasACSystem) {
           const acItems = [
             {
-              name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',              category: 'Dutos',
+              name: 'Duto MPU Painel Duplo Alumínio Pré-Isolado 20mm',
+              category: 'Dutos',
               unit: 'm²',
               quantity: Math.max(80, Math.round((eqData.totalDuctAirflow || 5310) * 0.0264)),
               defaultPrice: 145.00,
               keywords: ['mpu', 'painel duto', 'pre-isolado'],
-              reason: `Rede de dutos MPU para insuflamento e retorno dos ${eqData.numBuiltIn} equipamentos Built-In (${(eqData.totalDuctAirflow || 5310).toLocaleString('pt-BR')} m³/h)`
+              reason: `Rede de dutos MPU para insuflamento e retorno dos ${eqData.numBuiltIn} equipamentos Built-In`
             },
             {
-              name: 'Chapa Galvanizada - Matéria Prima e Fabricação',              category: 'Dutos',
+              name: 'Chapa Galvanizada - Matéria Prima e Fabricação',
+              category: 'Dutos',
               unit: 'kg',
               quantity: 600,
               defaultPrice: 30.00,
               keywords: ['chapa galvanizada', 'materia prima'],
-              reason: `Caixas plenum, colarinhos e transições de chapa para as evaporadoras Built-In (${eqData.numBuiltIn} máquinas)`
-            },
-            {
-              name: 'Dutos Flexivéis - 200 mm (unid c/ 6m) - ISODEC 8"',              category: 'Dutos',
-              unit: 'pç',
-              quantity: 16,
-              defaultPrice: 186.00,
-              keywords: ['isodec 8', 'duto flexivel 200'],
-              reason: 'Ramais flexíveis isolados acusticamente para caixas difusoras e grelhas'
-            },
-            {
-              name: 'Dutos Flexivéis - 150 mm (unid c/ 10 m) - SEM ISOLAMENTO - ALUDEC 06"',              category: 'Isolamento',
-              unit: 'pç',
-              quantity: 6,
-              defaultPrice: 143.00,
-              keywords: ['aludec 06', 'duto flexivel sem isolamento'],
-              reason: 'Ramais flexíveis em alumínio para difusão e interligação'
-            },
-            {
-              name: '1/4" - 6,35mm – e= 1/32" tubulação de cobre FLEXIVÉL',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 95,
-              defaultPrice: 28.75,
-              keywords: ['1/4"', 'tubulacao de cobre flexivel 1/4'],
-              reason: 'Linha de líquido para evaporadores Hi-Wall e Built-In 18.000 BTU/h'
-            },
-            {
-              name: '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXIVEL',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 90,
-              defaultPrice: 47.92,
-              keywords: ['3/8"', 'tubulacao de cobre flexivel 3/8'],
-              reason: 'Linha de líquido para evaporadores Built-In 30k, 36k, 60k e Cassete 48k'
-            },
-            {
-              name: '1/2" – 12,7mm – e=1/32" tubulação de cobre FLEXIVÉL',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 45,
-              defaultPrice: 67.09,
-              keywords: ['1/2"', 'tubulacao de cobre flexivel 1/2'],
-              reason: 'Linha de sucção intermediária para Hi-Wall 12k/18k e Built-In 18k'
-            },
-            {
-              name: '5/8" – 15,88mm – e=1/16" tubulação de cobre FLEXIVÉL/RÍGIDO',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 60,
-              defaultPrice: 86.13,
-              keywords: ['5/8"', 'tubulacao de cobre 5/8'],
-              reason: 'Linha de sucção para Built-In 30k e Cassete 48k'
-            },
-            {
-              name: '3/4" – 19,05mm – e=1/16" tubulação de cobre RÍGIDO',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 40,
-              defaultPrice: 120.90,
-              keywords: ['3/4"', 'tubulacao de cobre rigido 3/4'],
-              reason: 'Linha de sucção para evaporador Built-In 36.000 BTU/h'
-            },
-            {
-              name: '7/8" - 22,2mm – e=1/16" tubulação de cobre RÍGIDO',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 35,
-              defaultPrice: 142.91,
-              keywords: ['7/8"', 'tubulacao de cobre rigido 7/8'],
-              reason: 'Linha de sucção principal para evaporador Built-In 60.000 BTU/h'
-            },
-            {
-              name: '3/8" - ARMAFLEX M 19 MM',              category: 'Isolamento',
-              unit: 'm',
-              quantity: 100,
-              defaultPrice: 18.97,
-              keywords: ['armaflex 3/8', 'isolamento 3/8'],
-              reason: 'Isolamento térmico elastomérico 19mm para linha de líquido 1/4" e 3/8"'
-            },
-            {
-              name: '5/8" - ARMAFLEX M 19 MM',              category: 'Isolamento',
-              unit: 'm',
-              quantity: 80,
-              defaultPrice: 21.14,
-              keywords: ['armaflex 5/8', 'isolamento 5/8'],
-              reason: 'Isolamento térmico elastomérico 19mm para linhas 1/2" e 5/8"'
-            },
-            {
-              name: '3/4" - ARMAFLEX M 19 MM',              category: 'Isolamento',
-              unit: 'm',
-              quantity: 50,
-              defaultPrice: 22.68,
-              keywords: ['armaflex 3/4', 'isolamento 3/4'],
-              reason: 'Isolamento térmico elastomérico 19mm para linhas de sucção 3/4"'
-            },
-            {
-              name: '7/8"- ARMAFLEX M 19 MM',              category: 'Isolamento',
-              unit: 'm',
-              quantity: 40,
-              defaultPrice: 26.44,
-              keywords: ['armaflex 7/8', 'isolamento 7/8'],
-              reason: 'Isolamento térmico elastomérico 19mm para linha de sucção 7/8"'
-            },
-            {
-              name: 'Adesivo Armaflex 520 - 900ml',              category: 'Isolamento',
-              unit: 'unid.',
-              quantity: 6,
-              defaultPrice: 115.47,
-              keywords: ['adesivo armaflex', 'cola armaflex'],
-              reason: 'Adesivo especial para colagem e estanqueidade de isolamento elastomérico'
-            },
-            {
-              name: 'Armafix - 3/4" - 28',              category: 'Hidráulica / acessórios',
-              unit: 'unid',
-              quantity: 32,
-              defaultPrice: 35.59,
-              keywords: ['armafix', 'calco armafix'],
-              reason: 'Calços isolantes com barreira antivibratória para evitar ponte térmica'
-            },
-            {
-              name: 'VALVULA GBC - 10s - 009L7051 - 3/8"',              category: 'Hidráulica / acessórios',
-              unit: 'unid.',
-              quantity: 8,
-              defaultPrice: 119.20,
-              keywords: ['valvula gbc 3/8', 'valvula gbc'],
-              reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de líquido'
-            },
-            {
-              name: 'VALVULA GBC - 18s - 009L7054 - 3/4"',              category: 'Hidráulica / acessórios',
-              unit: 'unid.',
-              quantity: 8,
-              defaultPrice: 214.70,
-              keywords: ['valvula gbc 3/4'],
-              reason: 'Válvulas de bloqueio Danfoss tipo esfera para linhas de sucção'
-            },
-            {
-              name: 'Refrigerante R410 (Garrafa 11KG) (Ver no catálogo do fabricante)',              category: 'Linha frigorígena',
-              unit: 'VB',
-              quantity: 6,
-              defaultPrice: 1600.00,
-              keywords: ['refrigerante r410', 'gas refrigerante r410'],
-              reason: 'Carga inicial e complementação de fluido R-410A para os 8 circuitos frigorígenos'
-            },
-            {
-              name: 'Tubo PVC Soldável 25mm e 32mm para Dreno de Condensado',              category: 'Rede hidráulica',
-              unit: 'm',
-              quantity: 140,
-              defaultPrice: 14.50,
-              keywords: ['tubo pvc soldavel', 'dreno pvc'],
-              reason: 'Rede de drenagem de condensado embutida com caimento por gravidade e sifonamento'
-            },
-            {
-              name: 'CABINHO PP 4x2,5mm²',              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: 280,
-              defaultPrice: 13.37,
-              keywords: ['cabinho pp', 'cabo pp'],
-              reason: 'Interligação elétrica de comando e sinal entre evaporadores e condensadores'
-            },
-            {
-              name: 'QUADRO ELÉTRICO PARA 03 MOTORES ATÉ 5CV SENDO 220 Vca OU 380 Vca (INVERSOR DE FREQUENCIA)',              category: 'Elétrica',
-              unit: 'unid',
-              quantity: 1,
-              defaultPrice: 14600.00,
-              keywords: ['quadro eletrico', 'inversor de frequencia'],
-              reason: 'Quadro elétrico geral de comando, proteção e força para sistema de climatização'
-            },
-            {
-              name: 'Cabo de Cobre Flexível 10 mm² 750V para Alimentação de Força',              category: 'Elétrica',
-              unit: 'm',
-              quantity: 180,
-              defaultPrice: 18.50,
-              keywords: ['cabo 10 mm', 'cabo forca 10mm'],
-              reason: 'Alimentação elétrica principal dos quadros de climatização e condensadoras'
-            },
-            {
-              name: 'Difusor Linear de Teto 2 Vias em Alumínio c/ Pleno 1000mm',              category: 'Dutos',
-              unit: 'un',
-              quantity: 18,
-              defaultPrice: 285.00,
-              keywords: ['difusor linear', 'difusor teto'],
-              reason: 'Difusores lineares arquitetônicos de insuflamento embutidos no forro de gesso'
-            },
-            {
-              name: 'Grelha de Retorno com Filtro G4 Lavável e Porta Filtro 1000x500',              category: 'Dutos',
-              unit: 'un',
-              quantity: 6,
-              defaultPrice: 340.00,
-              keywords: ['grelha retorno', 'porta filtro'],
-              reason: 'Grelhas de captação e retorno de ar com filtro G4 lavável para máquinas Built-In'
-            },
-            {
-              name: 'Conexões, Curvas e Derivações em Cobre para Linhas Frigorígenas',              category: 'Linha frigorígena',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 7500.00,
-              keywords: ['conexoes cobre', 'curvas cobre', 'derivacao cobre'],
-              reason: 'Curvas 90°, luvas de redução, tês e conexões de cobre soldáveis para os circuitos frigorígenos'
-            },
-            {
-              name: 'Perfilado Galvanizado 38x38 Chapa #14 com Tirantes Roscados 3/8 pol',              category: 'Outros',
-              unit: 'cj',
-              quantity: 45,
-              defaultPrice: 145.00,
-              keywords: ['perfilado galvanizado', 'tirante 3/8'],
-              reason: 'Suportação e ancoragem mecânica aérea em laje para máquinas evaporadoras e dutos'
-            },
-            {
-              name: 'Selante Acrílico Mastic + Fita Alumínio + Fita Vitocel SMACNA',              category: 'Dutos',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 3850.00,
-              keywords: ['mastic', 'fita aluminio', 'vitocel'],
-              reason: 'Kit de vedação e pressurização de juntas de dutos e conexões padrão SMACNA'
-            },
-            {
-              name: 'Varetas Silfoscoper + Nitrogênio N2 para Purga de Solda + Gases',              category: 'Outros',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 4610.95,
-              keywords: ['silfoscoper', 'nitrogenio n2', 'purga solda'],
-              reason: 'Consumíveis para brasagem oxicombustível com purga contínua de N2 (sem carepa)'
-            },
-            {
-              name: 'Termostato Digital de Parede Programável Touchscreen para Built-In',              category: 'Automação',
-              unit: 'un',
-              quantity: 4,
-              defaultPrice: 1850.00,
-              keywords: ['termostato digital', 'termostato parede'],
-              reason: `Comando e controle individualizado de temperatura para as ${eqData.numBuiltIn} máquinas Built-In`
-            },
-            {
-              name: 'Caixa de Passagem Embutida para Linhas Frigorígenas com Saída de Dreno',              category: 'Outros',
-              unit: 'un',
-              quantity: 8,
-              defaultPrice: 480.00,
-              keywords: ['caixa de passagem', 'passagem split'],
-              reason: 'Caixas de embutir para passagem e interligação técnica com saída de dreno'
-            },
-            {
-              name: 'Chave Seccionadora Rotativa Blindada 32A com Caixa IP65 (Área Técnica)',              category: 'Elétrica',
-              unit: 'un',
-              quantity: 8,
-              defaultPrice: 385.00,
-              keywords: ['seccionadora rotativa', 'chave seccionadora'],
-              reason: 'Proteção e seccionamento local individual por condensador na laje técnica conforme NR-10'
-            },
-            {
-              name: 'Amortecedores Antivibratórios de Borracha e Mola para Condensadoras',              category: 'Outros',
-              unit: 'cj',
-              quantity: 8,
-              defaultPrice: 330.00,
-              keywords: ['amortecedor antivibratorio', 'coxim condensadora'],
-              reason: 'Atenuação acústica e desacoplamento mecânico de vibração das condensadoras na laje'
+              reason: `Caixas plenum, colarinhos e transições de chapa para as evaporadoras Built-In`
             }
           ];
           requiredItems.push(...acItems);
-        }
-
-        // 2. SUBSISTEMA DE VENTILAÇÃO E EXAUSTÃO MECÂNICA (SE IDENTIFICADO NO PROJETO)
-        if (eqData.hasExhaustSystem && !eqData.isKitchenExhaust) {
-          const exhaustItems = [
-            {
-              name: 'Chapa Galvanizada #26 para Rede de Dutos de Exaustão e Ventilação',              category: 'Dutos',
-              unit: 'kg',
-              quantity: 145,
-              defaultPrice: 12.00,
-              keywords: ['chapa galvanizada exaustao', 'chapa exaustao'],
-              reason: 'Dutos de chapa galvanizada para rede de exaustão e renovação de ar (garagem e áreas técnicas)'
-            },
-            {
-              name: 'Suportação Mecânica e Acessórios SMACNA para Dutos de Exaustão',              category: 'Fixação e Suportação',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 695.35,
-              keywords: ['suporte exaustao', 'acessorios exaustao'],
-              reason: 'Suportes perfilados, cantoneiras e tirantes de fixação aérea para dutos de exaustão'
-            },
-            {
-              name: 'Tubo PVC 100mm para Descarga de Exaustores Sanitários',              category: 'Rede hidráulica',
-              unit: 'm',
-              quantity: 2,
-              defaultPrice: 13.73,
-              keywords: ['tubo pvc 100mm', 'pvc descarga exaustao'],
-              reason: 'Tubulação de descarga e saída estanque para exaustores em shafts técnicos'
-            },
-            {
-              name: 'Terminais de Difusão de Exaustão (Difusores DVK e Venezianas Autofechantes)',              category: 'Dutos',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 1197.91,
-              keywords: ['difusor dvk', 'veneziana autofechante', 'difusao exaustao'],
-              reason: 'Difusores circulares DVK e venezianas de sobrepressão autofechantes especificadas em projeto'
-            },
-            {
-              name: 'Caixas de Comando Elétrico GSP até 1 CV com Proteção e Partida para Exaustores',              category: 'Elétrica',
-              unit: 'un',
-              quantity: 3,
-              defaultPrice: 600.00,
-              keywords: ['caixa gsp', 'comando gsp 1cv'],
-              reason: 'Caixas elétricas de partida, comando e proteção individual dos motores dos 3 exaustores'
-            },
-            {
-              name: 'Cabos e Acessórios Elétricos de Comando para Rede de Exaustão',              category: 'Elétrica',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 360.00,
-              keywords: ['acessorios eletrica exaustao', 'cabo comando exaustor'],
-              reason: 'Infraestrutura de acionamento elétrico e comando para exaustores da garagem e lavabos'
-            },
-            {
-              name: 'Frete e Logística Dedicada para Equipamentos e Dutos de Exaustão',              category: 'Outros',
-              unit: 'vb',
-              quantity: 1,
-              defaultPrice: 480.00,
-              keywords: ['frete exaustao', 'logistica exaustao'],
-              reason: 'Transporte e entrega dos exaustores mecânicos e insumos de exaustão na obra'
-            },
-            {
-              name: 'Insumos Complementares de Montagem Mecânica, Apoios e Fixações de Exaustão',              category: 'Outros',
-              unit: 'cj',
-              quantity: 1,
-              defaultPrice: 882.91,
-              keywords: ['insumos exaustao', 'apoios exaustao'],
-              reason: 'Insumos de fixação, isolamento antivibratório e adaptações de alvenaria para dutos de exaustão'
-            }
-          ];
-          requiredItems.push(...exhaustItems);
         }
       } else {
         // MODO B — Engenharia Reversa por Arquitetura & NBR 16401 (Projetos sem detalhamento executivo)
@@ -1292,6 +1326,7 @@ export class AIAnalysisService {
         auditItems.push({
           material_id: mat.id,
           material_code: mat.code,
+          material_name: mat.name,
           technical_quantity: technicalQuantity,
           final_quantity: finalQuantity,
           match_status: 'REVIEW_REQUIRED',
@@ -1316,6 +1351,7 @@ export class AIAnalysisService {
         auditItems.push({
           material_id: mat.id,
           material_code: mat.code,
+          material_name: mat.name,
           technical_quantity: technicalQuantity,
           final_quantity: finalQuantity,
           match_status: 'EXACT',
@@ -1392,6 +1428,73 @@ export class AIAnalysisService {
             unit: 'gl',
             unitPrice: 7173.00,
             notes: 'Responsabilidade técnica formal perante o conselho regional CREA/RJ'
+          }
+        ];
+      } else if (eqData.hasDucts || (eqData.explicitDuctSegments && eqData.explicitDuctSegments.length > 0)) {
+        // SERVIÇOS E MÃO DE OBRA ESPECIALIZADA — METODOLOGIA SABRAR (19 PASSOS)
+        const ductSegments = eqData.explicitDuctSegments || [];
+        const totalDuctKg = Math.round(ductSegments.reduce((sum, s) => sum + (s.weightKg || 0), 0));
+        const totalInsulationArea = Math.round(ductSegments.reduce((sum, s) => sum + (s.insulationM2 || 0), 0));
+
+        defaultServices = [
+          {
+            category: 'MÃO DE OBRA',
+            description: `Montagem e fabricação mecânica de rede de dutos de chapa galvanizada TDC por equipe de caldeireiros e duteiros (${totalDuctKg} KG de chapa)`,
+            quantity: totalDuctKg,
+            unit: 'KG',
+            unitPrice: 14.00,
+            notes: 'Padrão executivo SMACNA/NBR 16401 com flangeamento TDC e vedação estanque'
+          },
+          {
+            category: 'MÃO DE OBRA',
+            description: `Aplicação de isolamento térmico em lã de vidro 38mm com acabamento em fólio de alumínio (${totalInsulationArea} m²)`,
+            quantity: totalInsulationArea,
+            unit: 'm²',
+            unitPrice: 28.00,
+            notes: 'Fixação com cola especial e fita de alumínio sem pontes térmicas'
+          },
+          ...(eqData.hasCAG ? [
+            {
+              category: 'MÃO DE OBRA ESPECIALIZADA',
+              description: 'Instalação mecânica e soldagem de tubulação de aço carbono SCH 40 para rede de água gelada (CAG)',
+              quantity: 1,
+              unit: 'gl',
+              unitPrice: 16500.00,
+              notes: 'Soldadores industriais qualificados para tubulação hidrônica'
+            }
+          ] : [
+            {
+              category: 'MÃO DE OBRA ESPECIALIZADA',
+              description: 'Execução de linhas frigorígenas de cobre com brasagem oxicombustível sob purga contínua de N2',
+              quantity: 1,
+              unit: 'gl',
+              unitPrice: 9500.00,
+              notes: 'Brasagem foscoper/prata sem geração de carepa interna'
+            }
+          ]),
+          {
+            category: 'SERVIÇOS TÉCNICOS',
+            description: 'Ensaio de estanqueidade e pressão hidrostática/pneumática da rede de tubulações e dutos',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 4500.00,
+            notes: 'Com protocolo técnico digital e emissão de certificado'
+          },
+          {
+            category: 'ENGENHARIA E COMISSIONAMENTO',
+            description: 'Balanceamento aeráulico geral (TAB), parametrização dos termostatos de parede, start-up e comissionamento',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 8500.00,
+            notes: 'Medição anemométrica/balômetro e regulagem de dampers'
+          },
+          {
+            category: 'ENGENHARIA',
+            description: 'Coordenação técnica de engenharia mecânica, compatibilização executiva e ART perante o CREA/RJ',
+            quantity: 1,
+            unit: 'gl',
+            unitPrice: 6500.00,
+            notes: 'Responsabilidade técnica formal perante o CREA/RJ'
           }
         ];
       } else if (eqData.hasExplicitEquipment) {
@@ -1604,176 +1707,6 @@ export class AIAnalysisService {
     const totalServicesCost = Number(defaultServices.reduce((acc, s) => acc + (s.quantity * s.unitPrice), 0).toFixed(2));
 
     // Faturamento Direto (Máquinas e Equipamentos Principais conforme Planilhas Oficiais Sabrar)
-    let totalEquipmentCost = 0;
-    if (isBibiSucos) {
-      totalEquipmentCost = 156190.00; // Faturamento Direto (Máquinas VRV Daikin R$ 79.990 + Coifas/Exaustores R$ 76.200)
-    } else if (eqData.hasExplicitEquipment) {
-      let acCost = 0;
-      let exhaustCost = 0;
-      if (eqData.hasACSystem) {
-        acCost = 239264.00; // Faturamento Direto Máquinas Carrier Multi-Split / Built-In
-      }
-      if (eqData.hasExhaustSystem && !eqData.isKitchenExhaust) {
-        exhaustCost = 4679.00; // Faturamento Direto Exaustores Sicflux (ACI-400 + 2x Inline 100 B com BDI)
-      }
-      totalEquipmentCost = Number((acCost + exhaustCost).toFixed(2));
-    }
-
-    const totalFinalCost = Number((materialsTotal + totalServicesCost + totalEquipmentCost).toFixed(2));
-
-    const budgetOutput = {
-      materials: budgetMaterials,
-      materials_total: materialsTotal,
-      pending_items: pendingItems,
-      thermal_load: isHVAC ? thermalLoad : null,
-      hvac_mode: hvacMode
-    };
-
-    const analysisMetadata = {
-      project_id: projectId,
-      documents_analyzed: documentsAnalyzed,
-      disciplines_detected: disciplines,
-      hvac_mode: hvacMode,
-      thermal_load: isHVAC ? thermalLoad : null,
-      items: auditItems,
-      document_conflicts: documentConflicts
-    };
-
-    const modeLabel = hvacMode === 'MODO_A_DIRETO'
-      ? 'Modo A (Levantamento Direto de Projeto Executivo HVAC)'
-      : 'Modo B (Engenharia Reversa por Arquitetura & NBR 16401)';
-
-    let systemBreakdownText = '';
-    if (eqData.hasACSystem && eqData.hasExhaustSystem) {
-      systemBreakdownText = 'Subsistemas Identificados: Climatização / Ar Condicionado (Expansão Direta) + Ventilação & Exaustão Mecânica. ';
-    } else if (eqData.hasACSystem) {
-      systemBreakdownText = 'Subsistema Identificado: Climatização / Ar Condicionado (Expansão Direta). ';
-    } else if (eqData.hasExhaustSystem) {
-      systemBreakdownText = 'Subsistema Identificado: Ventilação & Exaustão Mecânica. ';
-    }
-
-    const summaryText = `Levantamento de materiais gerado via ${modeLabel}. ${systemBreakdownText}Carga térmica calculada: ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h (${thermalLoad.totalTR} TR para ${estimatedArea} m²). Materiais: R$ ${materialsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. Mão de Obra / Serviços: R$ ${totalServicesCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${totalEquipmentCost > 0 ? `. Faturamento Direto (Máquinas): R$ ${totalEquipmentCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}. Total Geral da Obra: R$ ${totalFinalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
-
-    // Salva ai_analyses
-    const insertAnalysis = db.prepare(`
-      INSERT INTO ai_analyses (project_id, analyzed_documents, confidence_score, historical_factors_applied, summary, raw_extracted_data)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const analysisResult = await insertAnalysis.run(
-      projectId,
-      JSON.stringify(documentsAnalyzed),
-      hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0,
-      JSON.stringify(auditItems.filter(i => i.notes.includes('Calibrado com histórico'))),
-      summaryText,
-      JSON.stringify({ budget: budgetOutput, analysis_metadata: analysisMetadata })
-    );
-
-    const analysisId = analysisResult.lastInsertRowid;
-
-    // Salva ai_suggestions
-    const insertSuggestion = db.prepare(`
-      INSERT INTO ai_suggestions (analysis_id, project_id, material_id, material_name, suggested_quantity, unit, unit_price, subtotal, reasoning, confidence)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const item of budgetMaterials) {
-      const auditMeta = auditItems.find(a => a.material_id === item.material_id);
-      await insertSuggestion.run(
-        analysisId,
-        projectId,
-        item.material_id,
-        item.material_name,
-        item.quantity,
-        item.unit,
-        item.unit_price,
-        item.subtotal,
-        auditMeta?.calculation_summary || 'Sugestão calculada a partir dos projetos técnicos',
-        hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0
-      );
-    }
-
-    // Salva ou atualiza orçamento
-    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
-    let budgetId;
-
-    if (!budget) {
-      const budgetCode = await generateUniqueBudgetCode(db);
-
-      const resBudget = await db.prepare(`
-        INSERT INTO budgets (
-          project_id, code, status, total_materials, total_services,
-          total_labor, total_equipment, total_logistics, total_taxes,
-          total_additional, total_final, validity_days, commercial_terms
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?)
-      `).run(
-        projectId,
-        budgetCode,
-        materialsTotal,
-        totalServicesCost,
-        totalServicesCost,
-        totalEquipmentCost,
-        totalFinalCost,
-        'Condições de pagamento: 30% sinal na assinatura, 40% na entrega dos materiais no canteiro, 30% no comissionamento e entrega da obra. Validade: 15 dias.'
-      );
-      budgetId = resBudget.lastInsertRowid;
-    } else {
-      budgetId = budget.id;
-      await db.prepare(`
-        UPDATE budgets SET
-          total_materials = ?, total_services = ?, total_labor = ?, total_equipment = ?, total_final = ?,
-          status = 'Em revisão', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(materialsTotal, totalServicesCost, totalServicesCost, totalEquipmentCost, totalFinalCost, budgetId);
-
-      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
-      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
-    }
-
-    const insertBudgetItem = db.prepare(`
-      INSERT INTO budget_items (
-        budget_id, material_id, material_name, quantity, unit,
-        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const m of budgetMaterials) {
-      const auditMeta = auditItems.find(a => a.material_id === m.material_id);
-      const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(m.unit || '');
-      const cleanQty = isDiscrete ? Math.ceil(Number(m.quantity || 1)) : Number(Number(m.quantity || 0).toFixed(2));
-      const cleanSubtotal = Number((cleanQty * Number(m.unit_price || 0)).toFixed(2));
-      await insertBudgetItem.run(
-        budgetId,
-        m.material_id,
-        m.material_name,
-        cleanQty,
-        m.unit,
-        m.unit_price,
-        cleanSubtotal,
-        cleanQty,
-        auditMeta?.calculation_summary || 'Sugestão da IA SABRAR',
-        `Item orçado pela Base Central SABRAR via ${modeLabel}`
-      );
-    }
-
-    const insertService = db.prepare(`
-      INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const s of defaultServices) {
-      await insertService.run(
-        budgetId,
-        s.category,
-        s.description,
-        s.quantity,
-        s.unit,
-        s.unitPrice,
-        s.quantity * s.unitPrice,
-        s.notes
-      );
-    }
-
     // Inserção da 3ª sessão: Máquinas & Equipamentos (Faturamento Direto)
     let defaultEquipment = [];
     if (isBibiSucos) {
@@ -1812,6 +1745,26 @@ export class AIAnalysisService {
           notes: 'Exaustor limit load de gordura 4,5 kW e caixa de insuflamento de ar exterior 1,1 kW'
         }
       ];
+    } else if (eqData.machines && eqData.machines.length > 0) {
+      defaultEquipment = eqData.machines.map(m => {
+        let unitPrice = 45000.00;
+        if (m.type.includes('ROOFTOP') || m.type.includes('SPLITÃO')) unitPrice = 75000.00; // 20 TR Carrier
+        else if (m.type.includes('HI WALL')) unitPrice = 5200.00;
+        else if (m.type.includes('BUILT')) unitPrice = 8500.00;
+        else if (m.type.includes('CASSET')) unitPrice = 11000.00;
+
+        return {
+          category: m.type,
+          description: `${m.type} ${m.brand} ${m.model ? '(' + m.model + ') ' : ''}- Capacidade: ${(m.btu || 0).toLocaleString('pt-BR')} BTU/h (~${((m.btu || 0)/12000).toFixed(1)} TR)`,
+          brand: m.brand || 'CARRIER',
+          model: m.model || m.type,
+          quantity: m.qty || 1,
+          unit: 'un',
+          unit_price: unitPrice,
+          subtotal: (m.qty || 1) * unitPrice,
+          notes: 'Faturamento direto fabricante/distribuidor com condições SABRAR'
+        };
+      });
     } else if (eqData.hasExplicitEquipment) {
       defaultEquipment = [
         {
@@ -1916,6 +1869,166 @@ export class AIAnalysisService {
       ];
     }
 
+    let totalEquipmentCost = 0;
+    if (defaultEquipment.length > 0) {
+      totalEquipmentCost = Number(defaultEquipment.reduce((acc, eq) => acc + (eq.subtotal || 0), 0).toFixed(2));
+    }
+
+    const totalFinalCost = Number((materialsTotal + totalServicesCost + totalEquipmentCost).toFixed(2));
+
+    const budgetOutput = {
+      materials: budgetMaterials,
+      materials_total: materialsTotal,
+      pending_items: pendingItems,
+      thermal_load: isHVAC ? thermalLoad : null,
+      hvac_mode: hvacMode
+    };
+
+    const analysisMetadata = {
+      project_id: projectId,
+      documents_analyzed: documentsAnalyzed,
+      disciplines_detected: disciplines,
+      hvac_mode: hvacMode,
+      thermal_load: isHVAC ? thermalLoad : null,
+      items: auditItems,
+      document_conflicts: documentConflicts
+    };
+
+    const modeLabel = hvacMode === 'MODO_A_DIRETO'
+      ? 'Modo A (Levantamento Direto de Projeto Executivo HVAC)'
+      : 'Modo B (Engenharia Reversa por Arquitetura & NBR 16401)';
+
+    let systemBreakdownText = '';
+    if (eqData.hasACSystem && eqData.hasExhaustSystem) {
+      systemBreakdownText = 'Subsistemas Identificados: Climatização / Ar Condicionado (Expansão Direta) + Ventilação & Exaustão Mecânica. ';
+    } else if (eqData.hasACSystem) {
+      systemBreakdownText = 'Subsistema Identificado: Climatização / Ar Condicionado (Expansão Direta). ';
+    } else if (eqData.hasExhaustSystem) {
+      systemBreakdownText = 'Subsistema Identificado: Ventilação & Exaustão Mecânica. ';
+    }
+
+    const summaryText = `Levantamento de materiais gerado via ${modeLabel}. ${systemBreakdownText}Carga térmica calculada: ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h (${thermalLoad.totalTR} TR para ${estimatedArea} m²). Materiais: R$ ${materialsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. Mão de Obra / Serviços: R$ ${totalServicesCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${totalEquipmentCost > 0 ? `. Faturamento Direto (Máquinas): R$ ${totalEquipmentCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}. Total Geral da Obra: R$ ${totalFinalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
+
+    // Salva ai_analyses
+    const insertAnalysis = db.prepare(`
+      INSERT INTO ai_analyses (project_id, analyzed_documents, confidence_score, historical_factors_applied, summary, raw_extracted_data)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const analysisResult = await insertAnalysis.run(
+      projectId,
+      JSON.stringify(documentsAnalyzed),
+      hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0,
+      JSON.stringify(auditItems.filter(i => i.notes.includes('Calibrado com histórico'))),
+      summaryText,
+      JSON.stringify({ budget: budgetOutput, analysis_metadata: analysisMetadata })
+    );
+
+    const analysisId = analysisResult.lastInsertRowid;
+
+    // Salva ai_suggestions
+    const insertSuggestion = db.prepare(`
+      INSERT INTO ai_suggestions (analysis_id, project_id, material_id, material_name, suggested_quantity, unit, unit_price, subtotal, reasoning, confidence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const item of budgetMaterials) {
+      const auditMeta = auditItems.find(a => (item.material_id && a.material_id === item.material_id) || a.material_name === item.material_name);
+      await insertSuggestion.run(
+        analysisId,
+        projectId,
+        item.material_id,
+        item.material_name,
+        item.quantity,
+        item.unit,
+        item.unit_price,
+        item.subtotal,
+        auditMeta?.calculation_summary || 'Sugestão calculada a partir dos projetos técnicos',
+        hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0
+      );
+    }
+
+    // Salva ou atualiza orçamento
+    let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
+    let budgetId;
+
+    if (!budget) {
+      const budgetCode = await generateUniqueBudgetCode(db);
+
+      const resBudget = await db.prepare(`
+        INSERT INTO budgets (
+          project_id, code, status, total_materials, total_services,
+          total_labor, total_equipment, total_logistics, total_taxes,
+          total_additional, total_final, validity_days, commercial_terms
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?)
+      `).run(
+        projectId,
+        budgetCode,
+        materialsTotal,
+        totalServicesCost,
+        totalServicesCost,
+        totalEquipmentCost,
+        totalFinalCost,
+        'Condições de pagamento: 30% sinal na assinatura, 40% na entrega dos materiais no canteiro, 30% no comissionamento e entrega da obra. Validade: 15 dias.'
+      );
+      budgetId = resBudget.lastInsertRowid;
+    } else {
+      budgetId = budget.id;
+      await db.prepare(`
+        UPDATE budgets SET
+          total_materials = ?, total_services = ?, total_labor = ?, total_equipment = ?, total_final = ?,
+          status = 'Em revisão', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(materialsTotal, totalServicesCost, totalServicesCost, totalEquipmentCost, totalFinalCost, budgetId);
+
+      await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
+      await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
+    }
+
+    const insertBudgetItem = db.prepare(`
+      INSERT INTO budget_items (
+        budget_id, material_id, material_name, quantity, unit,
+        unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const m of budgetMaterials) {
+      const auditMeta = auditItems.find(a => (m.material_id && a.material_id === m.material_id) || a.material_name === m.material_name);
+      const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(m.unit || '');
+      const cleanQty = isDiscrete ? Math.ceil(Number(m.quantity || 1)) : Number(Number(m.quantity || 0).toFixed(2));
+      const cleanSubtotal = Number((cleanQty * Number(m.unit_price || 0)).toFixed(2));
+      await insertBudgetItem.run(
+        budgetId,
+        m.material_id,
+        m.material_name,
+        cleanQty,
+        m.unit,
+        m.unit_price,
+        cleanSubtotal,
+        cleanQty,
+        auditMeta?.calculation_summary || 'Sugestão da IA SABRAR',
+        `Item orçado pela Base Central SABRAR via ${modeLabel}`
+      );
+    }
+
+    const insertService = db.prepare(`
+      INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const s of defaultServices) {
+      await insertService.run(
+        budgetId,
+        s.category,
+        s.description,
+        s.quantity,
+        s.unit,
+        s.unitPrice,
+        s.quantity * s.unitPrice,
+        s.notes
+      );
+    }
+
     if (defaultEquipment.length > 0) {
       await db.prepare('DELETE FROM budget_equipment WHERE budget_id = ?').run(budgetId);
       const insertEquipment = db.prepare(`
@@ -1969,7 +2082,7 @@ export class AIAnalysisService {
         unit: m.unit,
         unitPrice: m.unit_price,
         subtotal: m.subtotal,
-        reason: auditItems.find(a => a.material_id === m.material_id)?.calculation_summary || '',
+        reason: auditItems.find(a => (m.material_id && a.material_id === m.material_id) || a.material_name === m.material_name)?.calculation_summary || '',
         confidence: hvacMode === 'MODO_A_DIRETO' ? 98.0 : 93.0
       })),
       budget: budgetOutput,

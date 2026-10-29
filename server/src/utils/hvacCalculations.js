@@ -135,34 +135,50 @@ export function calculateHydraulicMeters(linearMeters) {
 
 /**
  * Extrai trechos explícitos de dutos presentes no texto de plantas, memoriais ou anotações CAD
- * Reconhece formatos: "60x40", "70 x 40 cm", "duto 100x50", "800x400 mm", etc.
+ * Reconhece formatos: "I-120x45", "R-100x70", "duto 60x40", "70 x 40 cm", "seção 100x50", etc.
+ * Aplica as diretrizes oficiais de sistemas e isolamento (Passo 2.2, 3.1 e 9 da SABRAR).
  */
 export function extractDuctSegmentsFromText(text) {
   if (!text) return [];
 
   const segments = [];
-  // Procura padrões como "duto 60x40", "70x40 cm", "seção 100x50", "800x400", "L=5m", "comprimento 12m"
-  const regex = /(?:(?:duto|dutos|se[çc][aã]o|dimens[aã]o|trecho)\s*)?(\d{2,4})\s*[xX*×]\s*(\d{2,4})(?:\s*(cm|mm))?(?:[^\n\r\d]{1,25}?(?:comp(?:rimento)?|extens[aã]o|l)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*m)?/gi;
+  // Procura padrões de dutos com ou sem prefixos de aplicação: I-120x45, R-100x70, duto 60x40, etc.
+  const regex = /(?:(?:duto|dutos|se[çc][aã]o|dimens[aã]o|trecho)\s*)?(?:([IRVAEP]+|EX|AE|AR|RET|INS|PRESS)[-_ ])?(\d{2,4})\s*[xX*×]\s*(\d{2,4})(?:\s*(cm|mm))?(?:[^\n\r\d]{1,25}?(?:comp(?:rimento)?|extens[aã]o|l)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*m)?/gi;
 
-  const isBlackSteelContext = /cozinha|gordura|melting|chapa\s*preta|nbr\s*14518/i.test(text);
-  const isPressurizationContext = /pressuriz/i.test(text);
+  const isGlobalBlackSteel = /cozinha|gordura|melting|chapa\s*preta|nbr\s*14518/i.test(text);
+  const isGlobalPressurization = /pressuriz/i.test(text);
 
   let match;
   while ((match = regex.exec(text)) !== null) {
-    let dim1 = parseInt(match[1], 10);
-    let dim2 = parseInt(match[2], 10);
-    const unit = (match[3] || '').toLowerCase();
-    const lengthRaw = match[4];
+    const rawPrefix = (match[1] || '').toUpperCase();
+    let dim1 = parseInt(match[2], 10);
+    let dim2 = parseInt(match[3], 10);
+    const unit = (match[4] || '').toLowerCase();
+    const lengthRaw = match[5];
 
-    // Se a unidade for mm ou valores típicos em milímetros (> 200), converte para cm
-    if (unit === 'mm' || (dim1 > 150 && dim1 % 50 === 0 && dim2 > 150 && dim2 % 50 === 0)) {
+    // Se a unidade for mm ou valores típicos em milímetros (> 200 e múltiplos de 50), converte para cm
+    if (unit === 'mm' || (dim1 > 150 && dim1 % 50 === 0 && dim2 > 150 && dim2 % 50 === 0 && !rawPrefix)) {
       dim1 = Math.round(dim1 / 10);
       dim2 = Math.round(dim2 / 10);
     }
 
-    // Filtra falsos positivos (como 1920x1080 ou 600x600 de difusor/luminária ou dimensões espúrias)
+    // Filtra falsos positivos (ex: 250x100 de portas, 600x600 de difusores, etc.)
     if (dim1 < 10 || dim1 > 400 || dim2 < 10 || dim2 > 400) continue;
-    if (dim1 === 600 && dim2 === 600) continue; // Difusor modular 600x600
+    if (dim1 === 600 && dim2 === 600) continue;
+    if (dim1 === 250 && dim2 === 100 && !rawPrefix) continue; // vão de porta
+
+    const isSupply = rawPrefix.startsWith('I') || rawPrefix.startsWith('INS');
+    const isReturn = rawPrefix.startsWith('R') || rawPrefix.startsWith('RET');
+    const isExhaust = rawPrefix.startsWith('EX');
+    const isOutdoorAir = rawPrefix.startsWith('AE') || rawPrefix.startsWith('AR');
+    const isPressurization = rawPrefix.startsWith('P') || rawPrefix.startsWith('PRESS') || isGlobalPressurization;
+    const isBlackSteel = isGlobalBlackSteel || (isExhaust && /cozinha|gordura/i.test(text));
+
+    let system = 'Insuflamento';
+    if (isReturn) system = 'Retorno';
+    else if (isExhaust) system = 'Exaustão';
+    else if (isOutdoorAir) system = 'Ar Exterior';
+    else if (isPressurization) system = 'Pressurização';
 
     const lengthM = lengthRaw ? parseFloat(lengthRaw.replace(',', '.')) : 3.0; // Padrão 3m por vara/trecho se não informado
     const widthCm = dim1;  // 1ª medida = largura
@@ -170,11 +186,25 @@ export function extractDuctSegmentsFromText(text) {
 
     const perimeterM = calculateDuctPerimeter(widthCm, heightCm);
     const areaM2 = calculateDuctArea(perimeterM, lengthM);
-    const gauge = determineDuctGauge(widthCm, heightCm, isBlackSteelContext, isPressurizationContext);
+    const gauge = determineDuctGauge(widthCm, heightCm, isBlackSteel, isPressurization);
     const weightKg = calculateDuctKg(areaM2, gauge);
-    const insulationM2 = calculateDuctInsulation(areaM2);
+
+    // Passo 3.1 & Passo 9:
+    // Insuflamento: Lã de vidro 38 mm x1,40
+    // Retorno: Sem isolamento
+    // Ar exterior (se condicionadora): x1,40
+    // Exaustão de sanitários: Sem isolamento
+    // Exaustão de cozinha: Lã de rocha x1,40
+    let insulationM2 = 0;
+    if (isSupply || isOutdoorAir) {
+      insulationM2 = calculateDuctInsulation(areaM2);
+    } else if (isBlackSteel) {
+      insulationM2 = calculateDuctInsulation(areaM2); // Lã de rocha
+    }
 
     segments.push({
+      prefix: rawPrefix || (system === 'Retorno' ? 'R' : 'I'),
+      system,
       widthCm,
       heightCm,
       lengthM,
@@ -183,8 +213,8 @@ export function extractDuctSegmentsFromText(text) {
       gauge,
       weightKg,
       insulationM2,
-      isBlackSteel: isBlackSteelContext,
-      isPressurization: isPressurizationContext
+      isBlackSteel,
+      isPressurization
     });
   }
 
