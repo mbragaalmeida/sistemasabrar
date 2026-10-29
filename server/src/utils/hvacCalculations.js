@@ -64,6 +64,74 @@ export function calculateDuctInsulation(areaSqm) {
 }
 
 /**
+ * Insumos e Quantitativos para Dutos em Painel Pré-Isolado de Poliuretano/PIR (MPU)
+ * Conforme NBR 16401 e critérios técnicos Sabrar para sistema MPU:
+ * - Painéis MPU 20mm (interno) e MPU 30mm (externo) com 20% de perda da OP (fator 1,20)
+ * - Peças de painel: chapa padrão 2,0m x 1,2m = 2,40 m² por peça
+ * - Perfil de conexão em alumínio: barras de 3 metros (junta a cada 1,20m)
+ * - Cola adesiva para MPU: 1 lata de 1L por 20 m² de duto
+ * - Fita adesiva de alumínio 50mm x 50m: 1 rolo por 40 m² de duto
+ * - Selante / silicone neutro interno para MPU: 1 tubo por 25 m² de duto
+ * - Cantos de reforço estrutural MPU: 4 por junta/trecho
+ */
+export function calculateMPUDuctPanels(totalAreaSqm, hasExternalDeck = true) {
+  const area = Number(totalAreaSqm) || 0;
+  const areaWithLoss = Number((area * 1.20).toFixed(2)); // 20% de perda da OP
+
+  let internalArea = areaWithLoss;
+  let externalArea = 0;
+
+  if (hasExternalDeck) {
+    // ~18% dos trechos em patamar técnico/cobertura externa (30mm) e 82% interno (20mm)
+    externalArea = Number((areaWithLoss * 0.18).toFixed(2));
+    internalArea = Number((areaWithLoss * 0.82).toFixed(2));
+  }
+
+  const internalPieces = Math.ceil(internalArea / 2.40);
+  const externalPieces = externalArea > 0 ? Math.ceil(externalArea / 2.40) : 0;
+
+  return {
+    totalAreaSqm: area,
+    totalAreaWithLoss: areaWithLoss,
+    internalArea,
+    externalArea,
+    internalPieces,
+    externalPieces
+  };
+}
+
+export function calculateMPUSupplies(totalAreaSqm, totalPerimeterM, totalLengthM = 0) {
+  const areaWithLoss = (Number(totalAreaSqm) || 0) * 1.20;
+  const perimeter = Number(totalPerimeterM) || 0;
+
+  // Perfil de conexão alumínio: juntas a cada 1,20m + 15% de margem
+  const totalProfileMeters = Number(((perimeter / 1.20) * 1.15).toFixed(1));
+  const profileBars3m = Math.ceil(totalProfileMeters / 3);
+
+  // Cola adesiva para MPU: 1L a cada 20 m²
+  const colaLatas = Math.max(2, Math.ceil(areaWithLoss / 20));
+
+  // Fita de alumínio 50mmx50m: 1 rolo a cada 40 m²
+  const fitaAluminioRolos = Math.max(2, Math.ceil(areaWithLoss / 40));
+
+  // Selante para dutos MPU: 1 tubo a cada 25 m²
+  const selanteTubos = Math.max(2, Math.ceil(areaWithLoss / 25));
+
+  // Cantoneiras de reforço para MPU (4 cantos por junta)
+  const numJoints = Math.ceil(perimeter / 1.20);
+  const cantosReforco = Math.max(8, numJoints * 4);
+
+  return {
+    totalProfileMeters,
+    profileBars3m,
+    colaLatas,
+    fitaAluminioRolos,
+    selanteTubos,
+    cantosReforco
+  };
+}
+
+/**
  * Passo 11: Insumos para instalação dos dutos TDC
  */
 export function calculateDuctTDCSupplies(totalPerimeterM) {
@@ -147,6 +215,7 @@ export function extractDuctSegmentsFromText(text) {
 
   const isGlobalBlackSteel = /cozinha|gordura|melting|chapa\s*preta|nbr\s*14518/i.test(text);
   const isGlobalPressurization = /pressuriz/i.test(text);
+  const isGlobalMPU = /mpu|pain[eé]is?\s+de\s+alum[ií]nio\s+pr[eé]-?isolado|espuma\s+r[ií]gida\s+de\s+poliuretano/i.test(text);
 
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -173,6 +242,7 @@ export function extractDuctSegmentsFromText(text) {
     const isOutdoorAir = rawPrefix.startsWith('AE') || rawPrefix.startsWith('AR');
     const isPressurization = rawPrefix.startsWith('P') || rawPrefix.startsWith('PRESS') || isGlobalPressurization;
     const isBlackSteel = isGlobalBlackSteel || (isExhaust && /cozinha|gordura/i.test(text));
+    const isMPU = isGlobalMPU && !isBlackSteel;
 
     let system = 'Insuflamento';
     if (isReturn) system = 'Retorno';
@@ -190,16 +260,19 @@ export function extractDuctSegmentsFromText(text) {
     const weightKg = calculateDuctKg(areaM2, gauge);
 
     // Passo 3.1 & Passo 9:
-    // Insuflamento: Lã de vidro 38 mm x1,40
-    // Retorno: Sem isolamento
+    // MPU: Pré-isolado (sem isolamento externo adicional)
+    // Insuflamento metálico: Lã de vidro 38 mm x1,40
+    // Retorno metálico: Sem isolamento
     // Ar exterior (se condicionadora): x1,40
     // Exaustão de sanitários: Sem isolamento
     // Exaustão de cozinha: Lã de rocha x1,40
     let insulationM2 = 0;
-    if (isSupply || isOutdoorAir) {
-      insulationM2 = calculateDuctInsulation(areaM2);
-    } else if (isBlackSteel) {
-      insulationM2 = calculateDuctInsulation(areaM2); // Lã de rocha
+    if (!isMPU) {
+      if (isSupply || isOutdoorAir) {
+        insulationM2 = calculateDuctInsulation(areaM2);
+      } else if (isBlackSteel) {
+        insulationM2 = calculateDuctInsulation(areaM2); // Lã de rocha
+      }
     }
 
     segments.push({
@@ -214,7 +287,8 @@ export function extractDuctSegmentsFromText(text) {
       weightKg,
       insulationM2,
       isBlackSteel,
-      isPressurization
+      isPressurization,
+      isMPU
     });
   }
 

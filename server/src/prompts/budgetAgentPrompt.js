@@ -986,7 +986,35 @@ Quando o projeto ou memorial não especificar o material ou isolamento, utilizar
   - Duto galvanizado;
   - Conexão TDC;
   - Sem isolamento.
-Caso o projeto ou memorial especifique um material ou solução diferente, deve prevalecer a especificação do projeto.
+
+REGRA DE SOBREPOSIÇÃO — CASO O PROJETO OU MEMORIAL ESPECIFIQUE UM MATERIAL DIFERENTE (EX: MPU):
+Caso o projeto, plantas, legenda ou notas especifiquem um material ou solução diferente, PREVALECE SEMPRE A ESPECIFICAÇÃO DO PROJETO.
+
+A) ESPECIFICAÇÃO MPU (PAINÉIS DE ALUMÍNIO PRÉ-ISOLADO COM POLIURETANO / PIR):
+Quando a LEGENDA, as NOTAS SOBRE O PROJETO ou o MEMORIAL indicarem "MPU", "painéis de alumínio pré-isolado" ou "espuma rígida de poliuretano":
+1. Material do Duto:
+   - Dutos em Painel MPU 20mm (para áreas internas);
+   - Dutos em Painel MPU 30mm (para áreas externas / patamar técnico, quando indicado em legenda ou notas);
+   - Quantitativo: medido em m² com fator de 20% de perda da OP (fator 1,20) ou em peças padrão de 2,40 m² (chapas 2,0m x 1,2m);
+   - O painel MPU já possui isolamento térmico próprio incorporado (PUR/PIR com condutividade 0,022 W/mK e dupla face de alumínio gofrado) — NUNCA adicionar isolamento em lã de vidro para dutos MPU.
+2. Insumos e Acessórios Oficiais MPU (conforme catálogo SABRAR):
+   - Perfil de Conexão Alumínio para MPU (Barra c/ 3m): perfil invisível tipo H para junção de painéis MPU (perímetro / 1,20 barras);
+   - Cola Adesiva para Perfil e Painel de MPU: adesivo especial de contato para montagem das juntas (1 lata de 1L a cada 20 m² de duto);
+   - Fita de Alumínio 50mm x 50m MPU: para vedação hermética externa longitudinal e transversal das juntas (1 rolo a cada 40 m² de duto);
+   - Selante para Dutos MPU: silicone/selante neutro para vedação interna dos cantos contra vazamento de ar (1 tubo a cada 25 m² de duto);
+   - Canto de Reforço para MPU (20mm): cantoneiras plásticas/alumínio estruturais para reforço dos vértices (4 cantos por junta);
+   - Suportação Aérea a cada 1,50m (Passo 12): Perfilado 38x38 #14 + 2 Tirantes 1/4" barras de 3m + 2 Chumbadores CBA 1/4" + 4 Porcas e Arruelas 1/4".
+3. PROIBIDO PARA SISTEMAS MPU:
+   - NUNCA orçar cantos TDC de chapa de aço, parafusos 5/16" para flange TDC, fita de vedação TDC ou manta de lã de vidro 38mm para redes em MPU.
+
+B) TABELAS EXPLÍCITAS DO PROJETO CAD (LISTA DE MATERIAL / LEGENDA / QUADRO DE EQUIPAMENTOS):
+Quando o projeto contiver blocos de "LISTA DE MATERIAL", "QUADRO DE EQUIPAMENTOS", "RELAÇÃO DE MATERIAIS" ou etiquetas numeradas nas plantas (TAGs 01, 02, 03...):
+- Os itens, quantidades, modelos e marcas descritos na tabela do projeto possuem PRIORIDADE ABSOLUTA sobre qualquer estimativa genérica por metro quadrado.
+- Exemplo: Se a Lista de Material do CAD indica 55 Difusores 15"x15" com registro e plenum (Tropical), 4 Grelhas 600x300mm (Tropical), 5 Dampers de vazão (Tropical), 3 Evaporadoras Splitão 20 TR (Hitachi) e 3 Condensadoras Air 365 22 HP (Hitachi), o orçamento DEVE conter exatamente esses itens e essas quantidades.
+
+C) TUBULAÇÃO: REFRIGERAÇÃO EXPANSÃO DIRETA VS ÁGUA GELADA (CAG):
+- Quando a legenda indicar "TUBULAÇÃO DE GÁS REFRIGERANTE" ou sistema com unidades condensadoras/evaporadoras expansão direta, utilizar Tubulação de Cobre com 25% de perda (Passo 13) e Isolamento Térmico Elastomérico tipo Armaflex tubo a tubo 1:1.
+- NUNCA incluir tubulação de aço carbono SCH 40 ou válvulas de água gelada (CAG) se o projeto especificar gás refrigerante / expansão direta.
 
 4. COMO MEDIR OS DUTOS
 Para cada trecho de duto, devemos levantar:

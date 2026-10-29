@@ -132,8 +132,10 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
   const unitNorm = normalizeTechString(unit);
   const queryGauges = extractExactGauges(searchNorm);
 
-  const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua']);
+  const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua', 'tamanho', 'dimensao', 'medida', 'fabricante', 'ref', 'modelo']);
   const searchWords = searchNorm.split(' ').filter(w => w.length > 2 && !STOP_WORDS.has(w));
+
+  const isEquipmentOrDuctOrAirDiffusion = /(?:damper|difusor|grelha|veneziana|duto|coifa|exaustor|ventilador|evaporadora|condensadora|splitao|fancoil|chiller)/i.test(searchNorm);
 
   const candidates = [];
 
@@ -144,6 +146,10 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
     const entryNorm = normalizeTechString(entry.item);
     const synonymsNorm = normalizeTechString(entry.synonyms || '');
     const categoryNorm = normalizeTechString(entry.category);
+
+    // Evita falsos positivos grosseiros (ex: Difusores/Dampers/Dutos casando com Parafusos, Terminais ou Abraçadeiras)
+    const isFastenerEntry = /(?:parafuso|arruela|porca|bucha|rebite|abracadeira|terminal|garfo)/i.test(entryNorm) || categoryNorm.includes('fixacao');
+    if (isEquipmentOrDuctOrAirDiffusion && isFastenerEntry) continue;
 
     // Verificação rigorosa de bitola
     const entryGauges = extractExactGauges(`${entryNorm} ${synonymsNorm}`);
