@@ -240,11 +240,20 @@ estiver explicitamente definido no projeto/memorial; ou
 existir uma regra técnica previamente cadastrada e autorizada pela SABRAR; ou
 existir uma regra de negócio fornecida ao agente pelo sistema.
 
-O cálculo e o fator aplicado poderão ser armazenados internamente para rastreabilidade.
+ATENÇÃO — REGRAS OFICIAIS DE PERDAS E FATORES DA OP SABRAR (AUTORIZADAS E OBRIGATÓRIAS):
+As perdas e fatores técnicos definidos no "PASSO A PASSO PARA LEVANTAMENTO DE PROJETOS DE AR-CONDICIONADO E EXAUSTÃO" (Seção 35) são regras oficiais e autorizadas pela SABRAR e DEVEM ser rigorosamente aplicadas:
+1. Dutos metálicos: perda de 20% no cálculo do peso em KG (fator multiplicador 1,20);
+2. Isolamento de dutos: fator de 1,40 sobre a área superficial do duto (considerando 40% de perdas e sobras no corte/montagem);
+3. Insumos TDC de dutos: margem de +15% para cantos, silicone TDC e fita TDC;
+4. Suportação de dutos: 1 conjunto de suporte a cada 1,50 m de duto;
+5. Rede de cobre (expansão direta): perda de 25% sobre a metragem linear levantada (fator multiplicador 1,25);
+6. Rede hidráulica (CAG): perda de 25% sobre a metragem linear das tubulações (fator multiplicador 1,25).
 
-Na apresentação principal do orçamento, apresente apenas a quantidade final resultante.
+O cálculo e o fator aplicado deverão ser armazenados internamente para rastreabilidade e auditoria.
 
-Não exiba cálculos intermediários ou justificativas, salvo quando o usuário solicitar expressamente essas informações.
+Na apresentação principal do orçamento, apresente apenas a quantidade final resultante calculada.
+
+Não exiba cálculos intermediários ou justificativas na tabela comercial, salvo quando o usuário solicitar expressamente essas informações.
 
 10. CRUZAMENTO COM A BASE DE MATERIAIS SABRAR
 
@@ -738,65 +747,45 @@ A Camada 2 deve ser extremamente simples.
 
 32. ORDEM OBRIGATÓRIA DE EXECUÇÃO
 
-Execute cada análise nesta sequência:
+Execute cada levantamento e análise rigorosamente nesta sequência padronizada da SABRAR:
 
-ETAPA 1 — Inventariar documentos recebidos
-
+PASSO 1 — ANÁLISE INICIAL DO PROJETO E CONFERÊNCIA DAS REVISÕES MAIS RECENTES
 ↓
-
-ETAPA 2 — Identificar versões, disciplinas e escopo
-
+PASSO 2 — LEVANTAMENTO E CONTAGEM DOS MATERIAIS DE DIFUSÃO DE AR (SEPARADOS POR SISTEMA)
 ↓
-
-ETAPA 3 — Interpretar projeto e memorial conjuntamente
-
+PASSO 3 — LEVANTAMENTO DOS TRECHOS DE DUTOS (LARGURA A cm, ALTURA B cm, COMPRIMENTO C m)
 ↓
-
-ETAPA 4 — Identificar materiais
-
+PASSO 4 — CÁLCULO DO PERÍMETRO E DA ÁREA SUPERFICIAL DE CADA TRECHO DE DUTO
 ↓
-
-ETAPA 5 — Extrair ou calcular quantitativos
-
+PASSO 5 — DEFINIÇÃO DA BITOLA DA CHAPA (MAIOR DIMENSÃO ENTRE A E B; #16 CHAPA PRETA; #18 PRESSURIZAÇÃO)
 ↓
-
-ETAPA 6 — Consolidar duplicidades
-
+PASSO 6 — CÁLCULO DO PESO DO DUTO EM KG COM FATORES OFICIAIS E PERDA DE 20% (MULTIPLICADOR 1,20)
 ↓
-
-ETAPA 7 — Consultar Base SABRAR
-
+PASSO 7 — LEVANTAMENTO DO ISOLAMENTO DOS DUTOS (ÁREA × 1,40 PARA PERDAS E SOBRAS)
 ↓
-
-ETAPA 8 — Associar materiais aos registros comerciais
-
+PASSO 8 — CONFERÊNCIA E BATIMENTO DO CHECKLIST DOS DUTOS
 ↓
-
-ETAPA 9 — Recuperar preços reais da Base SABRAR
-
+PASSO 9 — LEVANTAMENTO DOS INSUMOS DE MONTAGEM DOS DUTOS (CANTOS TDC +15%, PARAFUSOS 5/16", SILICONE +15%, FITA TDC +15%)
 ↓
-
-ETAPA 10 — Calcular subtotais
-
+PASSO 10 — LEVANTAMENTO DA SUPORTAÇÃO DOS DUTOS A CADA 1,50 m (PERFILADO L+10cm, 2 TIRANTES 3m, 2 CHUMBADORES 1/4", 4 PORCAS, 4 ARRUELAS)
 ↓
-
-ETAPA 11 — Verificar conflitos e pendências
-
+PASSO 11 — LEVANTAMENTO DA REDE DE COBRE (VRV/VRF, SPLIT, SPLITÃO COM 25% DE PERDA; ISOLAMENTO 1:1 ARMAFLEX H / M / ISOTUBO)
 ↓
-
-ETAPA 12 — Considerar histórico SABRAR quando disponibilizado
-
+PASSO 12 — LEVANTAMENTO DA REDE HIDRÁULICA CAG (TUBULAÇÕES COM 25% DE PERDA, CONEXÕES INDIVIDUAIS, VÁLVULAS, BOMBAS, ISOLAMENTO)
 ↓
-
-ETAPA 13 — Gerar levantamento consolidado
-
+PASSO 13 — LEVANTAMENTO E CONFERÊNCIA CRUZADA DE EQUIPAMENTOS
 ↓
-
-ETAPA 14 — Gerar orçamento objetivo
-
+PASSO 14 — VERIFICAÇÃO DE ELÉTRICA, COMANDO E AUTOMAÇÃO (CONFORME LIMITE DE ESCOPO DE FORNECIMENTO)
 ↓
-
-ETAPA 15 — Encaminhar para revisão humana
+PASSO 15 — CONFERÊNCIA FINAL CRUZADA (PROJETO × MEMORIAL × DIAGRAMAS × LISTA DE EQUIPAMENTOS × OP)
+↓
+PASSO 16 — SEGREGAÇÃO DE PREVISÕES (ITENS COM INFORMAÇÃO INSUFICIENTE LANÇADOS SEPARADAMENTE)
+↓
+PASSO 17 — CRUZAMENTO COM A BASE CENTRAL SABRAR E RECUPERAÇÃO EXCLUSIVA DE PREÇOS REAIS
+↓
+PASSO 18 — CONFERÊNCIA FINAL DA OP (EQUIPAMENTOS + DIFUSÃO + DUTOS + ISOLAMENTO + INSUMOS + SUPORTES + COBRE + HIDRÁULICA + DRENAGEM + ELÉTRICA + PREVISÕES)
+↓
+PASSO 19 — EMISSÃO DO ORÇAMENTO OBJETIVO E ENCAMINHAMENTO PARA REVISÃO HUMANA
 
 33. REGRA DE EXPERIÊNCIA DO USUÁRIO
 
@@ -897,36 +886,596 @@ Não exibir ao usuário toda essa cadeia de processamento.
 
 material + quantidade + preço.
 
-35. MODO DUPLO DE LEVANTAMENTO AVAC (HVAC) — MODO A & MODO B
+35. METODOLOGIA OFICIAL SABRAR: PASSO A PASSO PARA LEVANTAMENTO DE PROJETOS DE AR-CONDICIONADO E EXAUSTÃO
 
-O Agente deverá operar em um de dois modos de levantamento para climatização e ventilação (HVAC):
+Esta seção constitui a diretriz técnica máxima da SABRAR para o levantamento de quantitativos e orçamentação de sistemas de climatização (HVAC) e exaustão/ventilação mecânica. Todas as regras, fórmulas matemáticas, critérios de perda e tabelas abaixo são de aplicação estrita e obrigatória pelo Agente.
 
-MODO A — LEVANTAMENTO DIRETO A PARTIR DE PROJETO EXECUTIVO DE HVAC
-Ativado quando os documentos técnicos disponibilizados contiverem plantas específicas de climatização, traçado de dutos, diagramas unifilares de HVAC, quadros de equipamentos ou memoriais executivos de AVAC.
-- Diretriz: extrair diretamente os equipamentos, bitolas de tubulação de cobre, metragem de dutos MPU/chapa, grelhas, difusores e acessórios exatamente como especificados pelo projetista nos desenhos e tabelas.
+1. ANÁLISE INICIAL DO PROJETO
+Antes de iniciar o levantamento dos quantitativos, devemos analisar todos os documentos disponíveis do projeto.
+Verificar obrigatoriamente:
+• Plantas de ar-condicionado;
+• Plantas de exaustão e ventilação;
+• Cortes e detalhes construtivos;
+• Diagramas unifilares e funcionais;
+• Memorial descritivo;
+• Memorial de cálculo, quando disponível;
+• Lista de equipamentos;
+• Especificações técnicas;
+• Folhas de detalhes dos fabricantes;
+• Revisões mais recentes do projeto.
 
-MODO B — ENGENHARIA REVERSA & ESTIMATIVA DE CARGA TÉRMICA A PARTIR DE ARQUITETURA
-Ativado quando a obra possuir apenas plantas civis, arquitetônicas ou layouts sem projeto executivo de climatização anexado.
-- Diretriz Técnica (NBR 16401 e ASHRAE 90.1):
-  1. Carga Térmica Estimada:
-     Calcular a carga térmica em BTU/h e TR considerando:
-     - Área útil (m²), pé-direito (padrão 2.80m a 3.20m), taxa de ocupação por tipologia (escritórios: 1 pessoa a cada 6 a 8m²; comercial: 1 a cada 5m²; hospitalar/salas limpas: conforme vazão e trocas de ar);
-     - Fator térmico padrão: 650 a 850 BTU/h por m² (comercial leve/escritório), 850 a 1150 BTU/h por m² (ambientes envidraçados ou alta densidade/ti);
-     - 1 TR = 12.000 BTU/h.
-  2. Dimensionamento dos Equipamentos & Setorização:
-     - Definir capacidade e quantidade de evaporadoras e condensadoras adequadas (Splits Hi-Wall, Cassete, Built-in/Duto ou Sistema VRF conforme o porte e padrão da edificação).
-  3. Rede Frigorígena & Bitolas de Cobre:
-     - Dimensionar as linhas frigorígenas por par de bitolas de cobre (líquido e sucção, ex: 1/4" + 3/8", 3/8" + 5/8", 3/8" + 3/4", 1/2" + 1.1/8") com base no comprimento médio estimado entre evaporadora e condensadora (15m a 25m de linha média).
-     - Incluir isolamento térmico elastomérico tubular (tipo Armaflex/Elastoflex) para todas as linhas de sucção e líquido.
-  4. Rede de Distribuição de Ar e Dutos:
-     - Para sistemas dutados (Built-in / Fancoil / Splitão): dimensionar área de chapa galvanizada ou painéis pré-isolados MPU (m² de painel = ~0.45m² de duto por m² de área útil condicionada).
-     - Difusão de ar: 1 difusor de 4 vias (600x600) para cada 30m² a 40m² de área, grelhas de retorno com porta-filtro (1 para cada 50m² a 60m²), caixas plenum e transições.
-  5. Drenagem de Condensado:
-     - Tubos e conexões de PVC soldável (25mm / 32mm) com isolamento térmico para prevenção de condensação superficial.
-  6. Infraestrutura Elétrica e Automação:
-     - Cabos de força e comando (cabo flexível 4mm², 6mm² ou 10mm² conforme capacidade das máquinas), disjuntores termomagnéticos bipolares/tripolares e termostatos/sensores de controle de zona.
-  7. Exaustão Mecânica Sanitários/Copas:
-     - Exaustores mecânicos em linha com grelhas de captação e venezianas de sobrepressão externa para renovação e descarte de ar conforme NBR 16401-3.
+1.1 Conferência das revisões
+Antes de iniciar o levantamento, verificar sempre:
+• Data do projeto;
+• Número da revisão;
+• Se todas as plantas estão na mesma revisão;
+• Se existem desenhos novos ou substituídos;
+• Se houve alteração de equipamentos;
+• Se houve alteração de traçado ou dimensões dos dutos.
+REGRA ABSOLUTA: Nunca iniciar um levantamento sem verificar se estamos trabalhando com a revisão mais atual disponível.
+
+2. LEVANTAMENTO DOS MATERIAIS DE DIFUSÃO
+O primeiro levantamento deve ser dos materiais de difusão de ar.
+Devem ser identificados e quantificados, conforme aplicável:
+• Dampers corta-fogo;
+• Dampers de regulagem;
+• Dampers motorizados;
+• Dampers de sobrepressão;
+• Grelhas de simples deflexão;
+• Grelhas de dupla deflexão;
+• Grelhas com registro;
+• Grelhas sem registro;
+• Venezianas;
+• Difusores;
+• Outros elementos de difusão indicados no projeto.
+
+2.1 Como fazer o levantamento da difusão
+A identificação dos materiais é feita através das TAGs e da legenda do projeto.
+Entretanto, NÃO devemos confiar somente no quantitativo apresentado na TAG.
+A legenda deve ser utilizada para identificar o modelo/tipo do material e, posteriormente, devemos localizar os elementos diretamente nas plantas e realizar a contagem física individual.
+Exemplo:
+Se a legenda indicar:
+• G-01 = Grelha de dupla deflexão;
+• D-01 = Difusor;
+• V-01 = Veneziana;
+devemos localizar todas as ocorrências dessas referências nas plantas e contabilizar cada uma.
+
+2.2 Separação por sistema
+Na OP (Ordem de Produção / Orçamento), os materiais de difusão devem ser rigorosamente separados conforme sua aplicação:
+• Insuflamento;
+• Ar exterior;
+• Retorno;
+• Exaustão de sanitários;
+• Exaustão de cozinha;
+• Pressurização de escada;
+• Outros sistemas específicos.
+Essa separação facilita a conferência posterior do orçamento e evita que materiais de sistemas diferentes sejam misturados.
+
+3. LEVANTAMENTO DOS DUTOS
+Após o levantamento da difusão, realizar o levantamento dos dutos.
+Para cada trecho, devem ser identificados:
+• Tipo de duto;
+• Material;
+• Largura (A);
+• Altura (B);
+• Comprimento (C);
+• Isolamento;
+• Bitola da chapa;
+• Aplicação/sistema.
+REGRA DA OP SABRAR: Na nossa OP, os dutos são levantados em KG.
+REGRA DE PLANTA BAIXA: Em planta baixa considerar a primeira medida a largura do duto e a segunda medida a altura (Largura × Altura).
+
+3.1 Critérios de materiais dos dutos
+Quando o projeto ou memorial não especificar o material ou isolamento, utilizar os critérios padrão adotados pela empresa:
+• Insuflamento:
+  - Duto galvanizado;
+  - Conexão TDC;
+  - Isolamento em lã de vidro 38 mm.
+• Ar Exterior:
+  - Quando o ar exterior for proveniente de uma máquina condicionadora: Duto galvanizado, TDC, Isolamento em lã de vidro 38 mm.
+  - Quando o ar exterior for proveniente de uma caixa ventiladora: Duto galvanizado, TDC, Sem isolamento.
+• Retorno:
+  - Duto galvanizado;
+  - Conexão TDC;
+  - Sem isolamento.
+• Exaustão de cozinha:
+  - Duto em chapa preta;
+  - Construção soldada estanque contínua (NBR 14518);
+  - Isolamento em lã de rocha.
+• Exaustão de sanitários:
+  - Duto galvanizado;
+  - Conexão TDC;
+  - Sem isolamento.
+Caso o projeto ou memorial especifique um material ou solução diferente, deve prevalecer a especificação do projeto.
+
+4. COMO MEDIR OS DUTOS
+Para cada trecho de duto, devemos levantar:
+• A – Largura do duto: Informada em cm na coluna A da OP.
+• B – Altura do duto: Informada em cm na coluna B da OP.
+• C – Comprimento do trecho: Informado em metros na coluna C da OP.
+Exemplo:
+Duto:
+• A = 60 cm;
+• B = 40 cm;
+• C = 5,00 m.
+
+5. CÁLCULO DO PERÍMETRO DO DUTO
+Depois de lançar largura e altura, calculamos o perímetro da seção do duto.
+Fórmula:
+Perímetro = 2 × (A + B)
+Como A e B são lançados em centímetros, devemos converter para metros no cálculo:
+Perímetro (m) = 2 × ((A / 100) + (B / 100))
+Exemplo:
+Duto 60 × 40 cm:
+A = 0,60 m
+B = 0,40 m
+Perímetro = 2 × (0,60 + 0,40)
+Perímetro = 2,00 m
+Esse valor é lançado na coluna Périm. (m) da OP.
+
+6. CÁLCULO DA ÁREA DO DUTO
+Depois de encontrar o perímetro, calculamos a área superficial do trecho.
+Fórmula:
+Área (m²) = Perímetro (m) × Comprimento (m)
+No exemplo:
+Perímetro = 2,00 m
+Comprimento = 5,00 m
+Área = 2,00 × 5,00
+Área = 10,00 m²
+Esse valor é lançado na coluna Área (m²) da OP.
+
+7. DEFINIÇÃO DA BITOLA DA CHAPA
+A bitola da chapa é definida através da maior dimensão entre A e B.
+Na planilha/OP SABRAR, a regra utilizada é:
+Maior dimensão do duto      Bitola
+Até 60 cm                   #26
+Acima de 60 até 90 cm       #24
+Acima de 90 até 120 cm      #22
+Acima de 120 até 150 cm     #20
+Acima de 150 até 300 cm     #18
+
+Exceções Prioritárias:
+Existem duas situações em que a bitola é definida independentemente da dimensão:
+• Chapa preta (exaustão de cozinha soldada NBR 14518) → Bitola #16
+• Pressurização de escada → Bitola #18
+
+Sequência obrigatória de análise:
+1. Verificar se é chapa preta;
+2. Verificar se é pressurização;
+3. Caso contrário, verificar a maior dimensão entre A e B;
+4. Aplicar a tabela de bitolas.
+
+Exemplos práticos:
+- Exemplo 1: Duto 70 × 40 cm → Maior dimensão = 70 cm → Chapa #24.
+- Exemplo 2: Duto 100 × 50 cm → Maior dimensão = 100 cm → Chapa #22.
+- Exemplo 3: Duto 250 × 80 cm → Maior dimensão = 250 cm → Chapa #18.
+- Exemplo 4: Duto de pressurização 80 × 40 cm → Mesmo que pela dimensão pudesse ser outra bitola, por ser pressurização → Chapa #18.
+- Exemplo 5: Duto de exaustão de cozinha em chapa preta → Independentemente da dimensão → Chapa #16.
+
+8. CÁLCULO DO KG DO DUTO
+Depois de encontrar a área do duto e sua respectiva bitola, calculamos o peso utilizando o fator de kg/m² correspondente a cada bitola.
+Na nossa OP, os fatores oficiais utilizados são:
+Bitola      Fator utilizado
+#26         4,0 kg/m²
+#24         5,2 kg/m²
+#22         6,4 kg/m²
+#20         7,6 kg/m²
+#18         10,0 kg/m²
+#16         12,0 kg/m²
+
+Além disso, a OP aplica 20% de perda, indicada na célula de perda da planilha.
+
+8.1 Fórmula utilizada na OP:
+A fórmula utilizada para calcular o KG total é:
+KG Total = Área × Fator da bitola × Perda
+Onde:
+• Área = área do duto em m²;
+• Fator = kg/m² correspondente à bitola;
+• Perda = 120% (fator multiplicador 1,20).
+
+Exemplo:
+Duto:
+• 60 × 40 cm;
+• Comprimento = 5,00 m;
+• Área = 10,00 m²;
+• Chapa = #26;
+• Fator = 4,0 kg/m²;
+• Perda = 120% (1,20).
+Cálculo:
+10,00 × 4 × 1,20 = 48 kg
+Portanto, o quantitativo considerado na OP será:
+48 kg de duto.
+
+9. LEVANTAMENTO DO ISOLAMENTO
+Para os dutos que possuem isolamento, devemos utilizar a área do duto como base para o levantamento.
+Na nossa OP, o quantitativo do isolamento é calculado utilizando um fator de 1,40.
+Fórmula:
+Isolamento (m²) = Área do duto × 1,40
+Exemplo:
+Área do duto = 10,00 m²
+10,00 × 1,40 = 14,00 m²
+Portanto:
+14,00 m² de isolamento.
+O fator de 1,40 é o critério utilizado na OP para considerar as perdas e sobras do material durante o processo de fabricação/instalação.
+
+10. CONFERÊNCIA DOS DUTOS
+Após finalizar o levantamento dos dutos, conferir obrigatoriamente:
+• Todos os trechos foram medidos?
+• A largura está correta (primeira medida na planta)?
+• A altura está correta (segunda medida na planta)?
+• O comprimento corresponde ao trecho real?
+• A maior dimensão foi considerada para definir a chapa?
+• A aplicação do duto está correta?
+• A chapa preta está como #16?
+• A pressurização está como #18?
+• Os demais dutos seguem a tabela de bitolas da OP?
+• O isolamento foi considerado onde necessário?
+• O tipo de isolamento está correto (lã de vidro 38mm / lã de rocha)?
+• O KG foi calculado corretamente?
+• A perda de 20% foi aplicada no cálculo de KG?
+• Não existem trechos levantados duas vezes?
+
+11. LEVANTAMENTO DOS INSUMOS PARA INSTALAÇÃO DOS DUTOS
+Após finalizar o levantamento dos dutos, devemos calcular os insumos necessários para sua fabricação, montagem, vedação e instalação.
+Os principais insumos considerados são:
+• Cantos para perfil;
+• Porca e parafuso 5/16";
+• Silicone para TDC;
+• Fita TDC;
+• Chumbador 1/4" (cone e jaqueta);
+• Chumbador 5/16" (cone e jaqueta);
+• Porca e arruela 1/4";
+• Porca e arruela 5/16";
+• Barra roscada 1/4";
+• Barra roscada 5/16";
+• Perfilado.
+O cálculo dos insumos deve ser realizado após o levantamento dos dutos, pois utilizamos os quantitativos obtidos nessa etapa como base para chegar aos materiais necessários para a instalação.
+
+11.1 Cantos para perfil
+Os cantos são utilizados na montagem dos perfis TDC dos dutos.
+Para calcular o quantitativo, devemos considerar a quantidade de juntas dos dutos e a quantidade de cantos necessária em cada junta, conforme o padrão de montagem adotado pela empresa.
+Fórmula oficial:
+Cantos = (Somatório do perímetro / 1,1) * 8 arredondado para cima + 15%
+
+11.2 Porca e parafuso 5/16"
+As porcas e parafusos de 5/16" são utilizados na união dos flanges dos dutos TDC.
+O quantitativo deve ser calculado com base na quantidade de pontos de fixação necessários nas juntas.
+Fórmula:
+Porcas e parafusos = Quantidade de pontos de fixação
+Considerar o padrão de espaçamento e montagem fixação a cada um metro e meio (1,50 m).
+
+11.3 Silicone para TDC
+O Silicone é utilizado para a vedação das juntas dos dutos TDC.
+O consumo está diretamente relacionado à quantidade e ao comprimento das juntas que precisam ser vedadas.
+O cálculo deve considerar:
+• Quantidade de juntas;
+• Comprimento das juntas;
+• Rendimento do produto;
+• Forma de aplicação.
+Fórmula oficial:
+Silicone = ((Somatório do perímetro / 1,1) / 3) + 15%
+
+11.4 Fita TDC
+A fita é utilizada nas juntas dos dutos TDC.
+O levantamento deve ser realizado com base no comprimento total das juntas e no critério de aplicação adotado pela empresa.
+Fórmula oficial:
+Fita TDC = (Somatório do perímetro / 10) + 15%
+Considerando que a Fita TDC tem 10 metros no rolo e utilizamos ela na ponta dos dutos.
+
+12. LEVANTAMENTO DA SUPORTAÇÃO DOS DUTOS
+Após finalizar o levantamento dos dutos, devemos calcular os materiais necessários para sua instalação e suportação.
+Na nossa metodologia, os dutos são suportados a cada 1,50 m de comprimento.
+Portanto, para cada 1,50 m de duto, devemos considerar:
+• 1 perfilado, com comprimento um pouco maior que a largura do duto (largura + 10 cm);
+• 2 tirantes (barras roscadas);
+• 2 chumbadores;
+• 4 porcas;
+• 4 arruelas.
+
+12.1 Quantidade de suportes
+A quantidade de suportes é determinada a partir do comprimento total dos dutos.
+Fórmula:
+Quantidade de suportes = Comprimento do duto ÷ 1,50
+Quando houver fração, deve-se arredondar para cima, pois não é possível instalar uma fração de suporte (função teto / ceil).
+
+12.2 Perfilado
+Para cada suporte, considerar 1 perfilado.
+O comprimento do perfilado deve ser um pouco maior que a largura do duto, permitindo a montagem e fixação do duto sobre o suporte.
+Fórmula:
+Perfilado total (m) = Quantidade de suportes × Comprimento do perfilado por suporte
+REGRA: O comprimento adicional em relação à largura do duto deve ser 10 cm a mais que a largura do duto (Largura do duto + 0,10 m).
+Exemplo:
+Duto com largura de 0,60 m.
+Perfilado por suporte = 0,60 + 0,10 = 0,70 m.
+Para 7 suportes: 7 × 0,70 = 4,90 m de perfilado.
+
+12.3 Tirantes / Barras roscadas
+Para cada suporte são utilizados 2 tirantes.
+Fórmula:
+Quantidade de tirantes = Quantidade de suportes × 2
+Utilizamos como padrão um tirante de 3 metros por haste.
+Fórmula em metros lineares:
+Barra roscada (m) = Quantidade de tirantes × 3 m
+
+12.4 Chumbadores
+Para cada suporte são utilizados 2 chumbadores.
+Fórmula:
+Chumbadores = Quantidade de suportes × 2
+Critério de bitola:
+• Se for máquina: utilizamos 5/16";
+• Se for dutos ou tubulação de cobre ou hidráulica: utilizamos 1/4".
+
+12.5 Porcas
+Para cada suporte são utilizadas 4 porcas.
+Fórmula:
+Porcas = Quantidade de suportes × 4
+As porcas devem ser levantadas na mesma bitola da barra roscada utilizada (1/4" para dutos).
+
+12.6 Arruelas
+Para cada suporte são utilizadas 4 arruelas.
+Fórmula:
+Arruelas = Quantidade de suportes × 4
+As arruelas devem ser compatíveis com a bitola da barra roscada (1/4" para dutos).
+
+12.7 Resumo por conjunto de suporte
+A cada 1,50 m de duto → 1 conjunto de suportação contendo:
+• 1 perfilado (largura do duto + 10 cm);
+• 2 tirantes / barras roscadas (3 metros padrão cada);
+• 2 chumbadores 1/4";
+• 4 porcas 1/4";
+• 4 arruelas 1/4".
+
+12.8 Exemplo completo de suportação
+Considerando um trecho de duto de 0,60 m de largura com 10,00 m de comprimento:
+• Quantidade de suportes: 10,00 ÷ 1,50 = 6,67 → 7 suportes.
+• Perfilado: 7 suportes × (0,60 + 0,10) = 4,90 m lineares.
+• Tirantes: 7 × 2 = 14 peças de 3 metros (42 m de barra roscada 1/4").
+• Chumbadores: 7 × 2 = 14 chumbadores 1/4".
+• Porcas: 7 × 4 = 28 porcas 1/4".
+• Arruelas: 7 × 4 = 28 arruelas 1/4".
+
+13. LEVANTAMENTO DA REDE DE COBRE
+Após concluir o levantamento dos dutos e seus respectivos insumos, iniciar o levantamento da rede de cobre dos sistemas de expansão direta.
+A rede deve ser levantada separadamente por sistema:
+• VRV/VRF;
+• Split;
+• Splitão;
+• Outros equipamentos de expansão direta.
+
+Para cada trecho, identificar:
+• Equipamento de origem;
+• Equipamento de destino;
+• Tipo de linha (líquido vs gás/sucção);
+• Diâmetro;
+• Comprimento linear;
+• Isolamento térmico;
+• Conexões;
+• Derivações;
+• Acessórios.
+
+13.1 Levantamento de cobre para VRV/VRF
+No sistema VRV/VRF, devemos acompanhar a tubulação desde a unidade condensadora até cada unidade evaporadora.
+O levantamento deve ser feito separando:
+• Linha de líquido;
+• Linha de gás;
+• Diâmetro de cada linha;
+• Comprimento de cada trecho;
+• Refnet;
+• Caixas de derivação, quando houver;
+• Conexões;
+• Isolamento.
+OBSERVAÇÃO OBRIGATÓRIA — PERDA DE COBRE:
+Lembrando que para cobre também utilizamos uma perda de 25%, ou seja, vai levantar o metro linear de todas as linhas e acrescentar na metragem 25% (Comprimento final = Comprimento linear × 1,25).
+Os diâmetros devem ser conferidos no:
+• Projeto;
+• Diagrama frigorígeno;
+• Memorial descritivo;
+• Seleção do fabricante.
+REGRA: Não devemos definir o diâmetro apenas pela dimensão visual da linha no desenho, a não ser que no projeto esteja expressamente escrito qual o diâmetro da linha.
+Todo o levantamento de cobre é feito em metros (m).
+
+13.2 Levantamento de cobre para Split e Splitão
+Para cada equipamento, levantar separadamente:
+• Linha de líquido;
+• Linha de gás;
+• Diâmetro;
+• Comprimento (+ 25% de perda);
+• Isolamento;
+• Conexões e acessórios.
+Cada diâmetro deve ser lançado separadamente na OP.
+Exemplo:
+Sistema     Linha       Diâmetro    Quantidade
+Split       Líquido     1/4"        XX m
+Split       Gás         1/2"        XX m
+Splitão     Líquido     3/8"        XX m
+Splitão     Gás         5/8"        XX m
+
+13.3 Isolamento da rede de cobre
+O isolamento das linhas de cobre é considerado de acordo com a metragem levantada para cada diâmetro de tubulação.
+Dessa forma, se forem levantados, por exemplo, 5 metros de linha de cobre de 5/8", serão considerados também 5 metros de isolamento para essa mesma linha (relação 1:1 integral).
+A definição da espessura e do tipo de isolamento é realizada conforme a aplicação do sistema:
+• Linhas de líquido: utilização de isolamento tipo H da Armaflex, para sistemas Splitão e VRF;
+• Linhas de gás: utilização de isolamento tipo M da Armaflex, para sistemas Splitão e VRF;
+• Sistemas Split 1x1 (uma condensadora para uma evaporadora): utilização de isotubo para o isolamento das linhas.
+Portanto, a quantidade de isolamento acompanha integralmente a metragem de cada linha de cobre levantada, enquanto o tipo de isolamento é definido de acordo com a função da linha e o tipo de sistema de climatização.
+
+13.4 Derivações e acessórios do VRV/VRF
+Além das tubulações, devem ser levantados:
+• Refnet;
+• Caixas de derivação;
+• Conexões;
+• Juntas;
+• Suportes;
+• Isolamento;
+• Outros acessórios específicos do fabricante.
+A quantidade deve ser conferida diretamente no diagrama do sistema.
+
+14. LEVANTAMENTO DA REDE HIDRÁULICA – CAG
+Para sistemas de água gelada (CAG), realizar inicialmente a identificação de todos os equipamentos que fazem parte do sistema:
+• Chillers;
+• Fancoils;
+• Bombas;
+• Torres de resfriamento;
+• Tanque pulmão;
+• Trocadores de calor;
+• Outros equipamentos hidráulicos.
+
+14.1 Levantamento das tubulações hidráulicas
+Levantar cada trecho de tubulação separadamente.
+Identificar:
+• Diâmetro;
+• Comprimento;
+• Material;
+• Tipo de rede;
+• Isolamento;
+• Equipamento de origem;
+• Equipamento de destino.
+Separar, quando aplicável:
+• Água gelada de ida;
+• Água gelada de retorno;
+• Água de condensação;
+• Outras redes.
+OBSERVAÇÃO OBRIGATÓRIA — PERDA HIDRÁULICA:
+Lembrando que para Hidráulica também utilizamos uma perda de 25%, ou seja, vai levantar o metro linear de todas as linhas e acrescentar na metragem 25% (Metragem final = Metragem linear × 1,25).
+
+14.2 Levantamento das conexões hidráulicas
+As conexões NÃO devem ser consideradas apenas como percentual dos metros de tubulação quando o projeto permitir o levantamento individual.
+Contabilizar item por item:
+• Curvas;
+• Tês;
+• Reduções;
+• Flanges;
+• Uniões;
+• Conexões de equipamentos;
+• Outros acessórios.
+
+14.3 Levantamento das válvulas
+Contabilizar individualmente as válvulas indicadas no projeto:
+• Válvula de bloqueio;
+• Válvula de retenção;
+• Válvula de controle;
+• Válvula de balanceamento;
+• Válvula de segurança;
+• Outras válvulas especificadas.
+Sempre conferir o diâmetro de cada válvula.
+
+14.4 Bombas
+Para cada bomba, verificar:
+• Quantidade;
+• Vazão;
+• Pressão;
+• Potência;
+• Tipo;
+• Diâmetro das conexões;
+• Acessórios;
+• Base antivibratória, quando aplicável;
+• Quadro/comando elétrico, conforme escopo.
+
+14.5 Isolamento da rede hidráulica
+Para os trechos que possuem isolamento, levantar:
+• Diâmetro da tubulação;
+• Comprimento;
+• Tipo de isolamento;
+• Espessura;
+• Acabamento/revestimento externo, quando aplicável.
+O isolamento deve ser separado por diâmetro para permitir o correto levantamento de custos.
+
+15. LEVANTAMENTO DE EQUIPAMENTOS
+Depois de levantar as redes, realizar uma conferência específica de todos os equipamentos:
+15.1 VRV/VRF:
+• Condensadoras;
+• Evaporadoras;
+• Refnet;
+• Caixas de derivação;
+• Controles remotos e centrais;
+• Interfaces;
+• Automação;
+• Acessórios.
+15.2 Split/Splitão:
+• Evaporadoras;
+• Condensadoras;
+• Controles;
+• Acessórios.
+15.3 CAG:
+• Chillers;
+• Fancoils;
+• Bombas primárias e secundárias;
+• Torres de resfriamento;
+• Tanque pulmão;
+• Válvulas motorizadas;
+• Acessórios.
+15.4 Ventilação e exaustão:
+• Exaustores centrífugos e axiais;
+• Caixas ventiladoras;
+• Ventiladores;
+• Filtros;
+• Dampers;
+• Venezianas;
+• Atenuadores de ruído;
+• Equipamentos especiais.
+
+16. ELÉTRICA, COMANDO E AUTOMAÇÃO
+Verificar no projeto, memorial e escopo quais itens de elétrica, comando e automação fazem parte do fornecimento.
+Levantar, quando aplicável:
+• Quadros elétricos;
+• Quadros de comando;
+• Disjuntores;
+• Contatores;
+• Inversores de frequência;
+• Cabos de alimentação;
+• Cabos de comando;
+• Cabos de comunicação;
+• Sensores;
+• Atuadores;
+• Controladores;
+• Termostatos;
+• Interfaces;
+• Automação.
+ATENÇÃO: Sempre verificar o limite de fornecimento da proposta. A existência de um equipamento no projeto não significa necessariamente que toda a sua alimentação elétrica ou automação faça parte do nosso escopo.
+
+17. CONFERÊNCIA FINAL
+Após finalizar todos os levantamentos, realizar a conferência cruzada entre:
+PROJETO × MEMORIAL × DIAGRAMAS × LISTA DE EQUIPAMENTOS × OP
+Verificar o checklist completo:
+• Todos os equipamentos foram considerados?
+• Todos os dutos foram levantados?
+• Toda a difusão foi contabilizada?
+• Os tipos de duto estão corretos?
+• As bitolas de chapa estão corretas?
+• As perdas foram consideradas (20% para dutos, 25% para cobre, 25% para hidráulica)?
+• Os isolamentos foram considerados (fator 1,40 para dutos; 1:1 para cobre conforme Armaflex H/M/Isotubo)?
+• Os insumos de instalação foram considerados (cantos +15%, parafusos 5/16", silicone +15%, fita TDC +15%)?
+• Todos os suportes a cada 1,50 m foram considerados?
+• Todo o cobre foi levantado em metros lineares + 25% de perda?
+• Todos os diâmetros de cobre foram considerados?
+• Todos os refnets/derivações foram considerados?
+• Toda a hidráulica foi levantada com 25% de perda?
+• Bombas foram consideradas?
+• Torres foram consideradas?
+• Chillers foram considerados?
+• Fancoils foram considerados?
+• Drenagem de condensado foi considerada?
+• Elétrica e comando foram considerados conforme o escopo?
+• Automação foi considerada?
+• Existem itens no memorial que não aparecem na planta?
+• Existem itens na planta que não aparecem no memorial?
+
+18. PREVISÕES
+Quando não houver informações suficientes para realizar o levantamento definitivo de determinado item, o quantitativo deve ser lançado como PREVISÃO.
+A previsão deve ficar separada do quantitativo efetivamente levantado.
+Isso permite:
+• Identificar o que foi medido;
+• Identificar o que foi estimado;
+• Evitar duplicidade;
+• Controlar alterações de projeto;
+• Facilitar a atualização do orçamento em revisões futuras.
+Quando houver uma nova revisão de projeto, deve-se verificar primeiro os itens que estavam como previsão e avaliar se agora é possível realizar o levantamento definitivo.
+
+19. CONFERÊNCIA DA OP
+Antes de enviar o orçamento para revisão ou aprovação, conferir se todos os quantitativos levantados foram corretamente transferidos para a OP.
+A conferência final deve contemplar:
+Equipamentos + Difusão + Dutos + Isolamento + Insumos + Suportes + Cobre + Hidráulica + Drenagem + Elétrica + Automação + Previsões
+Somente após essa conferência o levantamento deve ser considerado concluído.
 
 =======================================================
 ${SABRAR_ECONOMIC_BASE_TEXT}

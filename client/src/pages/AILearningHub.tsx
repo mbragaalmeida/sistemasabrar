@@ -13,16 +13,19 @@ import {
   RefreshCw,
   Info,
   Database,
-  FileText
+  FileText,
+  Code2
 } from 'lucide-react';
 import { api } from '../services/api';
 import { BulkImportModal } from '../components/modals/BulkImportModal';
 import { AICalibrationModal } from '../components/modals/AICalibrationModal';
+import { AIPromptModal } from '../components/modals/AIPromptModal';
 
 export const AILearningHub: React.FC = () => {
   const [metrics, setMetrics] = useState<any>(null);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadData = () => {
@@ -79,6 +82,15 @@ export const AILearningHub: React.FC = () => {
           )}
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+            <button
+              onClick={() => setIsPromptModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-dark-800 hover:bg-dark-750 text-sabrar-300 border border-sabrar-500/40 text-xs font-bold transition-all active:scale-95 whitespace-nowrap shadow-sm"
+              title="Visualizar a metodologia completa dos 19 passos e o System Prompt oficial da IA"
+            >
+              <Code2 className="w-4 h-4 text-sabrar-400" />
+              <span>Ver Prompt & Metodologia OP</span>
+            </button>
+
             <button
               onClick={() => setIsDocModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-md shadow-sabrar-600/30 active:scale-95 whitespace-nowrap"
@@ -315,6 +327,12 @@ export const AILearningHub: React.FC = () => {
         isOpen={isBulkModalOpen}
         onClose={() => setIsBulkModalOpen(false)}
         onSuccess={loadData}
+      />
+
+      {/* Modal de Visualização do Prompt e Metodologia OP SABRAR */}
+      <AIPromptModal
+        isOpen={isPromptModalOpen}
+        onClose={() => setIsPromptModalOpen(false)}
       />
     </div>
   );
