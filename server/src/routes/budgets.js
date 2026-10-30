@@ -371,6 +371,11 @@ budgetsRouter.post('/:id/approve', async (req, res) => {
       });
     }
 
+    const { scope_summary } = req.body;
+    if (scope_summary && scope_summary.trim()) {
+      await db.prepare('UPDATE projects SET scope_summary = ? WHERE id = ?').run(scope_summary.trim(), project.id);
+    }
+
     // Se informou engenheiro, atualiza o projeto e a tabela de vínculos
     if (finalResponsible && finalResponsible !== project.responsible_engineer) {
       await db.prepare('UPDATE projects SET responsible_engineer = ? WHERE id = ?').run(finalResponsible, project.id);
@@ -411,6 +416,112 @@ budgetsRouter.post('/:id/approve', async (req, res) => {
     );
 
     res.json({ success: true, budgetId, status: 'Aprovado', projectStatus: 'Em execução', responsibleEngineer: finalResponsible });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 16: Marcar orçamento como perdido
+budgetsRouter.post('/:id/mark-lost', async (req, res) => {
+  try {
+    const budgetId = req.params.id;
+    const { reason, userId = 1, userName = 'Orçamentista' } = req.body;
+
+    const budget = await db.prepare('SELECT * FROM budgets WHERE id = ?').get(budgetId);
+    if (!budget) return res.status(404).json({ error: 'Orçamento não encontrado' });
+
+    await db.prepare("UPDATE budgets SET status = 'Perdido', updated_at = NOW() WHERE id = ?").run(budgetId);
+    await db.prepare("UPDATE projects SET status = 'Perdido', updated_at = NOW() WHERE id = ?").run(budget.project_id);
+
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, project_id, details)
+      VALUES (?, ?, 'ORCAMENTO_PERDIDO', 'ORCAMENTO', ?, ?, ?)
+    `).run(userId, userName, budgetId, budget.project_id, `Orçamento marcado como PERDIDO por ${userName}. Motivo: ${reason || 'Não informado'}`);
+
+    res.json({ success: true, status: 'Perdido' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 8: Histórico de Versões do Orçamento (sem sobrescrever a versão original)
+budgetsRouter.get('/project/:projectId/versions', async (req, res) => {
+  try {
+    const projectId = req.params.projectId;
+    const versions = await db.prepare(`
+      SELECT * FROM budget_versions WHERE project_id = ? ORDER BY version_number ASC
+    `).all(projectId);
+    res.json(versions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+budgetsRouter.post('/project/:projectId/versions', async (req, res) => {
+  try {
+    const projectId = req.params.projectId;
+    const {
+      justification,
+      change_type = 'geral',
+      total_materials = 0,
+      total_services = 0,
+      total_equipment = 0,
+      total_final = 0,
+      discount_amount = 0,
+      items_snapshot = [],
+      services_snapshot = [],
+      equipment_snapshot = [],
+      notes = '',
+      userId = 1,
+      userName = 'Orçamentista'
+    } = req.body;
+
+    if (!justification || !justification.trim()) {
+      return res.status(400).json({ error: 'A justificativa da nova versão é obrigatória.' });
+    }
+
+    const budget = await db.prepare('SELECT id FROM budgets WHERE project_id = ?').get(projectId);
+    const budgetId = budget?.id || null;
+
+    // Próxima versão
+    const maxRow = await db.prepare('SELECT COALESCE(MAX(version_number), 0) as max_v FROM budget_versions WHERE project_id = ?').get(projectId);
+    const nextVersion = Number(maxRow?.max_v || 0) + 1;
+
+    const insert = db.prepare(`
+      INSERT INTO budget_versions (
+        budget_id, project_id, version_number, justification, change_type,
+        total_materials, total_services, total_equipment, total_final,
+        discount_amount, items_snapshot, services_snapshot, equipment_snapshot,
+        notes, created_by, created_by_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = await insert.run(
+      budgetId,
+      projectId,
+      nextVersion,
+      justification.trim(),
+      change_type,
+      Number(total_materials) || 0,
+      Number(total_services) || 0,
+      Number(total_equipment) || 0,
+      Number(total_final) || 0,
+      Number(discount_amount) || 0,
+      JSON.stringify(items_snapshot),
+      JSON.stringify(services_snapshot),
+      JSON.stringify(equipment_snapshot),
+      notes,
+      userId,
+      userName
+    );
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, project_id, details)
+      VALUES (?, ?, 'CRIAR_VERSAO_ORCAMENTO', 'ORCAMENTO', ?, ?, ?)
+    `).run(userId, userName, budgetId, projectId, `Versão ${nextVersion} registrada. Tipo: ${change_type}. Justificativa: ${justification.trim()}`);
+
+    res.status(201).json({ id: result.lastInsertRowid, version_number: nextVersion });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

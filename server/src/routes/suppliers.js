@@ -3,7 +3,7 @@ import { db } from '../db/connection.js';
 
 export const suppliersRouter = express.Router();
 
-// Lista fornecedores (Seção 36)
+// Lista fornecedores ordenados alfabeticamente (A-Z)
 suppliersRouter.get('/', async (req, res) => {
   try {
     const { search } = req.query;
@@ -12,11 +12,12 @@ suppliersRouter.get('/', async (req, res) => {
 
     if (search && search.trim()) {
       const q = `%${search.trim()}%`;
-      query += ' AND (name ILIKE ? OR corporate_name ILIKE ? OR cnpj ILIKE ? OR materials_supplied ILIKE ? OR contact_person ILIKE ? OR notes ILIKE ?)';
-      params.push(q, q, q, q, q, q);
+      query += ' AND (name ILIKE ? OR corporate_name ILIKE ? OR cnpj ILIKE ? OR materials_supplied ILIKE ? OR contact_person ILIKE ? OR notes ILIKE ? OR categories ILIKE ?)';
+      params.push(q, q, q, q, q, q, q);
     }
 
-    query += ' ORDER BY id ASC';
+    // Item 14: ordenar fornecedores em ordem alfabética (A-Z)
+    query += ' ORDER BY name ASC';
 
     const suppliers = await db.prepare(query).all(...params);
     res.json(suppliers);
@@ -28,19 +29,58 @@ suppliersRouter.get('/', async (req, res) => {
 // Cadastra fornecedor
 suppliersRouter.post('/', async (req, res) => {
   try {
-    const { name, corporate_name, cnpj, contact_person, phone, email, materials_supplied, notes, userId } = req.body;
+    const {
+      name,
+      corporate_name,
+      cnpj,
+      contact_person,
+      phone,
+      email,
+      materials_supplied,
+      notes,
+      categories,
+      contacts,
+      userId
+    } = req.body;
 
     if (!name) return res.status(400).json({ error: 'Nome do fornecedor é obrigatório' });
 
+    // Se houver lista de contatos, sincroniza o primeiro para contact_person, phone, email
+    let primaryContact = contact_person || null;
+    let primaryPhone = phone || null;
+    let primaryEmail = email || null;
+
+    let contactsJson = '[]';
+    if (Array.isArray(contacts) && contacts.length > 0) {
+      contactsJson = JSON.stringify(contacts);
+      if (!primaryContact && contacts[0].name) primaryContact = contacts[0].name;
+      if (!primaryPhone && contacts[0].phone) primaryPhone = contacts[0].phone;
+      if (!primaryEmail && contacts[0].email) primaryEmail = contacts[0].email;
+    } else if (contacts && typeof contacts === 'object') {
+      contactsJson = JSON.stringify(contacts);
+    }
+
+    const categoriesStr = Array.isArray(categories) ? categories.join(', ') : (categories || null);
+
     const insert = db.prepare(`
-      INSERT INTO suppliers (name, corporate_name, cnpj, contact_person, phone, email, materials_supplied, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO suppliers (
+        name, corporate_name, cnpj, contact_person, phone, email,
+        materials_supplied, notes, categories, contacts
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = await insert.run(
-      name, corporate_name || null, cnpj || null,
-      contact_person || null, phone || null, email || null,
-      materials_supplied || null, notes || null
+      name,
+      corporate_name || null,
+      cnpj || null,
+      primaryContact,
+      primaryPhone,
+      primaryEmail,
+      materials_supplied || null,
+      notes || null,
+      categoriesStr,
+      contactsJson
     );
 
     const supplierId = result.lastInsertRowid;
@@ -49,7 +89,7 @@ suppliersRouter.post('/', async (req, res) => {
     await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
       VALUES (?, 'CRIAR_FORNECEDOR', 'FORNECEDOR', ?, ?)
-    `).run(userId || 1, supplierId, `Fornecedor cadastrado: ${name}`);
+    `).run(userId || 1, supplierId, `Fornecedor cadastrado: ${name} com categorias: ${categoriesStr || 'Geral'}`);
 
     res.status(201).json({ id: supplierId, name });
   } catch (err) {
@@ -60,18 +100,56 @@ suppliersRouter.post('/', async (req, res) => {
 // Atualiza fornecedor
 suppliersRouter.put('/:id', async (req, res) => {
   try {
-    const { name, corporate_name, cnpj, contact_person, phone, email, materials_supplied, notes } = req.body;
+    const {
+      name,
+      corporate_name,
+      cnpj,
+      contact_person,
+      phone,
+      email,
+      materials_supplied,
+      notes,
+      categories,
+      contacts,
+      userId
+    } = req.body;
     const supplierId = req.params.id;
+
+    let primaryContact = contact_person || null;
+    let primaryPhone = phone || null;
+    let primaryEmail = email || null;
+
+    let contactsJson = '[]';
+    if (Array.isArray(contacts)) {
+      contactsJson = JSON.stringify(contacts);
+      if (contacts.length > 0) {
+        if (contacts[0].name) primaryContact = contacts[0].name;
+        if (contacts[0].phone) primaryPhone = contacts[0].phone;
+        if (contacts[0].email) primaryEmail = contacts[0].email;
+      }
+    } else if (contacts && typeof contacts === 'object') {
+      contactsJson = JSON.stringify(contacts);
+    }
+
+    const categoriesStr = Array.isArray(categories) ? categories.join(', ') : (categories !== undefined ? categories : null);
 
     await db.prepare(`
       UPDATE suppliers SET
         name = ?, corporate_name = ?, cnpj = ?, contact_person = ?,
-        phone = ?, email = ?, materials_supplied = ?, notes = ?
+        phone = ?, email = ?, materials_supplied = ?, notes = ?,
+        categories = ?, contacts = ?
       WHERE id = ?
     `).run(
-      name, corporate_name, cnpj, contact_person,
-      phone, email, materials_supplied, notes, supplierId
+      name, corporate_name, cnpj, primaryContact,
+      primaryPhone, primaryEmail, materials_supplied, notes,
+      categoriesStr, contactsJson, supplierId
     );
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+      VALUES (?, 'EDITAR_FORNECEDOR', 'FORNECEDOR', ?, ?)
+    `).run(userId || 1, supplierId, `Fornecedor atualizado: ${name}`);
 
     res.json({ success: true, supplierId });
   } catch (err) {
@@ -101,29 +179,19 @@ suppliersRouter.delete('/:id', async (req, res) => {
       );
 
       if (!isAllowed) {
-        return res.status(403).json({ error: 'Permissão negada. Apenas Administradores e Emily têm autorização para excluir fornecedores.' });
+        return res.status(403).json({ error: 'Apenas Administradores ou Emily possuem autorização para excluir fornecedores.' });
       }
     }
 
-    // Desvincula fornecedor de materiais, compras e cotações para integridade relacional
-    await db.prepare('UPDATE materials SET supplier_id = NULL WHERE supplier_id = ?').run(supplierId);
-    await db.prepare('UPDATE purchases SET supplier_id = NULL WHERE supplier_id = ?').run(supplierId);
-    await db.prepare('UPDATE purchase_quotation_suppliers SET supplier_id = NULL WHERE supplier_id = ?').run(supplierId);
-
-    const sup = await db.prepare('SELECT name FROM suppliers WHERE id = ?').get(supplierId);
-    const supName = sup?.name || `ID ${supplierId}`;
-
     await db.prepare('DELETE FROM suppliers WHERE id = ?').run(supplierId);
 
-    // Registro no log de auditoria
     await db.prepare(`
       INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
       VALUES (?, 'EXCLUIR_FORNECEDOR', 'FORNECEDOR', ?, ?)
-    `).run(userId || 1, supplierId, `Fornecedor excluído: ${supName}`);
+    `).run(userId || 1, supplierId, `Fornecedor ID ${supplierId} excluído.`);
 
-    res.json({ success: true, message: `Fornecedor "${supName}" excluído com sucesso.` });
+    res.json({ success: true });
   } catch (err) {
-    console.error('Erro ao excluir fornecedor:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -25,7 +25,15 @@ import {
   Package,
   Search
 } from 'lucide-react';
-import { Project, Budget, BudgetItem, ServiceItem, ComparisonRow } from '../types';
+import { Project, Budget, BudgetItem, ServiceItem, ComparisonRow, ProjectAddendum, BudgetVersion } from '../types';
+import { ApproveBudgetModal } from '../components/modals/ApproveBudgetModal';
+import { MarkLostModal } from '../components/modals/MarkLostModal';
+import { NewBudgetVersionModal } from '../components/modals/NewBudgetVersionModal';
+import { BudgetVersionsModal } from '../components/modals/BudgetVersionsModal';
+import { NewAddendumModal } from '../components/modals/NewAddendumModal';
+import { LinkProjectAddendumModal } from '../components/modals/LinkProjectAddendumModal';
+import { AddendumDetailView } from '../components/project/AddendumDetailView';
+import { Download, History, XCircle, ShieldAlert, Link2 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
@@ -68,6 +76,22 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [deletingProject, setDeletingProject] = useState(false);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any | null>(null);
   const [linkModalItemIdx, setLinkModalItemIdx] = useState<number | null>(null);
+  // Estados para Aditivos da Obra (Item 5)
+  const [addenda, setAddenda] = useState<ProjectAddendum[]>([]);
+  const [selectedAddendumTab, setSelectedAddendumTab] = useState<'original' | number>('original');
+  const [isNewAddendumModalOpen, setIsNewAddendumModalOpen] = useState(false);
+  const [isLinkAddendumModalOpen, setIsLinkAddendumModalOpen] = useState(false);
+
+  // Estados para Versões do Orçamento (Item 8)
+  const [versions, setVersions] = useState<BudgetVersion[]>([]);
+  const [isNewVersionModalOpen, setIsNewVersionModalOpen] = useState(false);
+  const [isVersionsModalOpen, setIsVersionsModalOpen] = useState(false);
+
+  // Estados para Aprovação com Resumo do Escopo e Marcar como Perdido (Items 7 e 16)
+  const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
+  const [isMarkLostModalOpen, setIsMarkLostModalOpen] = useState(false);
+  const [isEditingScope, setIsEditingScope] = useState(false);
+  const [scopeEditText, setScopeEditText] = useState('');
 
   // Estados locais para edição de orçamento
   const [editableMaterials, setEditableMaterials] = useState<any[]>([]);
@@ -352,6 +376,17 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       const res = await api.getProject(projectId);
       setData(res);
       fetchCostControl();
+      setScopeEditText(res.project?.scope_summary || '');
+      try {
+        const [addRes, verRes] = await Promise.all([
+          api.getProjectAddenda(projectId),
+          api.getBudgetVersions(projectId)
+        ]);
+        setAddenda(addRes || []);
+        setVersions(verRes || []);
+      } catch (e) {
+        console.error('Erro ao buscar aditivos e versões:', e);
+      }
 
       if (res.budget) {
         setEditableMaterials((res.budget.items || []).map((item: any) => ({
@@ -561,6 +596,85 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     }
   };
 
+  const handleDeleteAddendum = async (addendumId: number) => {
+    try {
+      await api.deleteProjectAddendum(projectId, addendumId);
+      setSelectedAddendumTab('original');
+      await fetchProjectData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir aditivo');
+    }
+  };
+
+  const handleSaveScopeSummary = async () => {
+    try {
+      await api.updateProjectScopeSummary(projectId, scopeEditText);
+      setIsEditingScope(false);
+      setData((prev: any) => ({
+        ...prev,
+        project: { ...prev.project, scope_summary: scopeEditText }
+      }));
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar resumo do escopo');
+    }
+  };
+
+  const handleConfirmApproval = async (scopeSummary: string) => {
+    if (!budget) return;
+    setApprovingBudget(true);
+    try {
+      await api.approveBudget(budget.id, currentUser?.id, currentUser?.name, { scope_summary: scopeSummary });
+      await fetchProjectData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao aprovar orçamento');
+    } finally {
+      setApprovingBudget(false);
+    }
+  };
+
+  const handleConfirmMarkLost = async (reason: string) => {
+    try {
+      if (budget) {
+        await api.markBudgetLost(budget.id, reason);
+      } else {
+        await api.markProjectLost(projectId, reason);
+      }
+      await fetchProjectData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao marcar como perdido');
+    }
+  };
+
+  const handleConfirmNewVersion = async (vData: {
+    change_type: string;
+    justification: string;
+    discount_amount?: number;
+  }) => {
+    try {
+      const currentVer = versions.length > 0 ? Math.max(...versions.map((v) => v.version_number)) : 1;
+      await api.createBudgetVersion(projectId, {
+        budget_id: budget?.id,
+        version_number: currentVer + 1,
+        change_type: vData.change_type,
+        justification: vData.justification,
+        discount_amount: vData.discount_amount || 0,
+        total_materials: totalMaterials,
+        total_services: totalServices,
+        total_equipment: totalEquipment,
+        total_final: totalBudgetCalculated - (vData.discount_amount || 0),
+        items_snapshot: editableMaterials,
+        services_snapshot: editableServices,
+        equipment_snapshot: editableEquipment,
+        created_by: currentUser?.id,
+        created_by_name: currentUser?.name
+      });
+      const verRes = await api.getBudgetVersions(projectId);
+      setVersions(verRes || []);
+      alert(`Versão ${currentVer + 1} gravada com sucesso!`);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao gravar versão');
+    }
+  };
   const handleApproveBudget = async () => {
     if (!budget || approvingBudget) return;
 
@@ -569,21 +683,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       setIsAssignEngineersModalOpen(true);
       return;
     }
-
-    if (!window.confirm('Confirma a aprovação deste orçamento? A obra mudará para o status "Em execução" e as solicitações de materiais da Engenharia serão liberadas.')) {
-      return;
-    }
-
-    setApprovingBudget(true);
-    try {
-      await api.approveBudget(budget.id, currentUser?.id, currentUser?.name);
-      await fetchProjectData();
-    } catch (err: any) {
-      console.error('Erro ao aprovar orçamento:', err);
-      alert(err.message || 'Erro ao aprovar orçamento');
-    } finally {
-      setApprovingBudget(false);
-    }
+    setIsApproveModalOpen(true);
   };
 
   const handleAddMaterialRow = () => {
@@ -777,6 +877,62 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             )}
           </div>
         </div>
+
+        {/* Resumo Descritivo do Escopo (Item 7) */}
+        {(project.scope_summary || isEditingScope) && (
+          <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-3xl shadow-sm space-y-2 mb-2 animate-in fade-in">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-emerald-400 shrink-0" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                  Resumo Descritivo do Escopo (Instruções Técnicas da Orçamentação para Engenharia)
+                </h3>
+              </div>
+              {hasPermission(['orcamento', 'admin']) && (
+                <div className="flex items-center gap-2">
+                  {isEditingScope ? (
+                    <>
+                      <button
+                        onClick={() => setIsEditingScope(false)}
+                        className="text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-dark-800"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleSaveScopeSummary}
+                        className="text-[11px] text-emerald-300 font-bold hover:text-white px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 shadow-sm"
+                      >
+                        Salvar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingScope(true)}
+                      className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-dark-800 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Editar Escopo</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {isEditingScope ? (
+              <textarea
+                value={scopeEditText}
+                onChange={(e) => setScopeEditText(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 bg-dark-850 border border-dark-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 resize-none"
+                placeholder="Descreva o escopo acordado e detalhes técnicos..."
+              />
+            ) : (
+              <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-dark-900/70 p-3 rounded-2xl border border-dark-750">
+                {project.scope_summary}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Tab Navigation (Filtrada por perfil para foco e sem duplicidade) */}
         <div className="flex items-center gap-1.5 border-t border-slate-200 dark:border-dark-750 pt-3 overflow-x-auto no-scrollbar text-xs font-bold w-full min-w-0">
@@ -1023,9 +1179,22 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                           <FileText className="w-4 h-4 text-sabrar-400 shrink-0" />
                           <span className="font-bold text-xs text-white truncate">{f.original_name}</span>
                         </div>
-                        <span className="text-[10px] font-bold text-sabrar-400 bg-sabrar-950 px-2 py-0.5 rounded-full border border-sabrar-500/40">
-                          {f.type}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-sabrar-400 bg-sabrar-950 px-2 py-0.5 rounded-full border border-sabrar-500/40">
+                            {f.type}
+                          </span>
+                          <a
+                            href={api.getProjectFileDownloadUrl(project.id, f.id)}
+                            download={f.original_name}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-sabrar-300 bg-sabrar-950/90 hover:bg-sabrar-900 border border-sabrar-500/40 rounded-lg transition-colors shadow-xs"
+                            title="Baixar arquivo anexado"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Baixar</span>
+                          </a>
+                        </div>
                       </div>
                       {f.content_summary && (
                         <div className="text-[11px] text-slate-300 bg-dark-900 p-2.5 rounded-xl border border-dark-750 line-clamp-3 leading-relaxed">
@@ -1132,14 +1301,26 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   </button>
                 </div>
               ) : budget ? (
-                <button
-                  onClick={handleApproveBudget}
-                  disabled={approvingBudget}
-                  className="w-full py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-sabrar-600/30 active:scale-95 disabled:opacity-50"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span>{approvingBudget ? 'Aprovando Obra...' : 'Aprovar Orçamento e Iniciar Obra'}</span>
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={handleApproveBudget}
+                    disabled={approvingBudget}
+                    className="w-full py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-sabrar-600/30 active:scale-95 disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>{approvingBudget ? 'Aprovando Obra...' : 'Aprovar Orçamento e Iniciar Obra'}</span>
+                  </button>
+
+                  {project.status !== 'Perdido' && project.status !== 'Orçamento Perdido' && (
+                    <button
+                      onClick={() => setIsMarkLostModalOpen(true)}
+                      className="w-full py-2 rounded-2xl bg-dark-850 hover:bg-rose-950/40 border border-dark-700 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 text-xs font-semibold transition-all flex items-center justify-center gap-2 active:scale-95"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Marcar Orçamento como Perdido</span>
+                    </button>
+                  )}
+                </div>
               ) : null}
             </div>
           </div>
@@ -1219,6 +1400,24 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <span>+ Máquina</span>
               </button>
               <button
+                onClick={() => setIsNewVersionModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                title="Criar nova versão do orçamento com histórico e justificativa"
+              >
+                <History className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Nova Versão</span>
+              </button>
+              {versions.length > 0 && (
+                <button
+                  onClick={() => setIsVersionsModalOpen(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-dark-700 bg-dark-800 text-slate-300 hover:text-white text-xs font-semibold"
+                  title="Ver histórico de versões"
+                >
+                  <History className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Versões ({versions.length})</span>
+                </button>
+              )}
+              <button
                 onClick={handleSaveBudget}
                 disabled={savingBudget}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
@@ -1229,6 +1428,66 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             </div>
           </div>
 
+          {/* Sub-Abas de Levantamento: Original vs Aditivos (Item 5) */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-b border-dark-750">
+            <button
+              onClick={() => setSelectedAddendumTab('original')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                selectedAddendumTab === 'original'
+                  ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                  : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750 hover:bg-dark-800'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Levantamento Original</span>
+            </button>
+
+            {addenda.map((ad) => (
+              <button
+                key={ad.id}
+                onClick={() => setSelectedAddendumTab(ad.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  selectedAddendumTab === ad.id
+                    ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                    : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750 hover:bg-dark-800'
+                }`}
+              >
+                <span>Aditivo {ad.number}</span>
+                <span className="text-[10px] opacity-75 font-normal">
+                  ({ad.date ? new Date(ad.date).toLocaleDateString('pt-BR') : ''})
+                </span>
+              </button>
+            ))}
+
+            {hasPermission(['orcamento', 'admin']) && (
+              <>
+                <button
+                  onClick={() => setIsNewAddendumModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-sabrar-300 hover:text-white bg-sabrar-950/80 border border-sabrar-500/40 hover:bg-sabrar-900 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Novo Aditivo</span>
+                </button>
+                <button
+                  onClick={() => setIsLinkAddendumModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-blue-300 hover:text-white bg-blue-950/80 border border-blue-500/40 hover:bg-blue-900 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap active:scale-95"
+                  title="Vincular uma obra existente como aditivo desta obra"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>Vincular Obra como Aditivo</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {selectedAddendumTab !== 'original' ? (
+            <AddendumDetailView
+              addendum={addenda.find((a) => a.id === selectedAddendumTab)!}
+              onDelete={handleDeleteAddendum}
+              canEdit={hasPermission(['orcamento', 'admin'])}
+            />
+          ) : (
+            <>
           {/* PAINEL PROEMINENTE DE MARGEM COMERCIAL (%) */}
           <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 dark:from-dark-900 dark:via-dark-850 dark:to-dark-900 border-2 border-emerald-500/60 dark:border-emerald-500/40 rounded-3xl p-5 shadow-lg space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1866,6 +2125,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               )}
             </div>
           </div>
+            </>
+          )}
         </div>
       )}
 
@@ -2645,6 +2906,67 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         onLink={async (material, spreadsheetName) => {
           if (linkModalItemIdx !== null) {
             handleSelectMaterialSuggestion(linkModalItemIdx, material, spreadsheetName);
+          }
+        }}
+      />
+
+      {/* Modais de Orçamento, Aditivos e Status */}
+      <ApproveBudgetModal
+        isOpen={isApproveModalOpen}
+        onClose={() => setIsApproveModalOpen(false)}
+        projectName={project.name}
+        totalFinal={totalBudgetCalculatedClient}
+        existingScopeSummary={project.scope_summary || ''}
+        onConfirm={handleConfirmApproval}
+      />
+
+      <MarkLostModal
+        isOpen={isMarkLostModalOpen}
+        onClose={() => setIsMarkLostModalOpen(false)}
+        projectName={project.name}
+        onConfirm={handleConfirmMarkLost}
+      />
+
+      <NewBudgetVersionModal
+        isOpen={isNewVersionModalOpen}
+        onClose={() => setIsNewVersionModalOpen(false)}
+        currentVersionNumber={versions.length > 0 ? Math.max(...versions.map(v => v.version_number)) : 1}
+        totalFinal={totalBudgetCalculatedClient}
+        onConfirm={handleConfirmNewVersion}
+      />
+
+      <BudgetVersionsModal
+        isOpen={isVersionsModalOpen}
+        onClose={() => setIsVersionsModalOpen(false)}
+        versions={versions}
+        currentVersionNumber={versions.length > 0 ? Math.max(...versions.map(v => v.version_number)) : 1}
+      />
+
+      <NewAddendumModal
+        isOpen={isNewAddendumModalOpen}
+        onClose={() => setIsNewAddendumModalOpen(false)}
+        projectId={project.id}
+        nextNumber={addenda.length + 1}
+        onSuccess={async () => {
+          const addRes = await api.getProjectAddenda(projectId);
+          setAddenda(addRes || []);
+          if (addRes && addRes.length > 0) {
+            setSelectedAddendumTab(addRes[addRes.length - 1].id);
+          }
+        }}
+      />
+
+      <LinkProjectAddendumModal
+        isOpen={isLinkAddendumModalOpen}
+        onClose={() => setIsLinkAddendumModalOpen(false)}
+        projectId={project.id}
+        projectName={project.name}
+        nextNumber={addenda.length + 1}
+        onSuccess={async () => {
+          await fetchProjectData();
+          const addRes = await api.getProjectAddenda(projectId);
+          if (addRes && addRes.length > 0) {
+            setSelectedAddendumTab(addRes[addRes.length - 1].id);
           }
         }}
       />

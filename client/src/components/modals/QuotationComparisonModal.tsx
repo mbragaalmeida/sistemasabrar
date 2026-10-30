@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   FileSpreadsheet,
@@ -15,7 +15,10 @@ import {
   Edit2,
   Search,
   Package,
-  ChevronDown
+  ChevronDown,
+  UploadCloud,
+  Sparkles,
+  Edit3
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -93,6 +96,20 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
   const [materialSuggestions, setMaterialSuggestions] = useState<any[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [submittingItem, setSubmittingItem] = useState(false);
+
+  // Estado para Edição Completa de Item (Item 15)
+  const [editingItem, setEditingItem] = useState<QuotationItem | null>(null);
+  const [editItemName, setEditItemName] = useState('');
+  const [editItemQty, setEditItemQty] = useState<number>(1);
+  const [editItemUnit, setEditItemUnit] = useState('und');
+  const [savingEditItem, setSavingEditItem] = useState(false);
+  const [editMaterialSuggestions, setEditMaterialSuggestions] = useState<any[]>([]);
+  const [loadingEditSuggestions, setLoadingEditSuggestions] = useState(false);
+
+  // Estado para Upload do PDF do Fornecedor (Item 15)
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [parsingPdf, setParsingPdf] = useState(false);
+  const [pdfSuccessMessage, setPdfSuccessMessage] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -189,6 +206,162 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
       alert(err.message || 'Erro ao adicionar item ao comparativo.');
     } finally {
       setSubmittingItem(false);
+    }
+  };
+
+  const handleOpenEditItem = (it: QuotationItem) => {
+    setEditingItem(it);
+    setEditItemName(it.mat_name || it.item_description || '');
+    setEditItemQty(it.quantity || 1);
+    setEditItemUnit(it.unit || 'und');
+    setEditMaterialSuggestions([]);
+  };
+
+  const handleEditMaterialSearch = async (val: string) => {
+    setEditItemName(val);
+    if (!val.trim() || val.length < 2) {
+      setEditMaterialSuggestions([]);
+      return;
+    }
+    try {
+      setLoadingEditSuggestions(true);
+      const res = await api.autocompleteMaterials(val.trim());
+      setEditMaterialSuggestions(res || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingEditSuggestions(false);
+    }
+  };
+
+  const handleSelectEditMaterialSuggestion = (mat: any) => {
+    setEditItemName(mat.name);
+    if (mat.unit) setEditItemUnit(mat.unit);
+    setEditMaterialSuggestions([]);
+  };
+
+  const handleSaveEditItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+
+    try {
+      setSavingEditItem(true);
+      await api.updateQuotationItem(qId, editingItem.id, {
+        material_description: editItemName.trim(),
+        quantity: Number(editItemQty) || 1,
+        unit: editItemUnit.trim() || 'und'
+      });
+      setEditingItem(null);
+      await loadQuotationDetails(qId);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar item.');
+    } finally {
+      setSavingEditItem(false);
+    }
+  };
+
+  const handleDeleteSupplier = async (supplierId: number, supName: string) => {
+    if (!window.confirm(`Deseja remover a proposta de "${supName}" do mapa comparativo?`)) return;
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+    try {
+      await api.deleteQuotationSupplier(qId, supplierId);
+      await loadQuotationDetails(qId);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao remover proposta de fornecedor');
+    }
+  };
+
+  const handleUploadSupplierPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) {
+      alert('Selecione ou crie uma cotação antes de importar a proposta.');
+      return;
+    }
+
+    setParsingPdf(true);
+    setPdfSuccessMessage('');
+
+    try {
+      const data = await api.parseSupplierPdf(file);
+      
+      if (data.supplier) {
+        if (data.supplier.name) setNewSupplierName(data.supplier.name);
+        if (data.supplier.cnpj) setNewCnpj(data.supplier.cnpj);
+        if (data.supplier.phone) setNewPhone(data.supplier.phone);
+        if (data.supplier.vendor) setNewContact(data.supplier.vendor);
+        if (data.supplier.payment_terms) setNewPaymentTerms(data.supplier.payment_terms);
+        if (data.supplier.delivery_deadline) {
+          const matchDays = data.supplier.delivery_deadline.match(/\d+/);
+          if (matchDays) setNewDeliveryDays(Number(matchDays[0]));
+        }
+      }
+
+      let currentItems = [...items];
+      const newPricesMap: Record<number, number> = {};
+
+      if (Array.isArray(data.items) && data.items.length > 0) {
+        // Garante lista atualizada de itens da cotação
+        const initialQuotation = await api.getQuotationById(qId);
+        currentItems = initialQuotation.items || [];
+
+        for (const pdfItem of data.items) {
+          const pName = (pdfItem.name || pdfItem.description || '').toLowerCase().trim();
+          const pCode = (pdfItem.code || '').toLowerCase().trim();
+          const itemUnitPrice = Number(pdfItem.unitPrice ?? pdfItem.unit_price ?? 0);
+
+          let matched = currentItems.find(it => {
+            const itName = (it.mat_name || it.item_description || '').toLowerCase().trim();
+            const itCode = (it.mat_code || '').toLowerCase().trim();
+            return (pCode && itCode && pCode === itCode) || (pName && itName && (itName.includes(pName) || pName.includes(itName)));
+          });
+
+          if (!matched) {
+            try {
+              await api.addQuotationItem(qId, {
+                material_description: pdfItem.name || pdfItem.description || 'Item importado do PDF',
+                quantity: Number(pdfItem.quantity) || 1,
+                unit: pdfItem.unit || 'und',
+                unit_price: itemUnitPrice
+              });
+              const refreshed = await api.getQuotationById(qId);
+              currentItems = refreshed.items || [];
+              matched = currentItems.find(it => {
+                const itName = (it.mat_name || it.item_description || '').toLowerCase().trim();
+                const itCode = (it.mat_code || '').toLowerCase().trim();
+                return (pCode && itCode && pCode === itCode) || (pName && itName && (itName.includes(pName) || pName.includes(itName)));
+              });
+            } catch (addErr) {
+              console.warn('Erro ao auto-adicionar item do PDF na cotação:', addErr);
+            }
+          }
+
+          if (matched) {
+            newPricesMap[matched.id] = itemUnitPrice;
+          }
+        }
+
+        setNewPrices(prev => ({ ...prev, ...newPricesMap }));
+        await loadQuotationDetails(qId);
+        setShowAddSupplier(true);
+        setShowAddItem(false);
+        setPdfSuccessMessage(`PDF de "${data.supplier?.name || 'Fornecedor'}" importado com sucesso! ${data.items.length} itens e preços carregados na proposta.`);
+      } else {
+        alert('O PDF foi processado mas não foram identificados itens tabulares. Verifique o arquivo.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao ler PDF do fornecedor:', err);
+      alert(err.message || 'Erro ao processar o arquivo PDF do fornecedor.');
+    } finally {
+      setParsingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
     }
   };
 
@@ -424,7 +597,25 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                     (Compare lado a lado os preços unitários, impostos, frete e condições)
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handleUploadSupplierPdf}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => pdfInputRef.current?.click()}
+                    disabled={parsingPdf}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                    title="Upload do PDF do fornecedor para imputar itens e preços automaticamente"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{parsingPdf ? 'Lendo PDF...' : 'Upload PDF Fornecedor'}</span>
+                  </button>
+
                   {!showAddItem && (
                     <button
                       type="button"
@@ -453,6 +644,18 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                   )}
                 </div>
               </div>
+
+              {pdfSuccessMessage && (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-500/50 rounded-xl text-emerald-300 text-xs flex items-center justify-between animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{pdfSuccessMessage}</span>
+                  </div>
+                  <button onClick={() => setPdfSuccessMessage('')} className="text-slate-400 hover:text-white text-xs">
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* Formulário Colapsável de Adicionar Item ao Comparativo */}
               {showAddItem && (
@@ -789,10 +992,19 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                                 {s.supplier_name}
                               </span>
                               {s.cnpj && <span className="text-[10px] text-slate-400">{s.cnpj}</span>}
-                              {s.is_winner && (
+                              {s.is_winner ? (
                                 <span className="mt-1 px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full flex items-center gap-1 shadow-xs">
                                   <Trophy className="w-3 h-3" /> VENCEDOR
                                 </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSupplier(s.id, s.supplier_name)}
+                                  className="mt-1 text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-1 p-0.5"
+                                  title="Remover esta proposta de fornecedor do mapa"
+                                >
+                                  <Trash2 className="w-3 h-3" /> Remover
+                                </button>
                               )}
                             </div>
                           </th>
@@ -821,14 +1033,24 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                                 </div>
                                 {it.mat_code && <div className="text-[10px] text-slate-400">Cód: {it.mat_code}</div>}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteItem(it.id, it.mat_name || it.item_description || 'Item')}
-                                className="opacity-40 hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 rounded transition-all shrink-0 cursor-pointer"
-                                title="Remover este item do comparativo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditItem(it)}
+                                  className="text-slate-400 hover:text-blue-500 p-1 rounded transition-all cursor-pointer"
+                                  title="Editar descrição, quantidade e unidade deste item"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItem(it.id, it.mat_name || it.item_description || 'Item')}
+                                  className="opacity-40 hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 rounded transition-all cursor-pointer"
+                                  title="Remover este item do comparativo"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           </td>
                           <td className="py-2.5 px-2 text-center">
@@ -1033,6 +1255,126 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
           </button>
         </div>
 
+        {/* Modal de Edição de Item do Mapa Comparativo (Item 15) */}
+        {editingItem && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-dark-900 border border-dark-750 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-dark-800 pb-2">
+                <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-blue-400" />
+                  Editar Item do Mapa Comparativo
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditItem} className="space-y-3 text-xs">
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-300 font-semibold">
+                      Descrição / Nome do Material *
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      (Busca inteligente ou texto livre)
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={editItemName}
+                      onChange={(e) => handleEditMaterialSearch(e.target.value)}
+                      placeholder="Digite para buscar na base ou escrever livremente..."
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                    />
+                    {loadingEditSuggestions && (
+                      <div className="absolute right-3 top-2.5 text-[10px] text-slate-400 animate-pulse">
+                        Buscando base...
+                      </div>
+                    )}
+                  </div>
+                  {editMaterialSuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-dark-850 border border-dark-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-dark-800">
+                      <div className="px-3 py-1 bg-dark-800 text-[10px] font-bold text-slate-400 flex items-center justify-between">
+                        <span>{editMaterialSuggestions.length} opções encontradas na base SABRAR</span>
+                        <button type="button" onClick={() => setEditMaterialSuggestions([])} className="hover:text-white">✕</button>
+                      </div>
+                      {editMaterialSuggestions.map((mat) => (
+                        <div
+                          key={mat.id}
+                          onClick={() => handleSelectEditMaterialSuggestion(mat)}
+                          className="p-2.5 hover:bg-dark-750 cursor-pointer text-xs transition-colors"
+                        >
+                          <div className="font-bold text-white flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-blue-400 bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-500/30">
+                              {mat.code}
+                            </span>
+                            <span>{mat.name}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Unidade: <strong className="text-emerald-400">{mat.unit}</strong> {mat.category ? `• Cat: ${mat.category}` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Quantidade *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      required
+                      value={editItemQty}
+                      onChange={(e) => setEditItemQty(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Unidade de Medida *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editItemUnit}
+                      onChange={(e) => setEditItemUnit(e.target.value)}
+                      placeholder="und, m, kg, cx"
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white uppercase focus:outline-none focus:border-blue-500 font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-dark-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingItem(null)}
+                    className="px-3 py-1.5 rounded-xl border border-dark-700 text-slate-300 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEditItem}
+                    className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-md shadow-blue-600/30 disabled:opacity-50"
+                  >
+                    {savingEditItem ? 'Salvando...' : 'Salvar Alterações'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

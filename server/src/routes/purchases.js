@@ -1,7 +1,12 @@
 import express from 'express';
+import multer from 'multer';
 import { db } from '../db/connection.js';
 import { StockService, generateNextPurchaseCode } from '../services/stockService.js';
 import { PurchaseOrderExportService } from '../services/purchaseOrderExportService.js';
+import { SupplierPdfParser } from '../services/supplierPdfParser.js';
+import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
+
+const uploadMem = multer({ storage: multer.memoryStorage() });
 
 export const purchasesRouter = express.Router();
 
@@ -280,5 +285,99 @@ purchasesRouter.patch('/:id/approval', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 11 & Item 15: Upload e Extração Inteligente de PDF de Orçamento do Fornecedor
+purchasesRouter.post('/parse-supplier-pdf', uploadMem.single('file'), async (req, res) => {
+  try {
+    let pdfText = '';
+    if (req.file && req.file.buffer) {
+      pdfText = await extractTextFromPdfBuffer(req.file.buffer);
+    } else if (req.body?.text) {
+      pdfText = req.body.text;
+    } else {
+      return res.status(400).json({ error: 'Nenhum arquivo PDF ou texto foi enviado.' });
+    }
+
+    if (!pdfText || !pdfText.trim()) {
+      return res.status(400).json({ error: 'Não foi possível extrair texto legível do PDF enviado.' });
+    }
+
+    const parsed = SupplierPdfParser.parse(pdfText);
+    res.json({
+      success: true,
+      extractedTextLength: pdfText.length,
+      ...parsed
+    });
+  } catch (err) {
+    console.error('[Parse Supplier PDF Error]', err);
+    res.status(500).json({ error: err.message || 'Erro ao processar PDF do fornecedor' });
+  }
+});
+
+// Item 11: Exportação da Ordem de Compra oficial no modelo Sabrar (.xlsx) a partir dos dados do PDF
+purchasesRouter.post('/export-custom-oc', async (req, res) => {
+  try {
+    const {
+      ocCode,
+      orderCode,
+      proposalNumber,
+      rmNumber,
+      supplierName,
+      supplierCnpj,
+      supplierPhone,
+      supplierEmail,
+      creationDate,
+      deliveryDate,
+      paymentTerms,
+      freight,
+      discount,
+      projectName,
+      projectAddress,
+      projectCity,
+      buyerName,
+      buyerEmail,
+      buyerPhone,
+      items = []
+    } = req.body;
+
+    const workbookBuffer = await PurchaseOrderExportService.buildWorkbook({
+      ocCode: ocCode || `OC-${Date.now().toString().slice(-6)}`,
+      orderCode: orderCode || proposalNumber || `PED-${Date.now().toString().slice(-6)}`,
+      proposalNumber: proposalNumber || `PROP-${Date.now().toString().slice(-6)}`,
+      rmNumber: rmNumber || `RM-${Date.now().toString().slice(-6)}`,
+      supplierName: supplierName || 'Fornecedor',
+      supplierCnpj: supplierCnpj || '',
+      supplierPhone: supplierPhone || '',
+      supplierEmail: supplierEmail || '',
+      creationDate: creationDate || new Date().toLocaleDateString('pt-BR'),
+      deliveryDate: deliveryDate || '',
+      paymentTerms: paymentTerms || 'FATURADO 28DD',
+      freight: Number(freight) || 0,
+      discount: Number(discount) || 0,
+      projectName: projectName || 'Obra Sabrar',
+      projectAddress: projectAddress || '',
+      projectCity: projectCity || '',
+      buyerName: buyerName || 'Emily Bueno',
+      buyerEmail: buyerEmail || 'emily@sabrar.com.br',
+      buyerPhone: buyerPhone || '(21) 97016-8717',
+      items: items.map(it => ({
+        code: it.code || it.material_code || 'SAB',
+        name: it.name || it.material_name || it.description || 'Material',
+        unit: it.unit || 'und',
+        quantity: Number(it.quantity || it.qty || 1),
+        price: Number(it.unitPrice || it.price || it.unit_price || 0)
+      }))
+    });
+
+    const safeName = (supplierName || 'Fornecedor').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `Ordem_de_Compra_${safeName}_${Date.now()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(workbookBuffer);
+  } catch (err) {
+    console.error('[Export Custom OC Error]', err);
+    res.status(500).json({ error: err.message || 'Erro ao gerar Ordem de Compra em Excel' });
   }
 });

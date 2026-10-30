@@ -30,6 +30,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { AuditPage } from './pages/AuditPage';
 import { UsersPage } from './pages/UsersPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { ClientsPage } from './pages/ClientsPage';
 import { LoginPage } from './pages/LoginPage';
 import { api } from './services/api';
 import { isPageAllowed, getDefaultPageForRole } from './utils/permissions';
@@ -202,6 +203,10 @@ const AppContent: React.FC = () => {
 
           {currentPage === 'suppliers' && (
             <SuppliersPage />
+          )}
+
+          {currentPage === 'clients' && (
+            <ClientsPage onNavigate={handleNavigate} />
           )}
 
           {currentPage === 'ai-hub' && (

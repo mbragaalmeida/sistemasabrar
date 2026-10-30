@@ -32,6 +32,8 @@ export type ProjectStatus =
   | 'Concluído'
   | 'Concluída'
   | 'Não aprovado'
+  | 'Perdido'
+  | 'Orçamento Perdido'
   | 'Cancelado';
 
 export interface Project {
@@ -47,7 +49,10 @@ export interface Project {
   project_type: 'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura';
   start_date?: string;
   expected_end_date?: string;
+  return_deadline?: string | null;
   responsible_engineer?: string | null;
+  responsible_estimator?: string | null;
+  scope_summary?: string | null;
   assigned_engineers?: Array<{ id: number; name: string; email: string; phone?: string; avatar?: string }>;
   assigned_engineer_ids?: number[];
   notes?: string;
@@ -341,11 +346,71 @@ export interface Supplier {
   name: string;
   corporate_name?: string;
   cnpj?: string;
+  category?: string;
+  categories?: string[] | string;
   contact_person?: string;
   phone?: string;
   email?: string;
   materials_supplied?: string;
   notes?: string;
+  contacts?: Array<{ name: string; email?: string; phone?: string; role?: string }>;
+}
+
+export interface Client {
+  id: number;
+  name: string;
+  corporate_name?: string;
+  cnpj_cpf?: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  segment?: string;
+  is_recurrent: boolean;
+  notes?: string;
+  rating?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProjectAddendum {
+  id: number;
+  project_id: number;
+  number: number;
+  title: string;
+  description: string;
+  date: string;
+  total_materials: number;
+  total_services: number;
+  total_final: number;
+  items?: any[];
+  services?: any[];
+  files?: any[];
+  created_by?: number;
+  created_at: string;
+}
+
+export interface BudgetVersion {
+  id: number;
+  budget_id?: number;
+  project_id: number;
+  version_number: number;
+  justification: string;
+  change_type: string;
+  total_materials: number;
+  total_services: number;
+  total_equipment: number;
+  total_final: number;
+  discount_amount: number;
+  items_snapshot?: any[];
+  services_snapshot?: any[];
+  equipment_snapshot?: any[];
+  notes?: string;
+  created_by?: number;
+  created_by_name?: string;
+  created_at: string;
 }
 
 export interface Notification {

@@ -331,6 +331,79 @@ quotationsRouter.delete('/:id/items/:itemId', async (req, res) => {
 });
 
 /**
+ * PUT /api/quotations/:id/suppliers/:supplierId
+ * Atualiza proposta de fornecedor (preços, prazos, totais)
+ */
+quotationsRouter.put('/:id/suppliers/:supplierId', async (req, res) => {
+  try {
+    const { id, supplierId } = req.params;
+    const {
+      supplier_name,
+      delivery_deadline_days,
+      tax_aliquot_percent,
+      transport_cost,
+      items_prices,
+      subtotal,
+      total_amount,
+      notes,
+      payment_terms
+    } = req.body;
+
+    const itemsPricesJson = typeof items_prices === 'object' ? JSON.stringify(items_prices) : String(items_prices || '{}');
+    const taxPercent = Number(tax_aliquot_percent) || 0;
+    const sub = Number(subtotal) || 0;
+    const taxTotal = Number(((sub * taxPercent) / 100).toFixed(2));
+    const transport = Number(transport_cost) || 0;
+    const total = Number(total_amount) || Number((sub + taxTotal + transport).toFixed(2));
+
+    await db.prepare(`
+      UPDATE purchase_quotation_suppliers
+      SET supplier_name = COALESCE(?, supplier_name),
+          delivery_deadline_days = COALESCE(?, delivery_deadline_days),
+          tax_aliquot_percent = ?,
+          tax_total = ?,
+          transport_cost = ?,
+          subtotal = ?,
+          total_cost = ?,
+          notes = COALESCE(?, notes),
+          items_prices = ?
+      WHERE id = ? AND quotation_id = ?
+    `).run(
+      supplier_name || null,
+      delivery_deadline_days !== undefined ? Number(delivery_deadline_days) : null,
+      taxPercent,
+      taxTotal,
+      transport,
+      sub,
+      total,
+      notes || null,
+      itemsPricesJson,
+      supplierId,
+      id
+    );
+
+    res.json({ success: true, message: 'Proposta do fornecedor atualizada com sucesso.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/quotations/:id/suppliers/:supplierId
+ * Remove um fornecedor do mapa comparativo
+ */
+quotationsRouter.delete('/:id/suppliers/:supplierId', async (req, res) => {
+  try {
+    const { id, supplierId } = req.params;
+    await db.prepare('DELETE FROM purchase_quotation_suppliers WHERE id = ? AND quotation_id = ?').run(supplierId, id);
+    await db.prepare('DELETE FROM purchase_quotation_items WHERE quotation_supplier_id = ? AND quotation_id = ?').run(supplierId, id);
+    res.json({ success: true, message: 'Fornecedor removido do mapa comparativo.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * PATCH /api/quotations/:id/winner
  * Marca a proposta do fornecedor selecionado como vencedora
  */

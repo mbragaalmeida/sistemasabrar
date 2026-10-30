@@ -310,14 +310,33 @@ export const SubstituteMaterialModal: React.FC<SubstituteMaterialModalProps> = (
               <label className="block text-slate-300 font-bold text-xs mb-1">
                 Unidade a Entregar *
               </label>
-              <input
-                type="text"
-                value={substituteUnit}
-                onChange={(e) => setSubstituteUnit(e.target.value)}
-                placeholder="Ex: metro, kg, un, pç"
-                className="w-full bg-dark-850 text-white font-bold text-xs rounded-xl px-3 py-2 border border-dark-700 focus:outline-none focus:border-amber-500"
-                title="Unidade de medida 100% editável para o Almoxarifado"
-              />
+              <div className="space-y-1.5">
+                <input
+                  type="text"
+                  value={substituteUnit}
+                  onChange={(e) => setSubstituteUnit(e.target.value)}
+                  placeholder="Ex: pares, un, m, cx"
+                  className="w-full bg-dark-850 text-white font-bold text-xs rounded-xl px-3 py-2 border border-dark-700 focus:outline-none focus:border-amber-500"
+                  title="Unidade de medida editável"
+                  required
+                />
+                <div className="flex flex-wrap gap-1">
+                  {['pares', 'par', 'un', 'pç', 'm', 'cx', 'kg', 'rolo'].map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setSubstituteUnit(u)}
+                      className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all ${
+                        substituteUnit.toLowerCase() === u
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold'
+                          : 'bg-dark-800 text-slate-400 border-dark-750 hover:text-white'
+                      }`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

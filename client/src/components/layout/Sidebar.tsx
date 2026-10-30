@@ -95,6 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       group: 'GESTÃO & AUDITORIA',
       items: [
         { id: 'bi-purchases-stock', label: 'BI Compras & Estoque', icon: BarChart3, badge: 'BI' },
+        { id: 'clients', label: 'Clientes', icon: Building2 },
         { id: 'suppliers', label: 'Fornecedores', icon: Building2 },
         { id: 'reports', label: 'Relatórios', icon: BarChart3 },
         { id: 'audit', label: 'Auditoria & Logs', icon: History },

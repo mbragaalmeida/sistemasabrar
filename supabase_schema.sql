@@ -364,3 +364,74 @@ ON CONFLICT (id) DO NOTHING;
 -- Notificação Inicial de Boas-Vindas
 INSERT INTO notifications (user_id, role_target, title, message, type, link, is_read) VALUES
   (1, 'Administrador Geral', 'Sistema SABRAR em Produção', 'Banco de dados Supabase configurado com sucesso e pronto para uso real.', 'success', '/dashboard', 0);
+
+-- ========================================================
+-- ATUALIZAÇÕES DO SISTEMA (OUTUBRO / 2026)
+-- ========================================================
+
+-- Colunas extras para obras e projetos
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS responsible_estimator TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS return_deadline DATE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS scope_summary TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_project_id INTEGER REFERENCES projects(id);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE;
+
+-- Coluna para armazenamento seguro de arquivos binários no PostgreSQL
+ALTER TABLE project_files ADD COLUMN IF NOT EXISTS file_data BYTEA;
+
+-- Colunas extras para fornecedores (vendedores múltiplos e categorias múltiplas)
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS vendors JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
+
+-- Tabela de Clientes Recorrentes
+CREATE TABLE IF NOT EXISTS clients (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  trade_name TEXT,
+  cnpj TEXT,
+  ie TEXT,
+  address TEXT,
+  city TEXT,
+  state TEXT,
+  cep TEXT,
+  segment TEXT,
+  notes TEXT,
+  contacts JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela de Aditivos de Obras
+CREATE TABLE IF NOT EXISTS project_addenda (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  date DATE,
+  total_materials NUMERIC DEFAULT 0,
+  total_services NUMERIC DEFAULT 0,
+  total_final NUMERIC DEFAULT 0,
+  items JSONB DEFAULT '[]'::jsonb,
+  services JSONB DEFAULT '[]'::jsonb,
+  files JSONB DEFAULT '[]'::jsonb,
+  origin_project_id INTEGER,
+  created_by INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela de Versões de Orçamento
+CREATE TABLE IF NOT EXISTS budget_versions (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL,
+  reason TEXT,
+  justification TEXT,
+  discount_percentage NUMERIC DEFAULT 0,
+  discount_value NUMERIC DEFAULT 0,
+  total_amount NUMERIC DEFAULT 0,
+  snapshot_data JSONB,
+  created_by INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+

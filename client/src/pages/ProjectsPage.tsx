@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { AssignEngineersModal } from '../components/modals/AssignEngineersModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
+import { ExecutionCalendar } from '../components/projects/ExecutionCalendar';
 import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 
 interface ProjectsPageProps {
@@ -25,19 +26,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
 
-  // Aba de estágio operacional: Todas vs Em Execução (Aprovadas) vs Em Orçamento vs Finalizadas
-  const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas'>('todas');
+  // Aba de estágio operacional: Todas vs Em Execução vs Em Orçamento vs Finalizadas vs Calendário de Execução
+  const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas' | 'calendario'>('todas');
 
   const execucaoCount = useMemo(() => {
     return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado')).length;
   }, [projects]);
 
   const orcamentoCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
   }, [projects]);
 
   const finalizadasCount = useMemo(() => {
     return projects.filter(p => p.code !== 'SAB-INTERNO' && ['Finalizado', 'Concluído', 'Concluída'].includes(p.status)).length;
+  }, [projects]);
+
+  const calendarCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.expected_end_date || p.return_deadline)).length;
   }, [projects]);
 
   const displayedProjects = useMemo(() => {
@@ -186,10 +191,32 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
             {finalizadasCount}
           </span>
         </button>
+
+        {/* Item 4: Calendário de Execução (Círculo Vermelho do Print 1) */}
+        <button
+          type="button"
+          onClick={() => setWorkflowTab('calendario')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${
+            workflowTab === 'calendario'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-dark-800'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-blue-400" />
+          <span>Calendário de Execução</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-950 text-blue-300 border border-blue-500/40 font-mono">
+            {calendarCount}
+          </span>
+        </button>
       </div>
 
-      {/* Filters & Search Bar (Mobile First) */}
-      <div className="bg-dark-900 p-3.5 sm:p-4 rounded-3xl border border-dark-750 shadow-md space-y-3">
+      {/* Visualização de Calendário de Execução (Item 4) */}
+      {workflowTab === 'calendario' ? (
+        <ExecutionCalendar projects={projects} onNavigate={onNavigate} />
+      ) : (
+        <>
+          {/* Filters & Search Bar (Mobile First) */}
+          <div className="bg-dark-900 p-3.5 sm:p-4 rounded-3xl border border-dark-750 shadow-md space-y-3">
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -332,6 +359,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
                       <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       <span className="truncate">{p.address || `${p.city} - ${p.state}`}</span>
                     </div>
+
+                    {/* Orçamentista Responsável & Data para Retorno (Requisito 2 e 3) */}
+                    {(p.responsible_estimator || p.return_deadline) && (
+                      <div className="flex items-center justify-between text-[11px] bg-dark-850 px-2 py-1 rounded-xl border border-dark-750">
+                        {p.responsible_estimator && (
+                          <span className="truncate text-slate-300">
+                            Orçamentista: <strong>{p.responsible_estimator}</strong>
+                          </span>
+                        )}
+                        {p.return_deadline && (
+                          <span className="text-amber-400 font-bold shrink-0">
+                            Retorno: {p.return_deadline.split('T')[0].split('-').reverse().join('/')}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between gap-1.5 pt-1">
                       <div className="flex items-center gap-1.5 truncate">
                         <HardHat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
@@ -390,6 +434,8 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
           })}
         </div>
         )
+      )}
+        </>
       )}
 
       {/* Modal para Atribuição de Engenheiros da Obra */}

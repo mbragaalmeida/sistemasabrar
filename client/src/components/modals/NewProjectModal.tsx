@@ -33,10 +33,23 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
+  
+  // Requisito 2 e 3: Orçamentista Responsável (obrigatório) e Data de Retorno
+  const [responsibleEstimator, setResponsibleEstimator] = useState('');
+  const [returnDeadline, setReturnDeadline] = useState('');
+  const [availableEstimators, setAvailableEstimators] = useState<User[]>([]);
+
+  // Engenheiro(s) Responsável(is) (opcional na fase de orçamento)
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
   const [availableEngineers, setAvailableEngineers] = useState<User[]>([]);
   const [selectedEngineerIds, setSelectedEngineerIds] = useState<number[]>([]);
   const [isEngineerDropdownOpen, setIsEngineerDropdownOpen] = useState(false);
+  const [showOptionalEngineers, setShowOptionalEngineers] = useState(false);
+
+  // Clientes Cadastrados
+  const [registeredClients, setRegisteredClients] = useState<any[]>([]);
+  const [clientSuggestions, setClientSuggestions] = useState<any[]>([]);
+
   const [estimatedArea, setEstimatedArea] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -51,8 +64,26 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      if (currentUser?.name) {
+        setResponsibleEstimator(currentUser.name);
+      }
+      // Data padrão de retorno: 3 dias úteis
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      setReturnDeadline(d.toISOString().split('T')[0]);
+
       api.getUsers()
         .then((usersList) => {
+          const estimators = usersList.filter((u: any) => 
+            u.role === 'orcamento' ||
+            u.role_name === 'orcamento' ||
+            u.role === 'orcamento_engenharia' ||
+            u.role_name === 'orcamento_engenharia' ||
+            u.role === 'admin' ||
+            u.role_name === 'admin'
+          );
+          setAvailableEstimators(estimators.length > 0 ? estimators : usersList);
+
           const engineers = usersList.filter((u: any) => {
             const email = String(u.email || '').toLowerCase();
             const dept = String(u.department || '').toLowerCase();
@@ -73,8 +104,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
           setAvailableEngineers(engineers.length > 0 ? engineers : usersList);
         })
         .catch(console.error);
+
+      // Carrega clientes para preenchimento rápido
+      api.getClients()
+        .then((cls) => setRegisteredClients(cls || []))
+        .catch(console.error);
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   const toggleEngineerSelection = (eng: User) => {
     setSelectedEngineerIds((prev) => {
@@ -138,6 +174,11 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       return;
     }
 
+    if (!responsibleEstimator.trim()) {
+      setError('O campo "Orçamentista responsável" é obrigatório para cadastrar a obra.');
+      return;
+    }
+
     setLoading(true);
     try {
       const realFiles = uploadedFiles.filter(f => f.file).map(f => f.file as File);
@@ -150,7 +191,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         client_phone: clientPhone.trim(),
         address: address.trim(),
         project_type: projectType,
-        responsible_engineer: responsibleEngineer,
+        responsible_estimator: responsibleEstimator.trim(),
+        return_deadline: returnDeadline || null,
+        responsible_engineer: responsibleEngineer || null,
         engineerIds: selectedEngineerIds,
         notes: estimatedArea ? `[Área da Obra: ${estimatedArea} m²] ${notes.trim()}` : notes.trim(),
         initial_spec_text: optionalText.trim(),
@@ -232,22 +275,95 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               />
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
                 Cliente / Contratante *
               </label>
               <input
                 type="text"
                 value={client}
-                onChange={(e) => setClient(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setClient(val);
+                  if (val.trim().length > 0 && registeredClients.length > 0) {
+                    const matches = registeredClients.filter(c => c.name.toLowerCase().includes(val.toLowerCase()));
+                    setClientSuggestions(matches);
+                  } else {
+                    setClientSuggestions([]);
+                  }
+                }}
                 placeholder="Ex: Grupo Multiplan ou Condomínio Alfa"
                 className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sabrar-500 font-semibold"
                 required
               />
+              {clientSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-dark-900 border border-dark-700 rounded-2xl shadow-xl max-h-40 overflow-y-auto divide-y divide-dark-750">
+                  {clientSuggestions.map((cs) => (
+                    <div
+                      key={cs.id}
+                      onClick={() => {
+                        setClient(cs.name);
+                        if (cs.email) setClientEmail(cs.email);
+                        if (cs.phone) setClientPhone(cs.phone);
+                        if (cs.address) setAddress(cs.address);
+                        setClientSuggestions([]);
+                      }}
+                      className="p-2.5 hover:bg-dark-800 cursor-pointer text-xs flex items-center justify-between text-white font-medium"
+                    >
+                      <span>{cs.name}</span>
+                      {cs.is_recurrent && (
+                        <span className="text-[10px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded font-bold">
+                          Recorrente
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Tipologia e Responsável */}
+          {/* Requisito 2 e 3: Orçamentista Responsável (OBRIGATÓRIO) e Data para Retorno */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-dark-850/80 rounded-2xl border border-sabrar-500/30">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-sabrar-300 mb-1 flex items-center gap-1.5">
+                <span>Orçamentista Responsável *</span>
+                <span className="text-[10px] text-rose-400 font-bold lowercase">(obrigatório)</span>
+              </label>
+              <select
+                value={responsibleEstimator}
+                onChange={(e) => setResponsibleEstimator(e.target.value)}
+                required
+                className="w-full text-xs p-2.5 rounded-xl border border-sabrar-500/40 bg-dark-900 text-white focus:outline-none focus:ring-2 focus:ring-sabrar-500 font-bold"
+              >
+                <option value="">Selecione o orçamentista responsável...</option>
+                {availableEstimators.map((est) => (
+                  <option key={est.id} value={est.name}>
+                    {est.name} ({est.role_label || est.department || 'Orçamento'})
+                  </option>
+                ))}
+                {currentUser?.name && !availableEstimators.some(e => e.name === currentUser.name) && (
+                  <option value={currentUser.name}>{currentUser.name}</option>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-sabrar-300 mb-1 flex items-center gap-1.5">
+                <span>Data para Retorno ao Cliente *</span>
+                <span className="text-[10px] text-rose-400 font-bold lowercase">(prazo da proposta)</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={returnDeadline}
+                onChange={(e) => setReturnDeadline(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-sabrar-500/40 bg-dark-900 text-white focus:outline-none focus:ring-2 focus:ring-sabrar-500 font-bold"
+              />
+            </div>
+          </div>
+
+          {/* Tipologia e Engenheiro Opcional */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
@@ -269,7 +385,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             <div className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Engenheiro(s) Responsável(is) <span className="text-[10px] text-amber-400/90 font-normal lowercase">(opcional)</span>
+                  Engenheiro(s) Responsável(is) <span className="text-[10px] text-amber-400/90 font-normal lowercase">(opcional nesta fase)</span>
                 </label>
               </div>
               <button

@@ -85,96 +85,72 @@ export const api = {
     fetchJson<{ projectId: number; hasBudget: boolean; budgetStatus?: string; quotas: any[] }>(`/projects/${projectId}/material-quotas`),
   updateProjectStatus: (id: number | string, status: string, userId?: number) =>
     fetchJson<any>(`/projects/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, userId }) }),
+  updateProjectScopeSummary: (id: number | string, scope_summary: string, userId?: number) =>
+    fetchJson<any>(`/projects/${id}/scope-summary`, { method: 'PATCH', body: JSON.stringify({ scope_summary, userId }) }),
+  markProjectLost: (id: number | string, reason: string, userId?: number, userName?: string) =>
+    fetchJson<any>(`/projects/${id}/mark-lost`, { method: 'POST', body: JSON.stringify({ reason, userId, userName }) }),
+  getProjectAddenda: (projectId: number | string) =>
+    fetchJson<any[]>(`/projects/${projectId}/addenda`),
+  createProjectAddendum: (projectId: number | string, data: any) =>
+    fetchJson<any>(`/projects/${projectId}/addenda`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteProjectAddendum: (projectId: number | string, addendumId: number | string) =>
+    fetchJson<any>(`/projects/${projectId}/addenda/${addendumId}`, { method: 'DELETE' }),
+  getLinkableProjects: (projectId: number | string, search?: string) =>
+    fetchJson<any[]>(`/projects/${projectId}/linkable-projects${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  linkProjectAsAddendum: (projectId: number | string, data: { sourceProjectId: number; customTitle?: string; customDescription?: string; customDate?: string; userId?: number }) =>
+    fetchJson<any>(`/projects/${projectId}/link-project-as-addendum`, { method: 'POST', body: JSON.stringify(data) }),
+  getProjectFileDownloadUrl: (projectId: number | string, fileId: number | string) =>
+    `/api/projects/${projectId}/files/${fileId}/download`,
   addProjectFile: (id: number | string, data: any) =>
     fetchJson<any>(`/projects/${id}/files`, { method: 'POST', body: JSON.stringify(data) }),
   uploadProjectFiles: async (projectId: number | string, files: File[], autoAnalyze?: boolean) => {
     const results = [];
-    const VERCEL_MAX_SAFE_FILE_SIZE = 3.5 * 1024 * 1024; // 3.5 MB para respeitar a margem de segurança do limite de 4.5 MB da Vercel
 
     for (const f of files) {
       const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
       const isCad = f.name.toLowerCase().endsWith('.dwg') || f.name.toLowerCase().endsWith('.dxf');
-      const isText = f.type.includes('text') || f.name.endsWith('.txt') || f.name.endsWith('.csv');
 
-      // Se for arquivo grande (> 3.5 MB) ou PDF/CAD/Texto, extrai texto diretamente no navegador
-      // Isso contorna o limite de 4.5 MB da Vercel (HTTP 413) e alimenta a IA com o conteúdo do projeto
-      if (f.size > VERCEL_MAX_SAFE_FILE_SIZE || isText || isCad) {
-        let extractedText = '';
-        if (isPdf) {
-          try {
-            extractedText = await extractTextFromPDF(f);
-          } catch (e) {
-            console.warn('[Upload] Erro ao extrair PDF localmente:', e);
-          }
-        } else if (isCad) {
-          try {
-            extractedText = await extractTextFromCad(f);
-          } catch (e) {
-            console.warn('[Upload] Erro ao extrair CAD localmente:', e);
-          }
-        } else if (isText) {
-          try {
-            extractedText = await f.text();
-          } catch (e) {
-            console.warn('[Upload] Erro ao ler texto localmente:', e);
-          }
-        }
-
-        if (extractedText && extractedText.trim()) {
-          const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
-            method: 'POST',
-            body: JSON.stringify({
-              type: isPdf ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'MEMORIAL_DESCRITIVO'),
-              original_name: f.name,
-              file_size: f.size,
-              mime_type: f.type || (isPdf ? 'application/pdf' : (isCad ? 'application/octet-stream' : 'text/plain')),
-              content_summary: extractedText
-            })
-          });
-          results.push(resFile);
-          continue;
-        }
-      }
-
-      // Para arquivos menores ou sem texto extraído, envia via upload multipart individual
+      // Tenta upload físico do arquivo para o servidor via FormData (armazena em server/uploads)
       try {
         const formData = new FormData();
         formData.append('files', f);
+        if (autoAnalyze) formData.append('autoAnalyze', 'true');
         const res = await fetch(`${API_BASE}/projects/${projectId}/upload`, {
           method: 'POST',
           body: formData
         });
 
-        if (!res.ok) {
-          // Se Vercel rejeitar por tamanho (HTTP 413), executa extração do PDF ou CAD como fallback imediato
-          if (res.status === 413) {
-            let extractedText = '';
-            if (isPdf) {
-              extractedText = await extractTextFromPDF(f).catch(() => '');
-            } else if (isCad) {
-              extractedText = await extractTextFromCad(f).catch(() => '');
-            }
-            if (extractedText && extractedText.trim()) {
-              const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
-                method: 'POST',
-                body: JSON.stringify({
-                  type: isPdf ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'PROJETO_TECNICO'),
-                  original_name: f.name,
-                  file_size: f.size,
-                  mime_type: f.type || 'application/octet-stream',
-                  content_summary: extractedText
-                })
-              });
-              results.push(resFile);
-              continue;
-            }
-          }
-          const err = await res.json().catch(() => ({ error: `Falha no upload do arquivo ${f.name} (Status ${res.status})` }));
-          throw new Error(err.error || `Falha no upload de ${f.name}`);
+        if (res.ok) {
+          const data = await res.json();
+          results.push(data);
+          continue;
         }
 
-        const data = await res.json();
-        results.push(data);
+        // Se Vercel rejeitar por tamanho (HTTP 413), executa contingência via resumo textual
+        if (res.status === 413) {
+          let extractedText = '';
+          if (isPdf) {
+            extractedText = await extractTextFromPDF(f).catch(() => '');
+          } else if (isCad) {
+            extractedText = await extractTextFromCad(f).catch(() => '');
+          }
+          if (extractedText && extractedText.trim()) {
+            const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
+              method: 'POST',
+              body: JSON.stringify({
+                type: isPdf ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'PROJETO_TECNICO'),
+                original_name: f.name,
+                file_size: f.size,
+                mime_type: f.type || 'application/octet-stream',
+                content_summary: extractedText
+              })
+            });
+            results.push(resFile);
+            continue;
+          }
+        }
+        const err = await res.json().catch(() => ({ error: `Falha no upload do arquivo ${f.name} (Status ${res.status})` }));
+        throw new Error(err.error || `Falha no upload de ${f.name}`);
       } catch (err: any) {
         if (isPdf || isCad) {
           const extractedText = isPdf ? await extractTextFromPDF(f).catch(() => '') : await extractTextFromCad(f).catch(() => '');
@@ -296,8 +272,14 @@ export const api = {
   // Orçamentos
   getBudget: (projectId: number | string) => fetchJson<any>(`/budgets/project/${projectId}`),
   saveBudget: (data: any) => fetchJson<any>('/budgets/save', { method: 'POST', body: JSON.stringify(data) }),
-  approveBudget: (budgetId: number | string, userId?: number, userName?: string) =>
-    fetchJson<any>(`/budgets/${budgetId}/approve`, { method: 'POST', body: JSON.stringify({ userId, userName }) }),
+  approveBudget: (budgetId: number | string, userId?: number, userName?: string, extra?: { scope_summary?: string }) =>
+    fetchJson<any>(`/budgets/${budgetId}/approve`, { method: 'POST', body: JSON.stringify({ userId, userName, ...extra }) }),
+  markBudgetLost: (budgetId: number | string, reason: string, userId?: number, userName?: string) =>
+    fetchJson<any>(`/budgets/${budgetId}/mark-lost`, { method: 'POST', body: JSON.stringify({ reason, userId, userName }) }),
+  getBudgetVersions: (projectId: number | string) =>
+    fetchJson<any[]>(`/budgets/project/${projectId}/versions`),
+  createBudgetVersion: (projectId: number | string, data: any) =>
+    fetchJson<any>(`/budgets/project/${projectId}/versions`, { method: 'POST', body: JSON.stringify(data) }),
   sendBudgetToClient: (budgetId: number | string, userId?: number) =>
     fetchJson<any>(`/budgets/${budgetId}/send-to-client`, { method: 'POST', body: JSON.stringify({ userId }) }),
 
@@ -418,6 +400,65 @@ export const api = {
   deleteSupplier: (id: number | string, userId?: number | string) =>
     fetchJson<any>(`/suppliers/${id}${userId ? `?userId=${userId}` : ''}`, { method: 'DELETE' }),
 
+  // Item 6: Clientes (no mesmo molde dos Fornecedores)
+  getClients: (search?: string, recurrent?: boolean) => {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (recurrent !== undefined) params.append('recurrent', String(recurrent));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return fetchJson<any[]>(`/clients${qs}`);
+  },
+  getClient: (id: number | string) => fetchJson<any>(`/clients/${id}`),
+  createClient: (data: any) => fetchJson<any>('/clients', { method: 'POST', body: JSON.stringify(data) }),
+  updateClient: (id: number | string, data: any) =>
+    fetchJson<any>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteClient: (id: number | string, userId?: number | string) =>
+    fetchJson<any>(`/clients/${id}${userId ? `?userId=${userId}` : ''}`, { method: 'DELETE' }),
+
+  // Item 11 & Item 15: Upload e Extração de PDF do Fornecedor / Exportação de OC
+  parseSupplierPdf: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('sabrar_token') : null;
+    const authHeaders: Record<string, string> = {};
+    if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}/purchases/parse-supplier-pdf`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao processar PDF' }));
+      throw new Error(err.error || 'Falha ao processar PDF do fornecedor');
+    }
+    return res.json();
+  },
+  exportCustomOC: async (data: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('sabrar_token') : null;
+    const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}/purchases/export-custom-oc`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      throw new Error('Falha ao exportar Ordem de Compra');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Ordem_de_Compra_${(data.supplierName || 'Fornecedor').replace(/\s+/g, '_')}_${Date.now()}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    return true;
+  },
+
   // Dashboards & Relatórios
   getDashboardOverview: () => fetchJson<any>('/dashboard/overview'),
   getDashboardOrcamento: () => fetchJson<any>('/dashboard/orcamento'),
@@ -534,6 +575,10 @@ export const api = {
     fetchJson<any>(`/quotations/${quotationId}/items/${itemId}`, { method: 'DELETE' }),
   addQuotationSupplier: (quotationId: number, data: any) =>
     fetchJson<any>(`/quotations/${quotationId}/suppliers`, { method: 'POST', body: JSON.stringify(data) }),
+  updateQuotationSupplier: (quotationId: number, supplierId: number, data: any) =>
+    fetchJson<any>(`/quotations/${quotationId}/suppliers/${supplierId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteQuotationSupplier: (quotationId: number, supplierId: number) =>
+    fetchJson<any>(`/quotations/${quotationId}/suppliers/${supplierId}`, { method: 'DELETE' }),
   setQuotationWinner: (quotationId: number, quotationSupplierId: number) =>
     fetchJson<any>(`/quotations/${quotationId}/winner`, { method: 'PATCH', body: JSON.stringify({ quotationSupplierId }) }),
   getPriceIntelligence: (materialId: number) =>

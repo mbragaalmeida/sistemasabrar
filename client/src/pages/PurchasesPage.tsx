@@ -21,7 +21,8 @@ import {
   Maximize2,
   Minimize2,
   ClipboardList,
-  FileCode
+  FileCode,
+  Sparkles
 } from 'lucide-react';
 import { Purchase } from '../types';
 import { api } from '../services/api';
@@ -33,6 +34,7 @@ import { XmlInvoiceModal } from '../components/modals/XmlInvoiceModal';
 import { QuotationComparisonModal } from '../components/modals/QuotationComparisonModal';
 import { ReceivingChecklistModal } from '../components/modals/ReceivingChecklistModal';
 import { DirectBillingModal } from '../components/modals/DirectBillingModal';
+import { GenerateOCFromPdfModal } from '../components/modals/GenerateOCFromPdfModal';
 import { canImportXml } from '../utils/permissions';
 
 interface ProjectGroup {
@@ -68,6 +70,7 @@ export const PurchasesPage: React.FC = () => {
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
   const [selectedChecklistId, setSelectedChecklistId] = useState<number | null>(null);
   const [isDirectBillingModalOpen, setIsDirectBillingModalOpen] = useState(false);
+  const [isGenerateOCFromPdfOpen, setIsGenerateOCFromPdfOpen] = useState(false);
   const [quotationsList, setQuotationsList] = useState<any[]>([]);
   const [checklistsList, setChecklistsList] = useState<any[]>([]);
 
@@ -261,6 +264,16 @@ export const PurchasesPage: React.FC = () => {
           )}
 
           
+          {/* Botão Gerar OC via PDF do Fornecedor (Item 11) */}
+          <button
+            onClick={() => setIsGenerateOCFromPdfOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 active:scale-95 whitespace-nowrap cursor-pointer"
+            title="Fazer upload do PDF de orçamento do fornecedor e exportar a Ordem de Compra oficial Sabrar (.xlsx)"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Gerar OC via PDF</span>
+          </button>
+
           {/* Botão Mapa Comparativo de Cotações (Print 2) */}
           <button
             onClick={() => {
@@ -930,6 +943,12 @@ export const PurchasesPage: React.FC = () => {
         isOpen={isDirectBillingModalOpen}
         onClose={() => setIsDirectBillingModalOpen(false)}
         onSuccess={() => fetchPurchases()}
+      />
+
+      {/* Modal de Gerar OC via PDF do Fornecedor (Item 11) */}
+      <GenerateOCFromPdfModal
+        isOpen={isGenerateOCFromPdfOpen}
+        onClose={() => setIsGenerateOCFromPdfOpen(false)}
       />
     </div>
   );

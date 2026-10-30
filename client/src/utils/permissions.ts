@@ -5,8 +5,11 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'dashboard': ['admin', 'orcamento_engenharia', 'compras_solicitacoes'],
   // Item 2 e Item 6: Remover projetos para engenheiros; ceder acesso a projetos e obras para Emily (compras_solicitacoes)
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
-  'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
-  'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
+  'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
+  // Item 1: Quero que os engenheiros tenham acesso a aba 'orçamentos aprovados'
+  'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
+  // Item 6: Aba de Clientes
+  'clients': ['admin', 'orcamento', 'orcamento_engenharia', 'compras', 'compras_solicitacoes', 'engenharia'],
   // 3 Abas da Engenharia: Solicitar Material, Solicitar Duto, Solicitar Logística
   'requests': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras', 'almoxarifado'],
   'solicitar-duto': ['admin', 'engenharia', 'orcamento_engenharia', 'compras_solicitacoes', 'compras'],

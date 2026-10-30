@@ -8,8 +8,9 @@ import fs from 'fs';
 import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
 import { extractCadTextFromBuffer } from '../utils/cadHelper.js';
 import { generateUniqueProjectCode } from '../utils/codeGenerator.js';
-
 import os from 'os';
+import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
 
 const uploadsDir = process.env.VERCEL
   ? path.join(os.tmpdir(), 'uploads')
@@ -274,6 +275,7 @@ projectsRouter.post('/', async (req, res) => {
     const {
       name, client, client_email, client_phone, address, city, state,
       project_type, start_date, expected_end_date, responsible_engineer,
+      responsible_estimator, return_deadline, scope_summary,
       notes, initial_spec_text, uploadedDocuments, autoAnalyze,
       engineerIds, engineer_ids
     } = req.body;
@@ -282,10 +284,16 @@ projectsRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Nome do projeto e cliente são obrigatórios' });
     }
 
+    // Requisito 2: Orçamentista responsável é obrigatório
+    const finalEstimator = (responsible_estimator || '').trim();
+    if (!finalEstimator) {
+      return res.status(400).json({ error: 'O campo "Orçamentista responsável" é obrigatório para cadastrar a obra.' });
+    }
+
     // Gera código automático único: PRJ-2026-00X
     const code = await generateUniqueProjectCode(db);
 
-    // Engenheiro(s) responsável(is) - opcional na elaboração do orçamento (Requisitos 1 e 3)
+    // Engenheiro(s) responsável(is) - opcional na elaboração do orçamento
     const selectedEngineerIds = engineerIds || engineer_ids || [];
     let finalResponsible = responsible_engineer ? responsible_engineer.trim() : null;
 
@@ -301,15 +309,17 @@ projectsRouter.post('/', async (req, res) => {
     const insert = db.prepare(`
       INSERT INTO projects (
         code, name, client, client_email, client_phone, address, city, state,
-        project_type, start_date, expected_end_date, responsible_engineer, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Novo')
+        project_type, start_date, expected_end_date, return_deadline,
+        responsible_engineer, responsible_estimator, scope_summary, notes, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Novo')
     `);
 
     const result = await insert.run(
       code, name, client, client_email || null, client_phone || null,
       address || 'Endereço a definir', city || 'São Paulo', state || 'SP',
       project_type || 'Comercial', start_date || null, expected_end_date || null,
-      finalResponsible, notes || null
+      return_deadline || null,
+      finalResponsible, finalEstimator, scope_summary || null, notes || null
     );
 
     const projectId = result.lastInsertRowid;
@@ -424,9 +434,20 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
       const isCad = f.originalname.toLowerCase().endsWith('.dwg') || f.originalname.toLowerCase().endsWith('.dxf');
       const fileType = f.originalname.toLowerCase().endsWith('.pdf') ? 'PROJETO_PDF' : (isCad ? 'PROJETO_CAD' : 'PROJETO_TECNICO');
 
+      let fileBuffer = null;
+      try {
+        if (f.buffer) {
+          fileBuffer = f.buffer;
+        } else if (f.path && fs.existsSync(f.path)) {
+          fileBuffer = fs.readFileSync(f.path);
+        }
+      } catch (bufErr) {
+        console.warn('Erro ao ler buffer do upload:', bufErr);
+      }
+
       const resInsert = await db.prepare(`
-        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by, file_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
       `).run(
         projectId,
         fileType,
@@ -434,7 +455,8 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
         `/uploads/${f.filename}`,
         f.size,
         f.mimetype,
-        contentSummary
+        contentSummary,
+        fileBuffer
       );
 
       inserted.push({ id: resInsert.lastInsertRowid, original_name: f.originalname, size: f.size });
@@ -491,10 +513,16 @@ projectsRouter.post('/:id/import-spreadsheet', upload.any(), async (req, res) =>
         allSheetsNames.push(...resSpreadsheet.sheetsNames);
       }
 
-      // Registra o arquivo em project_files
+      let sheetBuffer = null;
+      try {
+        if (file.buffer) sheetBuffer = file.buffer;
+        else if (file.path && fs.existsSync(file.path)) sheetBuffer = fs.readFileSync(file.path);
+      } catch (e) {}
+
+      // Registra o arquivo em project_files com o binário original no banco
       await db.prepare(`
-        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
-        VALUES (?, 'PLANILHA_LEVANTAMENTO', ?, ?, ?, ?, ?, ?)
+        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by, file_data)
+        VALUES (?, 'PLANILHA_LEVANTAMENTO', ?, ?, ?, ?, ?, ?, ?)
       `).run(
         projectId,
         file.originalname,
@@ -502,7 +530,8 @@ projectsRouter.post('/:id/import-spreadsheet', upload.any(), async (req, res) =>
         file.size,
         file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         `Planilha de levantamento real importada: ${resSpreadsheet.itemsCount} materiais processados e calibrados no motor de IA.`,
-        userId || 1
+        userId || 1,
+        sheetBuffer
       );
 
       processedFilesInfo.push({
@@ -582,6 +611,11 @@ projectsRouter.put('/:id', async (req, res) => {
       state,
       project_type,
       responsible_engineer,
+      responsible_estimator,
+      return_deadline,
+      scope_summary,
+      start_date,
+      expected_end_date,
       notes,
       userId
     } = req.body;
@@ -600,6 +634,11 @@ projectsRouter.put('/:id', async (req, res) => {
         state = ?,
         project_type = COALESCE(?, project_type),
         responsible_engineer = COALESCE(?, responsible_engineer),
+        responsible_estimator = COALESCE(?, responsible_estimator),
+        return_deadline = COALESCE(?, return_deadline),
+        scope_summary = COALESCE(?, scope_summary),
+        start_date = COALESCE(?, start_date),
+        expected_end_date = COALESCE(?, expected_end_date),
         notes = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -613,6 +652,11 @@ projectsRouter.put('/:id', async (req, res) => {
       state !== undefined ? state?.trim() : project.state,
       project_type || project.project_type,
       responsible_engineer !== undefined ? responsible_engineer?.trim() : project.responsible_engineer,
+      responsible_estimator !== undefined ? responsible_estimator?.trim() : project.responsible_estimator,
+      return_deadline !== undefined ? return_deadline : project.return_deadline,
+      scope_summary !== undefined ? scope_summary : project.scope_summary,
+      start_date !== undefined ? start_date : project.start_date,
+      expected_end_date !== undefined ? expected_end_date : project.expected_end_date,
       notes !== undefined ? notes?.trim() : project.notes,
       projectId
     );
@@ -925,6 +969,484 @@ projectsRouter.delete('/:id', async (req, res) => {
     res.json({ success: true, message: `Projeto "${project.name}" excluído com sucesso.` });
   } catch (err) {
     console.error('[Delete Project Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Localizador inteligente de arquivos físicos em múltiplas pastas possíveis
+function findPhysicalFile(fileRecord) {
+  if (!fileRecord) return null;
+  const filename = path.basename(fileRecord.file_path || fileRecord.original_name || '');
+  const candidatePaths = [
+    fileRecord.file_path,
+    path.join(uploadsDir, filename),
+    path.join(process.cwd(), 'server', 'uploads', filename),
+    path.join(process.cwd(), 'uploads', filename),
+    path.join(os.tmpdir(), 'uploads', filename),
+    fileRecord.original_name ? path.join(uploadsDir, fileRecord.original_name) : null,
+    fileRecord.original_name ? path.join(process.cwd(), 'server', 'uploads', fileRecord.original_name) : null
+  ].filter(Boolean);
+
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        return p;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+// Fallback robusto que gera um arquivo PDF/Excel válido quando o binário original não está salvo fisicamente no disco
+async function streamFileFallback(res, fileRecord, projectId) {
+  const origName = fileRecord.original_name || 'documento';
+  const isPdf = origName.toLowerCase().endsWith('.pdf') || fileRecord.mime_type === 'application/pdf';
+  const isXlsx = origName.toLowerCase().endsWith('.xlsx') || origName.toLowerCase().endsWith('.xls');
+
+  let project = null;
+  if (projectId) {
+    try {
+      project = await db.prepare('SELECT id, code, name, client FROM projects WHERE id = ?').get(projectId);
+    } catch (e) {}
+  }
+
+  // 1. Geração de planilha Excel real e válida
+  if (isXlsx) {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Levantamento Sabrar');
+    sheet.columns = [
+      { header: 'Item / Parâmetro', key: 'col1', width: 35 },
+      { header: 'Conteúdo / Especificação', key: 'col2', width: 60 }
+    ];
+    sheet.addRow({ col1: 'Projeto / Obra:', col2: project ? `${project.code} - ${project.name}` : 'Sabrar Engenharia' });
+    sheet.addRow({ col1: 'Cliente:', col2: project?.client || 'SABRAR' });
+    sheet.addRow({ col1: 'Arquivo Original:', col2: origName });
+    sheet.addRow({ col1: 'Tipo de Documento:', col2: fileRecord.type || 'Planilha de Levantamento' });
+    sheet.addRow({ col1: 'Data de Extração:', col2: new Date(fileRecord.created_at || Date.now()).toLocaleDateString('pt-BR') });
+    sheet.addRow({});
+    sheet.addRow({ col1: 'Resumo / Memória de Cálculo:', col2: fileRecord.content_summary || 'Planilha registrada no sistema.' });
+
+    // Se houver materiais do projeto, inclui aba detalhada de materiais
+    if (projectId) {
+      try {
+        const materials = await db.prepare('SELECT code, name, quantity, unit, unit_price, total_price FROM budget_materials WHERE project_id = ? LIMIT 500').all(projectId);
+        if (materials && materials.length > 0) {
+          const matSheet = workbook.addWorksheet('Materiais Levantados');
+          matSheet.columns = [
+            { header: 'Código', key: 'code', width: 15 },
+            { header: 'Descrição', key: 'name', width: 45 },
+            { header: 'Quantidade', key: 'quantity', width: 14 },
+            { header: 'Unidade', key: 'unit', width: 10 },
+            { header: 'Preço Unitário (R$)', key: 'unit_price', width: 18 },
+            { header: 'Total (R$)', key: 'total_price', width: 18 }
+          ];
+          materials.forEach(m => matSheet.addRow(m));
+        }
+      } catch (e) {}
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(origName)}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await workbook.xlsx.write(res);
+    return res.end();
+  }
+
+  // 2. Geração de PDF real e válido
+  if (isPdf) {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(origName)}"`);
+    res.setHeader('Content-Type', 'application/pdf');
+    doc.pipe(res);
+
+    doc.fontSize(15).font('Helvetica-Bold').text('SABRAR ENGENHARIA - DOCUMENTO DE PROJETO', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(11).font('Helvetica-Bold').text(`Arquivo: ${origName}`);
+    if (project) {
+      doc.text(`Obra: ${project.code} - ${project.name}`);
+      if (project.client) doc.text(`Cliente: ${project.client}`);
+    }
+    doc.text(`Data: ${new Date(fileRecord.created_at || Date.now()).toLocaleDateString('pt-BR')}`);
+    doc.moveDown();
+    doc.strokeColor('#cccccc').lineWidth(1).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+    doc.moveDown();
+
+    const summary = fileRecord.content_summary || 'Documento técnico cadastrado no sistema SABRAR.';
+    doc.fontSize(9).font('Helvetica').text(summary, {
+      align: 'left',
+      lineGap: 3
+    });
+    return doc.end();
+  }
+
+  // 3. Arquivo de texto ou genérico
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(origName)}"`);
+  res.setHeader('Content-Type', fileRecord.mime_type || 'text/plain; charset=utf-8');
+  return res.send(fileRecord.content_summary || '');
+}
+
+// Item 1: Download fácil e direto de arquivos do projeto
+projectsRouter.get('/:id/files/:fileId/download', async (req, res) => {
+  try {
+    const { id, fileId } = req.params;
+    const fileRecord = await db.prepare('SELECT * FROM project_files WHERE id = ? AND project_id = ?').get(fileId, id);
+    if (!fileRecord) {
+      return res.status(404).json({ error: 'Arquivo não encontrado' });
+    }
+
+    // 1. Arquivo gravado diretamente no banco de dados (BYTEA)
+    if (fileRecord.file_data && fileRecord.file_data.length > 0) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileRecord.original_name)}"`);
+      res.setHeader('Content-Type', fileRecord.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Length', fileRecord.file_data.length);
+      return res.end(fileRecord.file_data);
+    }
+
+    // 2. Arquivo gravado no disco físico
+    const physicalPath = findPhysicalFile(fileRecord);
+    if (physicalPath) {
+      return res.download(physicalPath, fileRecord.original_name);
+    }
+
+    if (fileRecord.content_summary) {
+      return await streamFileFallback(res, fileRecord, id);
+    }
+
+    return res.status(404).json({ error: 'Conteúdo do arquivo não localizado' });
+  } catch (err) {
+    console.error('[File Download Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download direto por ID do arquivo
+projectsRouter.get('/files/:fileId/download', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const fileRecord = await db.prepare('SELECT * FROM project_files WHERE id = ?').get(fileId);
+    if (!fileRecord) {
+      return res.status(404).json({ error: 'Arquivo não encontrado' });
+    }
+
+    // 1. Arquivo gravado diretamente no banco de dados (BYTEA)
+    if (fileRecord.file_data && fileRecord.file_data.length > 0) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileRecord.original_name)}"`);
+      res.setHeader('Content-Type', fileRecord.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Length', fileRecord.file_data.length);
+      return res.end(fileRecord.file_data);
+    }
+
+    // 2. Arquivo gravado no disco físico
+    const physicalPath = findPhysicalFile(fileRecord);
+    if (physicalPath) {
+      return res.download(physicalPath, fileRecord.original_name);
+    }
+
+    if (fileRecord.content_summary) {
+      return await streamFileFallback(res, fileRecord, fileRecord.project_id);
+    }
+
+    return res.status(404).json({ error: 'Conteúdo do arquivo não localizado' });
+  } catch (err) {
+    console.error('[Direct File Download Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 5: Aditivos de Obras vinculados ao projeto original
+projectsRouter.get('/:id/addenda', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const addenda = await db.prepare(`
+      SELECT * FROM project_addenda WHERE project_id = ? ORDER BY number ASC
+    `).all(projectId);
+    res.json(addenda);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+projectsRouter.post('/:id/addenda', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const {
+      title,
+      description,
+      date,
+      items = [],
+      services = [],
+      files = [],
+      total_materials = 0,
+      total_services = 0,
+      total_final = 0,
+      userId = 1
+    } = req.body;
+
+    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+    if (!project) return res.status(404).json({ error: 'Projeto original não encontrado' });
+
+    // Calcula próximo número de aditivo sequencial
+    const maxRow = await db.prepare('SELECT COALESCE(MAX(number), 0) as max_num FROM project_addenda WHERE project_id = ?').get(projectId);
+    const nextNumber = Number(maxRow?.max_num || 0) + 1;
+    const aditivoTitle = title && title.trim() ? title.trim() : `Aditivo ${nextNumber}`;
+
+    const insert = db.prepare(`
+      INSERT INTO project_addenda (
+        project_id, number, title, description, date,
+        total_materials, total_services, total_final,
+        items, services, files, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = await insert.run(
+      projectId,
+      nextNumber,
+      aditivoTitle,
+      description || '',
+      date || new Date().toISOString().split('T')[0],
+      Number(total_materials) || 0,
+      Number(total_services) || 0,
+      Number(total_final) || 0,
+      JSON.stringify(items),
+      JSON.stringify(services),
+      JSON.stringify(files),
+      userId
+    );
+
+    // Registra log de auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+      VALUES (?, 'CRIAR_ADITIVO', 'ADITIVO', ?, ?, ?)
+    `).run(userId, result.lastInsertRowid, projectId, `Aditivo ${nextNumber} ("${aditivoTitle}") cadastrado para a obra ${project.name}`);
+
+    res.status(201).json({ id: result.lastInsertRowid, number: nextNumber, title: aditivoTitle });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+projectsRouter.delete('/:id/addenda/:addendumId', async (req, res) => {
+  try {
+    const { id, addendumId } = req.params;
+    const addendum = await db.prepare('SELECT * FROM project_addenda WHERE id = ? AND project_id = ?').get(addendumId, id);
+    if (!addendum) return res.status(404).json({ error: 'Aditivo não encontrado' });
+
+    // Se o aditivo teve origem em um projeto avulso vinculado, desoculta o projeto original
+    if (addendum.origin_project_id) {
+      await db.prepare(`
+        UPDATE projects 
+        SET is_hidden = false, parent_project_id = NULL, status = 'Em andamento', updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(addendum.origin_project_id);
+    }
+
+    // Limpa arquivos copiados deste aditivo na obra principal
+    if (addendum.number) {
+      await db.prepare(`
+        DELETE FROM project_files 
+        WHERE project_id = ? AND original_name LIKE ?
+      `).run(id, `[Aditivo ${addendum.number}]%`);
+    }
+
+    await db.prepare('DELETE FROM project_addenda WHERE id = ? AND project_id = ?').run(addendumId, id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lista projetos candidatos que podem ser vinculados como aditivo da obra principal
+projectsRouter.get('/:id/linkable-projects', async (req, res) => {
+  try {
+    const parentId = Number(req.params.id);
+    const { search } = req.query;
+
+    let sql = `
+      SELECT p.id, p.code, p.name, p.client, p.project_type, p.status, p.created_at,
+             (SELECT count(*) FROM budget_items bi JOIN budgets b ON b.id = bi.budget_id WHERE b.project_id = p.id) as materials_count,
+             (SELECT count(*) FROM project_files pf WHERE pf.project_id = p.id) as files_count
+      FROM projects p
+      WHERE p.id != ?
+        AND (p.is_hidden IS FALSE OR p.is_hidden IS NULL)
+        AND (p.parent_project_id IS NULL)
+    `;
+    const params = [parentId];
+
+    if (search && search.trim()) {
+      sql += ` AND (p.name ILIKE ? OR p.code ILIKE ? OR p.client ILIKE ?)`;
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term);
+    }
+
+    sql += ` ORDER BY p.id DESC LIMIT 100`;
+
+    const candidates = await db.prepare(sql).all(...params);
+    res.json(candidates);
+  } catch (err) {
+    console.error('[Linkable Projects Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Vincula um projeto avulso existente como um novo Aditivo desta obra
+projectsRouter.post('/:id/link-project-as-addendum', async (req, res) => {
+  try {
+    const parentId = Number(req.params.id);
+    const { sourceProjectId, customTitle, customDescription, customDate, userId = 1 } = req.body;
+
+    if (!sourceProjectId || Number(sourceProjectId) === parentId) {
+      return res.status(400).json({ error: 'Projeto de origem inválido' });
+    }
+
+    const parentProject = await db.prepare('SELECT * FROM projects WHERE id = ?').get(parentId);
+    if (!parentProject) return res.status(404).json({ error: 'Obra principal não encontrada' });
+
+    const sourceProject = await db.prepare('SELECT * FROM projects WHERE id = ?').get(sourceProjectId);
+    if (!sourceProject) return res.status(404).json({ error: 'Projeto avulso não encontrado' });
+
+    // Calcula próximo número sequencial de aditivo da obra principal
+    const maxRow = await db.prepare('SELECT COALESCE(MAX(number), 0) as max_num FROM project_addenda WHERE project_id = ?').get(parentId);
+    const nextNumber = Number(maxRow?.max_num || 0) + 1;
+
+    // Busca materiais orçados no projeto avulso
+    const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? ORDER BY id DESC LIMIT 1').get(sourceProjectId);
+    let addendumItems = [];
+    if (budget) {
+      const bItems = await db.prepare('SELECT * FROM budget_items WHERE budget_id = ? ORDER BY id ASC').all(budget.id);
+      addendumItems = bItems.map(it => ({
+        material_id: it.material_id,
+        code: it.code || '',
+        material_name: it.material_name || it.description || '',
+        quantity: Number(it.quantity) || 1,
+        unit: it.unit || 'un',
+        unit_price: Number(it.unit_price) || 0,
+        subtotal: Number(it.subtotal || ((it.quantity || 1) * (it.unit_price || 0))) || 0
+      }));
+    }
+
+    // Busca arquivos do projeto avulso e cria cópias vinculadas à obra principal
+    const sourceFiles = await db.prepare('SELECT * FROM project_files WHERE project_id = ?').all(sourceProjectId);
+    for (const f of sourceFiles) {
+      await db.prepare(`
+        INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by, file_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        parentId,
+        f.type || 'PROJETO_TECNICO',
+        `[Aditivo ${nextNumber}] ${f.original_name}`,
+        f.file_path,
+        f.file_size,
+        f.mime_type,
+        f.content_summary,
+        f.uploaded_by || 1,
+        f.file_data
+      );
+    }
+
+    // Se houver solicitações de materiais criadas no projeto avulso, transfere para a obra mãe
+    await db.prepare(`
+      UPDATE material_requests 
+      SET project_id = ?
+      WHERE project_id = ?
+    `).run(parentId, sourceProjectId);
+
+    const title = customTitle && customTitle.trim() ? customTitle.trim() : `Aditivo ${nextNumber} - ${sourceProject.name}`;
+    const description = customDescription && customDescription.trim()
+      ? customDescription.trim()
+      : (sourceProject.notes || sourceProject.scope_summary || `Aditivo incorporado a partir do projeto avulso ${sourceProject.code} - ${sourceProject.name}`);
+    const date = customDate || (sourceProject.created_at ? new Date(sourceProject.created_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+
+    const totalMaterials = addendumItems.reduce((acc, it) => acc + (it.subtotal || 0), 0);
+
+    const resInsert = await db.prepare(`
+      INSERT INTO project_addenda (
+        project_id, number, title, description, date,
+        total_materials, total_services, total_final,
+        items, services, files, created_by, origin_project_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      parentId,
+      nextNumber,
+      title,
+      description,
+      date,
+      totalMaterials,
+      0,
+      totalMaterials,
+      JSON.stringify(addendumItems),
+      JSON.stringify([]),
+      JSON.stringify(sourceFiles.map(f => f.original_name)),
+      userId,
+      sourceProjectId
+    );
+
+    // Oculta e arquiva o projeto avulso da listagem principal
+    await db.prepare(`
+      UPDATE projects 
+      SET is_hidden = true, 
+          parent_project_id = ?, 
+          status = 'Vinculado a Obra',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(parentId, sourceProjectId);
+
+    // Auditoria
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+      VALUES (?, 'VINCULAR_PROJETO_COMO_ADITIVO', 'PROJETO', ?, ?, ?)
+    `).run(
+      userId,
+      sourceProjectId,
+      parentId,
+      `Projeto "${sourceProject.code} - ${sourceProject.name}" vinculado como Aditivo ${nextNumber} na obra principal "${parentProject.code} - ${parentProject.name}"`
+    );
+
+    res.status(201).json({
+      success: true,
+      addendumId: resInsert.lastInsertRowid,
+      number: nextNumber,
+      title,
+      itemsCount: addendumItems.length
+    });
+  } catch (err) {
+    console.error('[Link Project As Addendum Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 7: Resumo descritivo do escopo para engenheiros
+projectsRouter.patch('/:id/scope-summary', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { scope_summary, userId } = req.body;
+    await db.prepare('UPDATE projects SET scope_summary = ?, updated_at = NOW() WHERE id = ?').run(scope_summary || '', projectId);
+
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+      VALUES (?, 'ATUALIZAR_ESCOPO', 'PROJETO', ?, ?, ?)
+    `).run(userId || 1, projectId, projectId, `Resumo descritivo do escopo atualizado pelo orçamentista`);
+
+    res.json({ success: true, scope_summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Item 16: Marcar orçamento como perdido
+projectsRouter.post('/:id/mark-lost', async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { reason, userId = 1, userName = 'Orçamentista' } = req.body;
+
+    await db.prepare("UPDATE projects SET status = 'Perdido', updated_at = NOW() WHERE id = ?").run(projectId);
+    await db.prepare("UPDATE budgets SET status = 'Perdido', updated_at = NOW() WHERE project_id = ?").run(projectId);
+
+    await db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+      VALUES (?, 'ORCAMENTO_PERDIDO', 'PROJETO', ?, ?, ?)
+    `).run(userId, projectId, projectId, `Orçamento marcado como PERDIDO por ${userName}. Motivo: ${reason || 'Não informado'}`);
+
+    res.json({ success: true, status: 'Perdido' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

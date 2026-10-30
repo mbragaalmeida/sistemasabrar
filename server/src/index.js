@@ -42,6 +42,8 @@ import { receivingChecklistsRouter } from './routes/receivingChecklists.js';
 import { directBillingsRouter } from './routes/directBillings.js';
 import { costControlRouter } from './routes/costControl.js';
 import { logisticsRouter } from './routes/logistics.js';
+import { clientsRouter } from './routes/clients.js';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,6 +57,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // O banco de dados PostgreSQL reside permanentemente no Supabase e já está estruturado e populado
+initializeDatabase().catch(e => console.warn('[DB Init]', e.message));
 
 // Registra rotas da API com suporte duplo (/api/* e /*) para compatibilidade perfeita com Vercel Serverless
 const apiEndpoints = [
@@ -82,8 +85,16 @@ const apiEndpoints = [
   ['/receiving-checklists', receivingChecklistsRouter],
   ['/direct-billings', directBillingsRouter],
   ['/cost-control', costControlRouter],
-  ['/logistics', logisticsRouter]
+  ['/logistics', logisticsRouter],
+  ['/clients', clientsRouter]
 ];
+
+// Serve pasta de uploads para download e visualização direta de arquivos
+const uploadsStaticDir = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(process.cwd(), 'server', 'uploads');
+app.use('/uploads', express.static(uploadsStaticDir));
+app.use('/api/uploads', express.static(uploadsStaticDir));
 
 for (const [routePath, router] of apiEndpoints) {
   app.use(`/api${routePath}`, router);

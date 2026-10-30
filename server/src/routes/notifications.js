@@ -7,6 +7,62 @@ export const notificationsRouter = express.Router();
 notificationsRouter.get('/', async (req, res) => {
   try {
     const { role, user_id } = req.query;
+
+    // Item 9: Sincronização automática de Alertas de Estoque Mínimo
+    try {
+      const criticalMaterials = await db.prepare(`
+        SELECT id, code, name, stock_physical, stock_minimum, unit
+        FROM materials
+        WHERE stock_physical <= stock_minimum AND (status = 'Ativo' OR status IS NULL)
+        ORDER BY (stock_physical - stock_minimum) ASC
+        LIMIT 15
+      `).all();
+
+      for (const mat of criticalMaterials) {
+        const existing = await db.prepare(`
+          SELECT id FROM notifications 
+          WHERE title = 'Alerta de Estoque Mínimo' 
+            AND message LIKE ? 
+            AND created_at >= NOW() - INTERVAL '24 hours'
+          LIMIT 1
+        `).get(`%${mat.code}%`);
+
+        if (!existing) {
+          await db.prepare(`
+            INSERT INTO notifications (role_target, title, message, type, link, is_read)
+            VALUES ('all', 'Alerta de Estoque Mínimo', ?, 'warning', '/stock', 0)
+          `).run(`O material [${mat.code}] ${mat.name} está em nível crítico: ${mat.stock_physical} ${mat.unit} em estoque (mínimo: ${mat.stock_minimum} ${mat.unit}).`);
+        }
+      }
+
+      // Item 4: Alerta no dia do vencimento de cada orçamento
+      const expiringProjects = await db.prepare(`
+        SELECT id, code, name, client, return_deadline, responsible_estimator
+        FROM projects
+        WHERE return_deadline = CURRENT_DATE 
+          AND status NOT IN ('Aprovado', 'Em execução', 'Finalizado', 'Concluído', 'Perdido', 'Cancelado')
+      `).all();
+
+      for (const ep of expiringProjects) {
+        const existingExp = await db.prepare(`
+          SELECT id FROM notifications 
+          WHERE title = 'Prazo de Retorno de Orçamento Vencendo Hoje' 
+            AND link LIKE ? 
+            AND created_at >= NOW() - INTERVAL '24 hours'
+          LIMIT 1
+        `).get(`%/projetos/${ep.id}%`);
+
+        if (!existingExp) {
+          await db.prepare(`
+            INSERT INTO notifications (role_target, title, message, type, link, is_read)
+            VALUES ('all', 'Prazo de Retorno de Orçamento Vencendo Hoje', ?, 'danger', ?, 0)
+          `).run(`Atenção: O orçamento da obra [${ep.code}] ${ep.name} (Cliente: ${ep.client}) tem prazo de retorno hoje! Responsável: ${ep.responsible_estimator || 'Orçamentista'}.`, `/projetos/${ep.id}`);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[Notifications Sync Warning]', syncErr.message);
+    }
+
     let notifications = [];
 
     if (user_id) {

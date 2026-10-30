@@ -20,6 +20,7 @@ import {
   Search
 } from 'lucide-react';
 import { api } from '../services/api';
+import { StockExitAuditModal } from '../components/modals/StockExitAuditModal';
 
 interface PurchasesStockDashboardPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -42,6 +43,7 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
   // Filtros dedicados do Card "Saídas Recentes" (Material e Período)
   const [exitMaterialSearch, setExitMaterialSearch] = useState('');
   const [exitPeriodFilter, setExitPeriodFilter] = useState('all'); // 'all', '7', '15', '30', '90'
+  const [selectedExitForAudit, setSelectedExitForAudit] = useState<any | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -607,10 +609,12 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
             {filteredStockExits.map((e: any) => (
               <div
                 key={e.id}
-                className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs space-y-1 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                onClick={() => setSelectedExitForAudit(e)}
+                className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs space-y-1 hover:border-blue-500/50 hover:bg-blue-50/30 dark:hover:bg-slate-750 transition-all cursor-pointer group shadow-2xs"
+                title="Clique para auditar esta saída no período"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate flex-1" title={e.material_name}>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate flex-1 group-hover:text-blue-500 transition-colors" title={e.material_name}>
                     {e.material_name}
                   </span>
                   <span className="font-extrabold text-blue-600 dark:text-blue-400 shrink-0">
@@ -637,6 +641,15 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
         </div>
 
       </div>
+
+      {/* Modal de Auditoria da Saída de Estoque (Item 10) */}
+      <StockExitAuditModal
+        isOpen={!!selectedExitForAudit}
+        onClose={() => setSelectedExitForAudit(null)}
+        movement={selectedExitForAudit}
+        periodFilter={exitPeriodFilter}
+        onNavigateToStock={(mat) => onNavigate('stock')}
+      />
 
     </div>
   );

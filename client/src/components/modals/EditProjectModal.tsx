@@ -31,6 +31,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
   const [state, setState] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
+  const [responsibleEstimator, setResponsibleEstimator] = useState('');
+  const [returnDeadline, setReturnDeadline] = useState('');
   const [notes, setNotes] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -47,6 +49,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
       setState((project as any).state || '');
       setProjectType((project.project_type as any) || 'Comercial');
       setResponsibleEngineer(project.responsible_engineer || '');
+      setResponsibleEstimator((project as any).responsible_estimator || '');
+      setReturnDeadline((project as any).return_deadline ? (project as any).return_deadline.split('T')[0] : '');
       setNotes(project.notes || '');
       setError(null);
     }
@@ -75,6 +79,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
         state: state.trim(),
         project_type: projectType,
         responsible_engineer: responsibleEngineer.trim(),
+        responsible_estimator: responsibleEstimator.trim(),
+        return_deadline: returnDeadline || null,
         notes: notes.trim(),
         userId: currentUser?.id
       });
@@ -230,6 +236,31 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="Rua, número, bairro, cidade"
+                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sabrar-600 dark:text-sabrar-400 font-bold uppercase tracking-wider text-[11px] mb-1">
+                Orçamentista Responsável *
+              </label>
+              <input
+                type="text"
+                value={responsibleEstimator}
+                onChange={(e) => setResponsibleEstimator(e.target.value)}
+                placeholder="Ex: Matheus Braga / Mariana Costa"
+                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sabrar-600 dark:text-sabrar-400 font-bold uppercase tracking-wider text-[11px] mb-1">
+                Data para Retorno da Proposta
+              </label>
+              <input
+                type="date"
+                value={returnDeadline}
+                onChange={(e) => setReturnDeadline(e.target.value)}
                 className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
               />
             </div>
