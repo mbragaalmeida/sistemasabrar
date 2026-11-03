@@ -645,6 +645,23 @@ export class SpreadsheetService {
     console.log(`- Faturamento Direto/Máquinas: ${parsedEquipment.length} itens (R$ ${grandTotalEquipment.toFixed(2)})`);
     console.log(`- Total Obra: R$ ${grandTotalFinal.toFixed(2)}`);
 
+    // Modo somente extração (utilizado para Aditivos de Obras e prévias sem gravar no orçamento)
+    if (mode === 'parse_only') {
+      return {
+        itemsCount: parsedMaterials.length,
+        servicesCount: parsedServices.length,
+        equipmentCount: parsedEquipment.length,
+        items: parsedMaterials,
+        services: parsedServices,
+        equipment: parsedEquipment,
+        sheetsNames: processedSheets.map(s => s.sheet),
+        totalMaterials: grandTotalMaterials,
+        totalServices: grandTotalServices,
+        totalFinal: grandTotalFinal,
+        resumoAudit
+      };
+    }
+
     // 2. Busca ou cria o orçamento oficial
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
     let budgetId;

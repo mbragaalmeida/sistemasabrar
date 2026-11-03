@@ -649,20 +649,72 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     change_type: string;
     justification: string;
     discount_amount?: number;
+    uploaded_file?: File;
+    updated_materials?: any[];
+    recalculated_total?: number;
   }) => {
     try {
+      let finalJustification = vData.justification;
+
+      // Se houver arquivo anexo (ex: Mudança de Escopo / Novo Projeto), faz o upload para o projeto
+      if (vData.uploaded_file) {
+        try {
+          await api.uploadProjectFiles(projectId, [vData.uploaded_file]);
+          finalJustification += ` [Arquivo Anexado: ${vData.uploaded_file.name}]`;
+        } catch (uploadErr) {
+          console.warn('Aviso: falha ao anexar arquivo físico da nova versão:', uploadErr);
+        }
+      }
+
+      // Se houver ajuste de quantitativos item a item, atualiza editableMaterials e persiste no orçamento
+      let materialsSnapshot = editableMaterials;
+      let newTotalMaterials = totalMaterials;
+
+      if (vData.updated_materials && vData.updated_materials.length > 0) {
+        materialsSnapshot = vData.updated_materials;
+        setEditableMaterials(vData.updated_materials);
+        newTotalMaterials = vData.updated_materials.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+
+        // Salva orçamento com os novos quantitativos
+        try {
+          await api.saveBudget({
+            projectId: project.id,
+            materials: vData.updated_materials.map((m: any) => ({
+              materialId: m.material_id || m.materialId,
+              materialName: (m.material_name || m.material || '').trim() || (m.material_id ? `Material #${m.material_id}` : 'Material Avulso'),
+              quantity: Math.max(0.0001, Number(m.quantity) || 1),
+              unit: (m.unit && String(m.unit).trim()) ? String(m.unit).trim() : 'und',
+              unitPrice: Number(m.unit_price !== undefined ? m.unit_price : (m.unitPrice || 0)) || 0,
+              subtotal: Number(m.subtotal) || (Number(m.quantity || 0) * Number(m.unit_price || 0)),
+              aiSuggestedQuantity: m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity,
+              aiReasoning: m.ai_reasoning || m.reason,
+              humanNotes: m.human_notes || 'Ajustado via Nova Versão do Orçamento',
+              originalSpreadsheetName: m.original_spreadsheet_name || null
+            })),
+            services: editableServices,
+            equipment: editableEquipment
+          });
+        } catch (saveErr) {
+          console.warn('Erro ao salvar orçamento atualizado durante criação de versão:', saveErr);
+        }
+      }
+
       const currentVer = versions.length > 0 ? Math.max(...versions.map((v) => v.version_number)) : 1;
+      const finalCalcTotal = vData.recalculated_total !== undefined
+        ? vData.recalculated_total
+        : (newTotalMaterials + totalServices + totalEquipment - (vData.discount_amount || 0));
+
       await api.createBudgetVersion(projectId, {
         budget_id: budget?.id,
         version_number: currentVer + 1,
         change_type: vData.change_type,
-        justification: vData.justification,
+        justification: finalJustification,
         discount_amount: vData.discount_amount || 0,
-        total_materials: totalMaterials,
+        total_materials: newTotalMaterials,
         total_services: totalServices,
         total_equipment: totalEquipment,
-        total_final: totalBudgetCalculated - (vData.discount_amount || 0),
-        items_snapshot: editableMaterials,
+        total_final: finalCalcTotal,
+        items_snapshot: materialsSnapshot,
         services_snapshot: editableServices,
         equipment_snapshot: editableEquipment,
         created_by: currentUser?.id,
@@ -2932,6 +2984,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         onClose={() => setIsNewVersionModalOpen(false)}
         currentVersionNumber={versions.length > 0 ? Math.max(...versions.map(v => v.version_number)) : 1}
         totalFinal={totalBudgetCalculatedClient}
+        materials={editableMaterials}
         onConfirm={handleConfirmNewVersion}
       />
 

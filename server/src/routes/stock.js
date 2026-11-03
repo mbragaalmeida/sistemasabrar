@@ -3,20 +3,22 @@ import { db } from '../db/connection.js';
 
 export const stockRouter = express.Router();
 
-// Histórico de movimentações de estoque (Seção 23)
+// Histórico de movimentações de estoque (Seção 23 / Item 8)
 stockRouter.get('/movements', async (req, res) => {
   try {
-    const { material_id, project_id, type } = req.query;
+    const { material_id, project_id, type, search, period, limit } = req.query;
     let query = `
       SELECT sm.*,
              COALESCE(m.name, sm.custom_name, 'Material Fora da Base') as material_name,
              COALESCE(m.code, 'FORA-BASE') as material_code,
              COALESCE(m.unit, sm.custom_unit, 'un') as material_unit,
-             p.name as project_name, p.code as project_code, u.name as user_name
+             p.name as project_name, p.code as project_code, u.name as user_name,
+             mr.code as request_code
       FROM stock_movements sm
       LEFT JOIN materials m ON sm.material_id = m.id
       LEFT JOIN projects p ON sm.project_id = p.id
       LEFT JOIN users u ON sm.user_id = u.id
+      LEFT JOIN material_requests mr ON sm.reference_id = mr.id
       WHERE 1=1
     `;
     const params = [];
@@ -33,8 +35,44 @@ stockRouter.get('/movements', async (req, res) => {
       query += ' AND sm.type = ?';
       params.push(type);
     }
+    if (search && search.trim()) {
+      const term = `%${search.trim().toLowerCase()}%`;
+      query += ` AND (
+        LOWER(COALESCE(m.name, '')) LIKE ? OR
+        LOWER(COALESCE(sm.custom_name, '')) LIKE ? OR
+        LOWER(COALESCE(m.code, '')) LIKE ? OR
+        LOWER(COALESCE(mr.code, '')) LIKE ? OR
+        LOWER(COALESCE(sm.notes, '')) LIKE ? OR
+        LOWER(COALESCE(p.name, '')) LIKE ? OR
+        LOWER(COALESCE(p.code, '')) LIKE ?
+      )`;
+      params.push(term, term, term, term, term, term, term);
+    }
+    if (period && period !== 'all') {
+      const days = parseInt(period, 10);
+      if (!isNaN(days) && days > 0) {
+        const dateCutoff = new Date();
+        dateCutoff.setDate(dateCutoff.getDate() - days);
+        dateCutoff.setHours(0, 0, 0, 0);
+        query += ' AND sm.created_at >= ?';
+        params.push(dateCutoff.toISOString());
+      }
+    }
 
-    query += ' ORDER BY sm.id DESC LIMIT 100';
+    query += ' ORDER BY sm.id DESC';
+
+    if (limit && limit !== 'all') {
+      const parsedLimit = parseInt(limit, 10);
+      if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        query += ` LIMIT ${parsedLimit}`;
+      } else {
+        query += ' LIMIT 3000';
+      }
+    } else if (limit === 'all') {
+      query += ' LIMIT 10000';
+    } else {
+      query += ' LIMIT 3000';
+    }
 
     const movements = await db.prepare(query).all(...params);
     res.json(movements);

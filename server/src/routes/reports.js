@@ -215,12 +215,53 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
     const lowStockMaterials = await db.prepare(lowStockQuery).all();
     const lowStockCount = (await db.prepare(`SELECT COUNT(*) as count FROM materials WHERE stock_physical <= stock_minimum AND status = 'Ativo'`).get())?.count || 0;
 
-    // 4. Pedidos com Prazos em Risco (Vencidos e Próximos)
+    // 4. Pedidos com Prazos em Risco (Item 4: compras específicas de obras + gerais)
     const today = new Date();
-    const atRiskOrders = purchases.filter(p => p.status !== 'Recebido' && p.status !== 'Cancelado').map(p => {
+    today.setHours(0, 0, 0, 0);
+
+    const trackedRows = await db.prepare(`
+      SELECT * FROM tracked_purchase_deadlines
+      WHERE status != 'Entregue'
+      ORDER BY expected_billing_date ASC
+    `).all();
+
+    const trackedAtRisk = trackedRows.map(t => {
+      let riskStatus = 'No Prazo';
+      let isRisk = false;
+      if (t.expected_billing_date) {
+        const dueDate = new Date(t.expected_billing_date);
+        dueDate.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) {
+          riskStatus = 'Atrasado';
+          isRisk = true;
+        } else if (diffDays === 0) {
+          riskStatus = 'Previsão Hoje';
+          isRisk = true;
+        } else if (diffDays <= 3) {
+          riskStatus = `Próximo (${diffDays}d)`;
+          isRisk = true;
+        }
+      }
+      return {
+        id: `tracked-${t.id}`,
+        tracked_id: t.id,
+        isTracked: true,
+        order_number: t.order_number,
+        supplier: t.supplier_name,
+        item_name: t.item_name,
+        project_name: t.project_name,
+        expected_delivery_date: t.expected_billing_date,
+        riskStatus,
+        isRisk
+      };
+    }).filter(t => t.isRisk);
+
+    const generalAtRisk = purchases.filter(p => p.status !== 'Recebido' && p.status !== 'Cancelado').map(p => {
       let riskStatus = 'Em dia';
       if (p.expected_delivery_date) {
         const dueDate = new Date(p.expected_delivery_date);
+        dueDate.setHours(0, 0, 0, 0);
         const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         if (diffDays < 0) riskStatus = 'Vencido';
         else if (diffDays <= 3) riskStatus = 'Próximo (3 dias)';
@@ -228,14 +269,16 @@ reportsRouter.get('/purchases-stock-bi', async (req, res) => {
       }
       return {
         id: p.id,
+        isTracked: false,
         code: p.code,
         supplier: p.supplier_name || 'Diversos',
         expected_delivery_date: p.expected_delivery_date,
         riskStatus
       };
-    }).filter(p => p.riskStatus !== 'Em dia').slice(0, 10);
+    }).filter(p => p.riskStatus !== 'Em dia');
 
-    const atRiskCount = atRiskOrders.length;
+    const atRiskOrders = [...trackedAtRisk, ...generalAtRisk].slice(0, 15);
+    const atRiskCount = trackedAtRisk.length + generalAtRisk.length;
 
     // 5. Faturamento e Entregas (%)
     const billingRate = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 100;

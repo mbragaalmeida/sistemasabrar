@@ -26,7 +26,8 @@ import {
   ArrowRight,
   Hash,
   X,
-  RotateCcw
+  RotateCcw,
+  Calendar
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -84,6 +85,29 @@ export const StockPage: React.FC = () => {
   // Conjunto de solicitações expandidas na lista (accordion retraível)
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set());
 
+  // Filtros avançados do Extrato de Movimentações (Item 8)
+  const [extratoSearch, setExtratoSearch] = useState('');
+  const [extratoPeriod, setExtratoPeriod] = useState<string>('all');
+  const [extratoTypeFilter, setExtratoTypeFilter] = useState<string>('todos');
+  const [loadingExtrato, setLoadingExtrato] = useState(false);
+
+  const loadExtrato = async (search = extratoSearch, period = extratoPeriod, type = extratoTypeFilter) => {
+    setLoadingExtrato(true);
+    try {
+      const moves = await api.getStockMovements({
+        search: search.trim(),
+        period: period,
+        type: type !== 'todos' ? type : '',
+        limit: 'all'
+      });
+      setMovements(moves || []);
+    } catch (err) {
+      console.error('Erro ao buscar extrato de movimentações:', err);
+    } finally {
+      setLoadingExtrato(false);
+    }
+  };
+
   const toggleRequestExpanded = (id: number) => {
     setExpandedRequests(prev => {
       const next = new Set(prev);
@@ -103,7 +127,7 @@ export const StockPage: React.FC = () => {
         api.getStockSummary(),
         api.getRequests(),
         api.getReturns(),
-        api.getStockMovements(),
+        api.getStockMovements({ limit: 'all' }),
         api.getSubstitutions(),
         api.getQuantityChanges(),
         api.getTransfers().catch(() => []),
@@ -1430,75 +1454,246 @@ export const StockPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: EXTRATO COMPLETO DE MOVIMENTAÇÕES */}
-      {!loading && activeTab === 'extrato' && (
-        <div className="bg-dark-900 rounded-3xl border border-dark-750 overflow-hidden shadow-md">
-          <div className="p-4 bg-dark-850 border-b border-dark-750 text-xs font-bold text-slate-200">
-            Histórico Completo de Movimentações de Estoque (Auditoria Imutável)
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
-                <tr>
-                  <th className="p-3">Data / Hora</th>
-                  <th className="p-3">Tipo</th>
-                  <th className="p-3">Material</th>
-                  <th className="p-3 text-center">Quant.</th>
-                  <th className="p-3 text-center">Estoque Anterior</th>
-                  <th className="p-3 text-center font-bold">Novo Estoque</th>
-                  <th className="p-3">Obra Vinculada</th>
-                  <th className="p-3">Operador</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dark-750">
-                {movements.map((m) => {
-                  const isEntrada = m.type === 'ENTRADA' || m.type === 'DEVOLUCAO';
-                  return (
-                    <tr key={m.id} className="hover:bg-dark-850/60">
-                      <td className="p-3 text-slate-400 font-mono text-[11px]">
-                        {new Date(m.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="p-3">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            m.type === 'ENTRADA'
-                              ? 'bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40'
-                              : m.type === 'DEVOLUCAO'
-                              ? 'bg-teal-950 text-teal-300 border border-teal-700'
-                              : m.type === 'SAIDA_OBRA'
-                              ? 'bg-rose-950 text-rose-300 border border-rose-700'
-                              : 'bg-amber-950 text-amber-300 border border-amber-700'
-                          }`}
-                        >
-                          {m.type}
-                        </span>
-                      </td>
-                      <td className="p-3 font-bold text-white">
-                        {m.material_name}
-                      </td>
-                      <td className="p-3 text-center font-black text-white">
-                        {isEntrada ? `+${m.quantity}` : `-${m.quantity}`} {m.material_unit}
-                      </td>
-                      <td className="p-3 text-center text-slate-400 font-mono">
-                        {m.previous_stock}
-                      </td>
-                      <td className="p-3 text-center font-bold text-white font-mono">
-                        {m.new_stock}
-                      </td>
-                      <td className="p-3 text-slate-300">
-                        {m.project_name ? `${m.project_code} - ${m.project_name}` : 'Almoxarifado Central'}
-                      </td>
-                      <td className="p-3 text-slate-400 text-[11px]">
-                        {m.user_name || 'Sistema'}
+      {/* TAB 3: EXTRATO COMPLETO DE MOVIMENTAÇÕES (Item 8) */}
+      {!loading && activeTab === 'extrato' && (() => {
+        // Filtro local adicional para responsividade instantânea
+        const filteredMovements = movements.filter((m) => {
+          if (extratoTypeFilter !== 'todos') {
+            const mType = (m.type || '').toUpperCase();
+            if (extratoTypeFilter === 'SAIDA_OBRA' && !mType.includes('SAIDA')) return false;
+            if (extratoTypeFilter === 'ENTRADA' && !mType.includes('ENTRADA')) return false;
+            if (extratoTypeFilter === 'RESERVA' && !mType.includes('RESERVA')) return false;
+            if (extratoTypeFilter === 'DEVOLUCAO' && !mType.includes('DEVOLU')) return false;
+          }
+
+          if (extratoSearch.trim()) {
+            const query = extratoSearch.trim().toLowerCase();
+            const matName = (m.material_name || '').toLowerCase();
+            const matCode = (m.material_code || '').toLowerCase();
+            const reqCode = (m.request_code || '').toLowerCase();
+            const notes = (m.notes || '').toLowerCase();
+            const projName = (m.project_name || '').toLowerCase();
+            const projCode = (m.project_code || '').toLowerCase();
+            const user = (m.user_name || '').toLowerCase();
+
+            const match = matName.includes(query) ||
+              matCode.includes(query) ||
+              reqCode.includes(query) ||
+              notes.includes(query) ||
+              projName.includes(query) ||
+              projCode.includes(query) ||
+              user.includes(query);
+
+            if (!match) return false;
+          }
+
+          if (extratoPeriod !== 'all') {
+            const days = parseInt(extratoPeriod, 10);
+            if (!isNaN(days) && m.created_at) {
+              const cutoff = new Date();
+              cutoff.setDate(cutoff.getDate() - days);
+              cutoff.setHours(0, 0, 0, 0);
+              if (new Date(m.created_at) < cutoff) return false;
+            }
+          }
+
+          return true;
+        });
+
+        return (
+          <div className="bg-dark-900 rounded-3xl border border-dark-750 overflow-hidden shadow-md space-y-4 p-5">
+            {/* Header com Título e Totalizadores */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-dark-750">
+              <div>
+                <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                  <Package className="w-4 h-4 text-sabrar-400" />
+                  Extrato Completo de Movimentações de Estoque (Auditoria Imutável)
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Exibição de todo o histórico de movimentações, sem restrição de período. Pesquise por item, solicitação ou filtre por datas.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-xl bg-dark-800 border border-dark-700 text-xs font-bold text-slate-300">
+                  Total Exibido: <strong className="text-white">{filteredMovements.length}</strong> {filteredMovements.length === 1 ? 'movimentação' : 'movimentações'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => loadExtrato(extratoSearch, extratoPeriod, extratoTypeFilter)}
+                  className="px-3 py-1 rounded-xl bg-dark-800 hover:bg-dark-700 border border-dark-700 text-xs font-bold text-sabrar-400 hover:text-sabrar-300 transition-colors"
+                  title="Recarregar histórico completo do banco"
+                >
+                  {loadingExtrato ? 'Atualizando...' : 'Atualizar'}
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de Filtros: Pesquisa por Item / Solicitação e Período */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+              {/* Campo de Busca por Item ou Número da Solicitação */}
+              <div className="md:col-span-6 relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={extratoSearch}
+                  onChange={(e) => {
+                    setExtratoSearch(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      loadExtrato(extratoSearch, extratoPeriod, extratoTypeFilter);
+                    }
+                  }}
+                  placeholder="Pesquisar por item, código, número da solicitação (ex: SOL-2026-0211)..."
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-dark-700 bg-dark-850 text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500 transition-colors"
+                />
+                {extratoSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExtratoSearch('');
+                      loadExtrato('', extratoPeriod, extratoTypeFilter);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Filtro de Período Escolhido */}
+              <div className="md:col-span-6 flex items-center justify-end gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-sabrar-400" />
+                  Período:
+                </span>
+                {[
+                  { label: 'Todo o Histórico', value: 'all' },
+                  { label: 'Hoje', value: '1' },
+                  { label: '7d', value: '7' },
+                  { label: '15d', value: '15' },
+                  { label: '30d', value: '30' },
+                  { label: '60d', value: '60' },
+                  { label: '90d', value: '90' }
+                ].map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => {
+                      setExtratoPeriod(p.value);
+                      loadExtrato(extratoSearch, p.value, extratoTypeFilter);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${
+                      extratoPeriod === p.value
+                        ? 'bg-sabrar-600 text-white shadow-xs'
+                        : 'bg-dark-800 text-slate-400 hover:text-white hover:bg-dark-750 border border-dark-700'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tabela de Movimentações */}
+            <div className="overflow-x-auto rounded-2xl border border-dark-750">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-dark-850 text-slate-400 font-semibold border-b border-dark-700">
+                  <tr>
+                    <th className="p-3">Data / Hora</th>
+                    <th className="p-3">Solicitação</th>
+                    <th className="p-3">Tipo</th>
+                    <th className="p-3">Material</th>
+                    <th className="p-3 text-center">Quant.</th>
+                    <th className="p-3 text-center">Estoque Ant.</th>
+                    <th className="p-3 text-center font-bold">Novo Est.</th>
+                    <th className="p-3">Obra Vinculada</th>
+                    <th className="p-3">Operador</th>
+                    <th className="p-3">Observações / Motivo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-750">
+                  {filteredMovements.map((m) => {
+                    const isEntrada = m.type === 'ENTRADA' || m.type === 'DEVOLUCAO';
+                    return (
+                      <tr key={m.id} className="hover:bg-dark-850/60 transition-colors">
+                        <td className="p-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                          {new Date(m.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {m.request_code ? (
+                            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-600/40">
+                              {m.request_code}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 font-mono text-[10px]">--</span>
+                          )}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              m.type === 'ENTRADA'
+                                ? 'bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40'
+                                : m.type === 'DEVOLUCAO'
+                                ? 'bg-teal-950 text-teal-300 border border-teal-700'
+                                : m.type === 'SAIDA_OBRA'
+                                ? 'bg-rose-950 text-rose-300 border border-rose-700'
+                                : 'bg-amber-950 text-amber-300 border border-amber-700'
+                            }`}
+                          >
+                            {m.type}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <strong className="text-white block">{m.material_name}</strong>
+                          {m.material_code && m.material_code !== 'FORA-BASE' && (
+                            <span className="text-[10px] font-mono text-slate-400">
+                              Cód: {m.material_code}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center font-black text-white whitespace-nowrap">
+                          <span className={isEntrada ? 'text-emerald-400' : 'text-rose-400'}>
+                            {isEntrada ? `+${m.quantity}` : `-${m.quantity}`} {m.material_unit}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center text-slate-400 font-mono">
+                          {m.previous_stock ?? '--'}
+                        </td>
+                        <td className="p-3 text-center font-bold text-white font-mono">
+                          {m.new_stock ?? '--'}
+                        </td>
+                        <td className="p-3 text-slate-300 max-w-[200px] truncate" title={m.project_name ? `${m.project_code || ''} - ${m.project_name}` : 'Almoxarifado Central'}>
+                          {m.project_name ? `${m.project_code ? m.project_code + ' - ' : ''}${m.project_name}` : 'Almoxarifado Central'}
+                        </td>
+                        <td className="p-3 text-slate-400 text-[11px] whitespace-nowrap">
+                          {m.user_name || 'Sistema'}
+                        </td>
+                        <td className="p-3 text-slate-400 text-[11px] max-w-[220px] truncate" title={m.notes || ''}>
+                          {m.notes || '--'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {filteredMovements.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="p-8 text-center text-slate-500">
+                        {loadingExtrato
+                          ? 'Carregando movimentações...'
+                          : extratoSearch || extratoPeriod !== 'all'
+                          ? 'Nenhuma movimentação encontrada com os filtros informados.'
+                          : 'Nenhuma movimentação registrada no histórico.'}
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 4: TRANSFERÊNCIAS ENTRE OBRAS & PENDÊNCIAS DE REPOSIÇÃO (FASE 1) */}
       {!loading && activeTab === 'transferencias' && (

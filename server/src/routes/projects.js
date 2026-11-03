@@ -38,6 +38,10 @@ export const projectsRouter = express.Router();
 projectsRouter.get('/', async (req, res) => {
   try {
     const { status, search, project_type } = req.query;
+    const userRole = req.headers['x-user-role'] || req.query.role;
+    const userId = req.headers['x-user-id'] || req.query.user_id;
+    const isEngineer = userRole === 'engenharia' || userRole === 'engineer';
+
     let query = 'SELECT * FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL)';
     const params = [];
 
@@ -56,7 +60,24 @@ projectsRouter.get('/', async (req, res) => {
 
     query += ' ORDER BY id DESC';
 
-    const projects = await db.prepare(query).all(...params);
+    let projects = await db.prepare(query).all(...params);
+
+    // Filtro estrito para perfil Engenharia: apenas obras atribuídas a ele
+    if (isEngineer && userId) {
+      const engUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(Number(userId));
+      const assignedRows = await db.prepare('SELECT project_id FROM project_engineers WHERE user_id = ?').all(Number(userId));
+      const assignedProjectIds = new Set(assignedRows.map(r => Number(r.project_id)));
+      const normUser = (engUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+
+      projects = projects.filter(p => {
+        if (assignedProjectIds.has(Number(p.id))) return true;
+        if (normUser && p.responsible_engineer) {
+          const normProj = String(p.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          if (normProj.includes(normUser) || normUser.includes(normProj)) return true;
+        }
+        return false;
+      });
+    }
 
     // Adiciona contagens rápidas de solicitações, arquivos e engenheiros designados
     const enriched = await Promise.all(projects.map(async p => {
@@ -1220,6 +1241,111 @@ projectsRouter.post('/:id/addenda', async (req, res) => {
 
     res.status(201).json({ id: result.lastInsertRowid, number: nextNumber, title: aditivoTitle });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Processa e extrai itens de documento (AP / Excel / PDF / CAD) para criação facilitada de Aditivo (Item 2)
+projectsRouter.post('/:id/addenda/parse-document', upload.single('file'), async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+
+    const origName = file.originalname || 'documento';
+    const isSpreadsheet = origName.toLowerCase().endsWith('.xlsx') || origName.toLowerCase().endsWith('.xls') || origName.toLowerCase().endsWith('.csv');
+    const isPdf = origName.toLowerCase().endsWith('.pdf') || file.mimetype === 'application/pdf';
+    const isCad = origName.toLowerCase().endsWith('.dwg') || origName.toLowerCase().endsWith('.dxf');
+
+    let extractedItems = [];
+    let extractedServices = [];
+    let extractedEquipment = [];
+    let summaryText = '';
+
+    if (isSpreadsheet) {
+      const parsed = await SpreadsheetService.processRealSurveySpreadsheet(
+        projectId,
+        file.path,
+        origName,
+        1,
+        'parse_only'
+      );
+      extractedItems = (parsed.items || []).map(it => ({
+        material_id: it.materialId || null,
+        code: it.code || '',
+        material_name: it.materialName || '',
+        quantity: it.quantity || 1,
+        unit: it.unit || 'und',
+        unit_price: it.unitPrice || 0,
+        subtotal: it.subtotal || 0
+      }));
+      extractedServices = (parsed.services || []).map(s => ({
+        service_name: s.description || s.category || '',
+        quantity: s.quantity || 1,
+        unit: s.unit || 'vb',
+        unit_price: s.unitPrice || 0,
+        subtotal: s.subtotal || 0
+      }));
+      extractedEquipment = parsed.equipment || [];
+      summaryText = `Planilha de levantamento executivo (AP) processada com sucesso: ${extractedItems.length} materiais e ${extractedServices.length} serviços identificados.`;
+    } else if (isPdf) {
+      const buffer = fs.readFileSync(file.path);
+      const pdfText = await extractTextFromPdfBuffer(buffer);
+      summaryText = `PDF técnico analisado: ${pdfText ? pdfText.slice(0, 300) : ''}...`;
+      if (pdfText) {
+        const lines = pdfText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        for (const line of lines) {
+          const matchQty = line.match(/^(\d+(?:[.,]\d+)?)\s*(un|und|m|kg|cx|pç|rolo)?\s+(.+)$/i);
+          if (matchQty && matchQty[3].length > 2) {
+            extractedItems.push({
+              material_id: null,
+              code: '',
+              material_name: matchQty[3].trim(),
+              quantity: parseFloat(matchQty[1].replace(',', '.')) || 1,
+              unit: matchQty[2] || 'un'
+            });
+          }
+        }
+      }
+    } else if (isCad) {
+      const buffer = fs.readFileSync(file.path);
+      const cadSummary = extractCadTextFromBuffer(buffer, origName);
+      summaryText = `Projeto CAD processado. Anotações técnicas extraídas com sucesso.`;
+    }
+
+    // Salva o documento no histórico de arquivos do projeto vinculado a este futuro aditivo
+    let fileBuffer = null;
+    try {
+      if (file.path && fs.existsSync(file.path)) fileBuffer = fs.readFileSync(file.path);
+    } catch (e) {}
+
+    await db.prepare(`
+      INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by, file_data)
+      VALUES (?, 'ADITIVO_DOC', ?, ?, ?, ?, ?, 1, ?)
+    `).run(
+      projectId,
+      `[Aditivo] ${origName}`,
+      `/uploads/${file.filename}`,
+      file.size,
+      file.mimetype || 'application/octet-stream',
+      summaryText || `Arquivo de Aditivo ${origName}`,
+      fileBuffer
+    );
+
+    res.json({
+      success: true,
+      original_name: origName,
+      file_path: `/uploads/${file.filename}`,
+      file_size: file.size,
+      items: extractedItems,
+      services: extractedServices,
+      equipment: extractedEquipment,
+      summary: summaryText
+    });
+  } catch (err) {
+    console.error('[Addendum Parse Document Error]', err);
     res.status(500).json({ error: err.message });
   }
 });

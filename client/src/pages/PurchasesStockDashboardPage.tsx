@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { StockExitAuditModal } from '../components/modals/StockExitAuditModal';
+import { CriticalStockModal } from '../components/modals/CriticalStockModal';
+import { ManagePurchaseDeadlinesModal } from '../components/modals/ManagePurchaseDeadlinesModal';
 
 interface PurchasesStockDashboardPageProps {
   onNavigate: (page: string, id?: number) => void;
@@ -44,6 +46,8 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
   const [exitMaterialSearch, setExitMaterialSearch] = useState('');
   const [exitPeriodFilter, setExitPeriodFilter] = useState('all'); // 'all', '7', '15', '30', '90'
   const [selectedExitForAudit, setSelectedExitForAudit] = useState<any | null>(null);
+  const [isCriticalStockModalOpen, setIsCriticalStockModalOpen] = useState(false);
+  const [isDeadlinesModalOpen, setIsDeadlinesModalOpen] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -432,8 +436,9 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
               <p className="text-[11px] text-slate-500">Materiais abaixo do mínimo</p>
             </div>
             <button
-              onClick={() => onNavigate('stock')}
-              className="text-xs font-semibold text-blue-600 hover:underline"
+              type="button"
+              onClick={() => setIsCriticalStockModalOpen(true)}
+              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
               Ver Estoque
             </button>
@@ -493,10 +498,11 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
               <p className="text-[11px] text-slate-500">Entregas atrasadas ou próximas</p>
             </div>
             <button
-              onClick={() => onNavigate('purchases')}
-              className="text-xs font-semibold text-blue-600 hover:underline"
+              type="button"
+              onClick={() => setIsDeadlinesModalOpen(true)}
+              className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
             >
-              Ver Compras
+              + Acompanhar Prazos
             </button>
           </div>
 
@@ -504,21 +510,35 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
             {(tables.atRiskOrders || []).map((o: any) => (
               <div
                 key={o.id}
-                className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                onClick={() => setIsDeadlinesModalOpen(true)}
+                className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs hover:border-amber-400/50 hover:bg-amber-50/20 dark:hover:bg-slate-800/80 transition-all cursor-pointer"
+                title="Clique para gerenciar prazos e faturamento"
               >
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100">
-                    {o.code || `PC-${o.id}`}
+                <div className="min-w-0 flex-1 pr-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                      {o.order_number ? `#${o.order_number}` : (o.code || `PC-${o.id}`)}
+                    </span>
+                    {o.isTracked && (
+                      <span className="text-[9px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded border border-amber-500/30">
+                        Item Específico
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate max-w-[150px]">
-                    {o.supplier}
+                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate">
+                    {o.item_name || o.supplier}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {o.project_name || o.supplier}
                   </div>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    o.riskStatus === 'Vencido'
+                    o.riskStatus === 'Vencido' || o.riskStatus === 'Atrasado'
                       ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                      : o.riskStatus === 'Previsão Hoje'
+                      ? 'bg-amber-500 text-slate-900 font-black'
                       : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                   }`}>
                     {o.riskStatus}
@@ -642,13 +662,28 @@ export const PurchasesStockDashboardPage: React.FC<PurchasesStockDashboardPagePr
 
       </div>
 
-      {/* Modal de Auditoria da Saída de Estoque (Item 10) */}
+      {/* Modal de Auditoria da Saída de Estoque com Seleção Múltipla (Item 6) */}
       <StockExitAuditModal
         isOpen={!!selectedExitForAudit}
         onClose={() => setSelectedExitForAudit(null)}
         movement={selectedExitForAudit}
+        availableMovements={tables.recentStockExits || []}
         periodFilter={exitPeriodFilter}
         onNavigateToStock={(mat) => onNavigate('stock')}
+      />
+
+      {/* Modal de Auditoria de Estoque Crítico com Filtro de Categoria (Item 3) */}
+      <CriticalStockModal
+        isOpen={isCriticalStockModalOpen}
+        onClose={() => setIsCriticalStockModalOpen(false)}
+        onNavigateToStock={() => onNavigate('stock')}
+      />
+
+      {/* Modal de Acompanhamento de Prazos em Risco (Item 4) */}
+      <ManagePurchaseDeadlinesModal
+        isOpen={isDeadlinesModalOpen}
+        onClose={() => setIsDeadlinesModalOpen(false)}
+        onSuccess={loadDashboard}
       />
 
     </div>

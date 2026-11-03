@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, X, AlertTriangle, Layers, Calendar, Package, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { PlusCircle, Trash2, X, AlertTriangle, Layers, Calendar, Package, Search, UploadCloud, FileUp, FileText, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { parsePackageInfo, getUnitOptions, convertQuantity, COMMON_UNITS, PackageInfo, UnitOption } from '../../utils/unitConverter';
 import { Material } from '../../types';
@@ -54,6 +54,78 @@ export const NewAddendumModal: React.FC<NewAddendumModalProps> = ({
   const [services, setServices] = useState<AddendumServiceRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [parseSuccessMessage, setParseSuccessMessage] = useState<string | null>(null);
+
+  const handleDocumentSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setIsParsingFile(true);
+    setError('');
+    setParseSuccessMessage(null);
+
+    try {
+      const res = await api.parseAddendumDocument(projectId, file);
+      setUploadedFiles(prev => [...prev, {
+        name: file.name,
+        size: file.size,
+        path: res.file_path,
+        summary: res.summary
+      }]);
+
+      let itemsAdded = 0;
+      let servicesAdded = 0;
+
+      if (res.items && res.items.length > 0) {
+        setItems(prev => {
+          const filteredPrev = prev.filter(it => it.material_name.trim().length > 0);
+          const newRows: AddendumItemRow[] = res.items.map((it: any) => ({
+            material_id: it.material_id,
+            code: it.code || '',
+            material_name: it.material_name,
+            quantity: Number(it.quantity) || 1,
+            unit: it.unit || 'und',
+            suggestions: [],
+            loading_suggestions: false
+          }));
+          return [...filteredPrev, ...newRows];
+        });
+        itemsAdded = res.items.length;
+      }
+
+      if (res.services && res.services.length > 0) {
+        setServices(prev => {
+          const filteredPrev = prev.filter(s => s.service_name.trim().length > 0);
+          const newRows: AddendumServiceRow[] = res.services.map((s: any) => ({
+            service_name: s.service_name,
+            quantity: Number(s.quantity) || 1,
+            unit: s.unit || 'vb'
+          }));
+          return [...filteredPrev, ...newRows];
+        });
+        servicesAdded = res.services.length;
+      }
+
+      if (!description.trim()) {
+        setDescription(`Aditivo levantado a partir do documento "${file.name}".`);
+      }
+
+      setParseSuccessMessage(`Documento "${file.name}" processado com sucesso! ${itemsAdded} material(is) e ${servicesAdded} serviço(s) adicionados automaticamente.`);
+    } catch (err: any) {
+      console.error('[Parse Addendum Document Error]', err);
+      setError(err.message || 'Erro ao processar documento.');
+    } finally {
+      setIsParsingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveUploadedFile = (idx: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== idx));
+  };
 
   if (!isOpen) return null;
 
@@ -235,7 +307,8 @@ export const NewAddendumModal: React.FC<NewAddendumModalProps> = ({
         total_services: 0,
         total_final: 0,
         items: validItems,
-        services: validServices
+        services: validServices,
+        files: uploadedFiles.map(f => f.name)
       });
       onSuccess();
       onClose();
@@ -312,6 +385,86 @@ export const NewAddendumModal: React.FC<NewAddendumModalProps> = ({
               className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sabrar-500 resize-none"
               required
             />
+          </div>
+
+          {/* Item 2: Anexar Documentos ou AP Levantada Real (Processamento Automático) */}
+          <div className="p-4 rounded-2xl bg-dark-850 border border-sabrar-500/30 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 rounded-xl bg-sabrar-500/20 text-sabrar-400 shrink-0 mt-0.5">
+                  <FileUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>Anexar Projeto / AP Levantada Real</span>
+                    <span className="text-[10px] text-sabrar-400 bg-sabrar-950 px-2 py-0.5 rounded-full border border-sabrar-500/30">
+                      Preenchimento Automático
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Anexe a planilha de AP (.xlsx, .xls, .csv), projeto (.pdf) ou DWG para extrair e preencher os materiais automaticamente. Caso não possua documento, continue preenchendo manualmente abaixo.
+                  </p>
+                </div>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.pdf,.dwg,.dxf"
+                onChange={handleDocumentSelected}
+                className="hidden"
+              />
+              <button
+                type="button"
+                disabled={isParsingFile}
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3.5 py-2 bg-sabrar-600 hover:bg-sabrar-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+              >
+                {isParsingFile ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Processando AP...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Importar AP / Projeto</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Sucesso na extração */}
+            {parseSuccessMessage && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{parseSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Lista de arquivos anexados */}
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-dark-800">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Documentos Anexados ao Aditivo:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {uploadedFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-dark-900 border border-dark-700 text-xs text-slate-200">
+                      <FileText className="w-3.5 h-3.5 text-sabrar-400" />
+                      <span className="truncate max-w-[200px]">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUploadedFile(i)}
+                        className="text-slate-400 hover:text-rose-400 p-0.5 rounded transition-colors ml-1"
+                        title="Remover anexo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Materiais do Aditivo com Busca Inteligente na Base e Conversão de Unidades */}

@@ -4,6 +4,7 @@ import { Project } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { canDeleteProject } from '../../utils/permissions';
+import { ESTIMATORS_LIST } from './NewProjectModal';
 
 interface EditProjectModalProps {
   isOpen: boolean;
@@ -244,13 +245,21 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               <label className="block text-sabrar-600 dark:text-sabrar-400 font-bold uppercase tracking-wider text-[11px] mb-1">
                 Orçamentista Responsável *
               </label>
-              <input
-                type="text"
+              <select
                 value={responsibleEstimator}
                 onChange={(e) => setResponsibleEstimator(e.target.value)}
-                placeholder="Ex: Matheus Braga / Mariana Costa"
-                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500"
-              />
+                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-dark-850 border border-slate-300 dark:border-dark-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-xs"
+              >
+                <option value="">Selecione o orçamentista...</option>
+                {ESTIMATORS_LIST.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                {responsibleEstimator && !ESTIMATORS_LIST.includes(responsibleEstimator) && (
+                  <option value={responsibleEstimator}>{responsibleEstimator}</option>
+                )}
+              </select>
             </div>
 
             <div>

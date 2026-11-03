@@ -305,6 +305,7 @@ purchasesRouter.post('/parse-supplier-pdf', uploadMem.single('file'), async (req
     }
 
     const parsed = SupplierPdfParser.parse(pdfText);
+    console.log(`[Parse Supplier PDF] Fornecedor: "${parsed.supplier?.name || 'Desconhecido'}" - Itens extraídos: ${parsed.items.length} (Tamanho do texto: ${pdfText.length} chars)`);
     res.json({
       success: true,
       extractedTextLength: pdfText.length,
@@ -379,5 +380,201 @@ purchasesRouter.post('/export-custom-oc', async (req, res) => {
   } catch (err) {
     console.error('[Export Custom OC Error]', err);
     res.status(500).json({ error: err.message || 'Erro ao gerar Ordem de Compra em Excel' });
+  }
+});
+
+/**
+ * Item 4: Acompanhamento Manual de Prazos em Risco (Compras de Itens Específicos por Obra)
+ */
+purchasesRouter.get('/tracked-deadlines', async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 1. Verifica pedidos cuja data de faturamento chegou e que ainda não notificaram
+    const toNotify = await db.prepare(`
+      SELECT * FROM tracked_purchase_deadlines
+      WHERE expected_billing_date <= ? AND (notified IS FALSE OR notified IS NULL) AND status != 'Entregue'
+    `).all(today);
+
+    for (const item of toNotify) {
+      const msg = `O Pedido #${item.order_number} (${item.supplier_name}) do item "${item.item_name}" para a obra "${item.project_name}" atingiu a data de previsão de faturamento (${new Date(item.expected_billing_date).toLocaleDateString('pt-BR')}).`;
+      
+      // Notifica setor de compras e administradores
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('compras', 'Prazo de Faturamento Atingido', ?, 'urgent', '/bi-compras-estoque')
+      `).run(msg);
+
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('admin', 'Prazo de Faturamento Atingido', ?, 'urgent', '/bi-compras-estoque')
+      `).run(msg);
+
+      await db.prepare('UPDATE tracked_purchase_deadlines SET notified = TRUE WHERE id = ?').run(item.id);
+    }
+
+    // 2. Busca todos os acompanhamentos
+    const rows = await db.prepare(`
+      SELECT tpd.*, u.name as created_by_name
+      FROM tracked_purchase_deadlines tpd
+      LEFT JOIN users u ON tpd.created_by = u.id
+      ORDER BY 
+        CASE 
+          WHEN tpd.status = 'Entregue' THEN 2 
+          ELSE 1 
+        END,
+        tpd.expected_billing_date ASC, 
+        tpd.id DESC
+    `).all();
+
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+
+    const enriched = rows.map(r => {
+      let riskStatus = 'No Prazo';
+      let isRisk = false;
+      if (r.expected_billing_date) {
+        const d = new Date(r.expected_billing_date);
+        d.setHours(0, 0, 0, 0);
+        const diffTime = d.getTime() - todayDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (r.status === 'Entregue') {
+          riskStatus = 'Concluído';
+        } else if (diffDays < 0) {
+          riskStatus = 'Atrasado';
+          isRisk = true;
+        } else if (diffDays === 0) {
+          riskStatus = 'Previsão Hoje';
+          isRisk = true;
+        } else if (diffDays <= 3) {
+          riskStatus = `Próximo (${diffDays}d)`;
+          isRisk = true;
+        } else {
+          riskStatus = 'No Prazo';
+        }
+      }
+
+      return {
+        ...r,
+        riskStatus,
+        isRisk
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error('[Tracked Deadlines GET Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+purchasesRouter.post('/tracked-deadlines', async (req, res) => {
+  try {
+    const {
+      order_number,
+      supplier_name,
+      item_name,
+      project_id,
+      project_name,
+      expected_billing_date,
+      notes,
+      userId = 1
+    } = req.body;
+
+    if (!order_number || !supplier_name || !item_name || !expected_billing_date) {
+      return res.status(400).json({ error: 'Campos obrigatórios: número do pedido, fornecedor, item e data de previsão de faturamento.' });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const isDue = expected_billing_date <= today;
+
+    const result = await db.prepare(`
+      INSERT INTO tracked_purchase_deadlines (
+        order_number, supplier_name, item_name, project_id, project_name,
+        expected_billing_date, notes, created_by, status, notified
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Em Acompanhamento', ?)
+    `).run(
+      order_number.trim(),
+      supplier_name.trim(),
+      item_name.trim(),
+      project_id ? Number(project_id) : null,
+      (project_name && project_name.trim()) || 'Obra Sabrar',
+      expected_billing_date,
+      notes ? notes.trim() : '',
+      Number(userId) || 1,
+      isDue
+    );
+
+    if (isDue) {
+      const msg = `O Pedido #${order_number} (${supplier_name}) do item "${item_name}" para a obra "${project_name || 'Obra Sabrar'}" cadastrado já está na data prevista de faturamento (${new Date(expected_billing_date).toLocaleDateString('pt-BR')}).`;
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('compras', 'Prazo de Faturamento Atingido', ?, 'urgent', '/bi-compras-estoque')
+      `).run(msg);
+    }
+
+    res.status(201).json({ id: result.lastInsertRowid, success: true });
+  } catch (err) {
+    console.error('[Tracked Deadlines POST Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+purchasesRouter.put('/tracked-deadlines/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      order_number,
+      supplier_name,
+      item_name,
+      project_id,
+      project_name,
+      expected_billing_date,
+      status,
+      notes
+    } = req.body;
+
+    const existing = await db.prepare('SELECT * FROM tracked_purchase_deadlines WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Registro não encontrado' });
+
+    await db.prepare(`
+      UPDATE tracked_purchase_deadlines
+      SET order_number = COALESCE(?, order_number),
+          supplier_name = COALESCE(?, supplier_name),
+          item_name = COALESCE(?, item_name),
+          project_id = COALESCE(?, project_id),
+          project_name = COALESCE(?, project_name),
+          expected_billing_date = COALESCE(?, expected_billing_date),
+          status = COALESCE(?, status),
+          notes = COALESCE(?, notes)
+      WHERE id = ?
+    `).run(
+      order_number ? order_number.trim() : null,
+      supplier_name ? supplier_name.trim() : null,
+      item_name ? item_name.trim() : null,
+      project_id ? Number(project_id) : null,
+      project_name ? project_name.trim() : null,
+      expected_billing_date || null,
+      status || null,
+      notes != null ? notes.trim() : null,
+      id
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Tracked Deadlines PUT Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+purchasesRouter.delete('/tracked-deadlines/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.prepare('DELETE FROM tracked_purchase_deadlines WHERE id = ?').run(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Tracked Deadlines DELETE Error]', err);
+    res.status(500).json({ error: err.message });
   }
 });

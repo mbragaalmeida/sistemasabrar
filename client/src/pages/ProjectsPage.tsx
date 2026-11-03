@@ -46,8 +46,20 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   }, [projects]);
 
   const displayedProjects = useMemo(() => {
+    const isEngineer = currentUser?.role === 'engenharia' || currentUser?.role === 'orcamento_engenharia' || (currentUser?.role as string) === 'engineer';
+    const normUser = (currentUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+
     return projects.filter(p => {
       if (p.code === 'SAB-INTERNO') return false;
+
+      // Se o usuário for engenheiro, mostra apenas as obras atribuídas a ele
+      if (isEngineer && currentUser) {
+        const isAssigned = (p.assigned_engineer_ids && p.assigned_engineer_ids.includes(currentUser.id)) ||
+                           (p.assigned_engineers && p.assigned_engineers.some((e: any) => e.id === currentUser.id));
+        const isResp = normUser && p.responsible_engineer && p.responsible_engineer.toLowerCase().replace(/^eng\.?\s*/i, '').trim().includes(normUser);
+        if (!isAssigned && !isResp) return false;
+      }
+
       if (workflowTab === 'execucao') {
         return p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado';
       }
@@ -59,7 +71,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
       }
       return true;
     });
-  }, [projects, workflowTab]);
+  }, [projects, workflowTab, currentUser]);
 
   const fetchProjects = async () => {
     setLoading(true);

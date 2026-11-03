@@ -1,6 +1,6 @@
 /**
  * Serviço Inteligente de Extração e Interpretação de PDFs de Fornecedores da SABRAR
- * Suporta formatos diversos de orçamentos, cotações e propostas comerciais (ex: Protshop, Polar, Dufrio, etc.)
+ * Suporta formatos diversos de orçamentos, cotações e propostas comerciais (ex: Multistar, Polar, Dufrio, Climatização, Leveros, Protshop, etc.)
  */
 export class SupplierPdfParser {
   /**
@@ -25,7 +25,7 @@ export class SupplierPdfParser {
     // 2. Extração de Dados da Proposta / Orçamento
     const proposal = this.extractProposalInfo(cleanText, lines);
 
-    // 3. Extração dos Itens Cotados
+    // 3. Extração dos Itens Cotados (Multi-Estratégia)
     const items = this.extractItems(cleanText, lines);
 
     // 4. Totais e Condições Comerciais
@@ -37,6 +37,17 @@ export class SupplierPdfParser {
       items,
       totals
     };
+  }
+
+  static parseBrNumber(valStr) {
+    if (!valStr) return 0;
+    const clean = String(valStr).replace(/[R$\sBRL]/gi, '').trim();
+    if (clean.includes(',') && clean.includes('.')) {
+      return parseFloat(clean.replace(/\./g, '').replace(',', '.')) || 0;
+    } else if (clean.includes(',')) {
+      return parseFloat(clean.replace(',', '.')) || 0;
+    }
+    return parseFloat(clean) || 0;
   }
 
   static extractSupplierInfo(text, lines) {
@@ -62,9 +73,9 @@ export class SupplierPdfParser {
       email = nonSabrarEmail[0];
     }
 
-    // Telefone / Celular / Whatsapp
+    // Telefone / Celular / Whatsapp com suporte a DDD completo
     const phoneMatches = text.match(/(?:\(?\d{2}\)?\s*)?(?:9\d{4}|\d{4})[-\s]?\d{4}/g) || [];
-    const validPhones = phoneMatches.filter(p => !p.includes('2557-4864')); // evita tel da Sabrar se houver
+    const validPhones = phoneMatches.filter(p => !p.includes('2557-4864'));
     if (validPhones.length > 0) {
       phone = validPhones[0];
     }
@@ -73,11 +84,11 @@ export class SupplierPdfParser {
       phone = whatsappMatch[1].trim();
     }
 
-    // Nome da Empresa Fornecedora (procura linha com razão social/nome fantasia)
+    // Nome da Empresa Fornecedora (procura linha com razão social / nome fantasia)
     for (const line of lines) {
       const upper = line.toUpperCase();
       if (
-        (upper.includes('LTDA') || upper.includes('EIRELI') || upper.includes('S.A.') || upper.includes('S/A') || /\bME\b/.test(upper) || upper.includes('EQUIP') || upper.includes('DISTRIBUIDORA')) &&
+        (upper.includes('LTDA') || upper.includes('EIRELI') || upper.includes('S.A.') || upper.includes('S/A') || /\bME\b/.test(upper) || upper.includes('EQUIP') || upper.includes('DISTRIBUIDORA') || upper.includes('COMERCIO') || upper.includes('COMÉRCIO') || upper.includes('REFRIGERACAO') || upper.includes('REFRIGERAÇÃO') || upper.includes('COMPONENTES') || upper.includes('INDUS')) &&
         !upper.includes('SABRAR') &&
         !upper.includes('ORÇAMENTO') &&
         !upper.includes('ORCAMENTO') &&
@@ -96,12 +107,9 @@ export class SupplierPdfParser {
     }
 
     // Vendedor / Contato
-    const patMatch = text.match(/(?:0004\s*-\s*)?([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)?)\s*(?:R\$\s*[\d.,]+)?\s*[\n\r]+Valor Total/i);
-    const vendMatch = patMatch || text.match(/vendedor(?:a)?\s*[\n\r:]*\s*(?:[0-9]{3,5}\s*-\s*)?([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+    const vendMatch = text.match(/vendedor(?:a)?\s*[\n\r:]*\s*(?:[0-9]{3,5}\s*-\s*)?([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
     if (vendMatch && !vendMatch[1].toUpperCase().includes('FORMA') && !vendMatch[1].toUpperCase().includes('VALOR')) {
       contactPerson = vendMatch[1].trim();
-    } else if (text.includes('PATRICIA')) {
-      contactPerson = 'PATRICIA';
     }
 
     return {
@@ -119,9 +127,12 @@ export class SupplierPdfParser {
     let paymentTerms = '';
     let deliveryTime = '';
 
-    const numMatch = text.match(/(?:orçamento|orcamento|proposta|pedido|nº|numero|num)\s*(?:nº|n°|no|\.)?\s*[:]?\s*([0-9A-Za-z\-_/]+)/i);
-    if (numMatch && numMatch[1].length >= 3 && !numMatch[1].toUpperCase().includes('CÓDIGO')) {
+    const numMatch = text.match(/(?:orçamento|orcamento|proposta|proposta comercial|pedido|cotação|cotacao|nº|numero|num)\s*(?:nº|n°|no|\.)?\s*[:]?\s*([0-9A-Za-z\-_/]+)/i);
+    if (numMatch && numMatch[1].length >= 2 && !/código|codigo|comercial/i.test(numMatch[1])) {
       proposalNumber = numMatch[1].trim();
+    } else {
+      const propSec = text.match(/(?:proposta comercial|orçamento|orcamento)\s*(?:nº|n°|no)?\s*[:]?\s*([0-9A-Za-z\-_/]+)/i);
+      if (propSec && propSec[1]) proposalNumber = propSec[1].trim();
     }
 
     const dateMatch = text.match(/(?:emiss[aã]o|data)\s*[:]?\s*(\d{2}\/\d{2}\/\d{4})/i) ||
@@ -130,8 +141,8 @@ export class SupplierPdfParser {
       emissionDate = dateMatch[1];
     }
 
-    const payMatch = text.match(/(?:Dinheiro\s*\/\s*Pagamento à vista|Faturado\s*\d+\s*DD|Boleto\s*\d+\s*DD|À Vista|A Vista|Pix)/i) ||
-                      text.match(/Forma de Pagamento\s*[\n\r:]*\s*([^\n\r]+)/i);
+    const payMatch = text.match(/(?:Condição de Pagamento|Forma de Pagamento|Pagamento)\s*[:]?\s*([^\n\r]+)/i) ||
+                     text.match(/(?:Dinheiro\s*\/\s*Pagamento à vista|Faturado\s*\d+\s*DD|Boleto\s*\d+\s*DD|\d+\s*DDL(?:\s*Boleto)?|À Vista|A Vista|Pix)/i);
     if (payMatch) {
       paymentTerms = (payMatch[1] || payMatch[0]).trim();
     }
@@ -154,23 +165,19 @@ export class SupplierPdfParser {
     let freight = 0;
     let discount = 0;
 
-    const totalMatch = text.match(/Total Geral\s*[:]?\s*(?:r\$\s*)?([\d.,]+)/i) ||
-                      text.match(/(?:total geral|valor total)\s*[:]?\s*(?:r\$\s*)?([\d.,]+)/i);
+    const totalMatch = text.match(/(?:Total Geral|Valor Total|Total da Proposta|Total do Pedido)\s*[:]?\s*(?:R\$\s*)?([\d.,]+)/i) ||
+                       text.match(/(?:total)\s*[:]?\s*(?:R\$\s*)?([\d.,]+)/i);
     if (totalMatch) {
       totalGeneral = this.parseBrNumber(totalMatch[1]);
     } else if (items.length > 0) {
       totalGeneral = items.reduce((sum, it) => sum + (it.totalPrice || 0), 0);
     }
 
-    const freightMatch = text.match(/frete\s*[:]?\s*(?:r\$\s*)?([\d.,]+)/i);
-    if (freightMatch) {
-      freight = this.parseBrNumber(freightMatch[1]);
-    }
+    const freightMatch = text.match(/frete\s*[:]?\s*(?:R\$\s*)?([\d.,]+)/i);
+    if (freightMatch) freight = this.parseBrNumber(freightMatch[1]);
 
-    const descMatch = text.match(/desconto\s*[:]?\s*(?:r\$\s*)?([\d.,]+)/i);
-    if (descMatch) {
-      discount = this.parseBrNumber(descMatch[1]);
-    }
+    const descMatch = text.match(/desconto\s*[:]?\s*(?:R\$\s*)?([\d.,]+)/i);
+    if (descMatch) discount = this.parseBrNumber(descMatch[1]);
 
     return {
       totalGeneral: Number(totalGeneral.toFixed(2)),
@@ -179,88 +186,227 @@ export class SupplierPdfParser {
     };
   }
 
+  static get UNITS() {
+    return [
+      'PR', 'PAR', 'PARES', 'UN', 'UND', 'UNID', 'UNIDADE', 'UNIDADES',
+      'PC', 'PÇ', 'PÇA', 'PÇS', 'PEÇA', 'PEÇAS', 'CX', 'CXS', 'CAIXA', 'CAIXAS',
+      'M', 'MT', 'MTR', 'MTS', 'METRO', 'METROS', 'KG', 'KGS', 'QUILO', 'QUILOS',
+      'L', 'LT', 'LTS', 'LITRO', 'LITROS', 'RL', 'ROLO', 'ROLOS', 'FD', 'FARDO',
+      'TB', 'TUBO', 'TUBOS', 'VB', 'CJ', 'CONJ', 'JG', 'JOGO', 'BARRA', 'BARRAS',
+      'BR', 'CENTO', 'CENTOS', 'KIT', 'KITS', 'PCT', 'PACOTE', 'BTL', 'BOT', 'BOTIJA',
+      'LATA', 'LATAS', 'TAMBOR'
+    ];
+  }
+
+  static isIgnoredLine(line) {
+    const l = line.toUpperCase();
+    return (
+      l.includes('CNPJ:') ||
+      l.includes('CPF:') ||
+      l.includes('INSCRIÇÃO') ||
+      l.includes('INSC. ESTADUAL') ||
+      l.includes('TELEFONE') ||
+      l.includes('FONE:') ||
+      l.includes('EMAIL:') ||
+      l.includes('CONDIÇÃO DE PAGAMENTO') ||
+      l.includes('FORMA DE PAGAMENTO') ||
+      l.includes('PROPOSTA COMERCIAL Nº') ||
+      l.includes('TOTAL GERAL') ||
+      l.includes('SUB TOTAL') ||
+      l.includes('SUBTOTAL') ||
+      l.includes('AGRADECEMOS') ||
+      l.includes('DADOS BANCÁRIOS') ||
+      l.includes('BANCO:') ||
+      l.includes('AGÊNCIA:') ||
+      l.includes('VALIDADE DA PROPOSTA') ||
+      /^ITEM\s+CÓDIGO/i.test(l) ||
+      /^ITEM\s+DESCRIÇÃO/i.test(l) ||
+      /^DESCRIÇÃO\s+DO/i.test(l)
+    );
+  }
+
   /**
-   * Extração de itens em tabelas de cotação / orçamentos
+   * Extração de itens em tabelas de cotação / orçamentos multi-estratégia
    */
   static extractItems(text, lines) {
+    // 1. Linhas com delimitadores explícitos (pipes | ou tabs \t)
+    const delimited = this.extractDelimitedRows(lines);
+    if (delimited.length > 0) return delimited;
+
+    // 2. Linhas tabulares tradicionais (com descrição, quantidade, preços)
+    const tableItems = this.extractTableRows(lines);
+    if (tableItems.length > 0) return tableItems;
+
+    // 3. Blocos multi-linhas (quando cada atributo quebra de linha)
+    const blockItems = this.extractMultiLineBlocks(lines);
+    if (blockItems.length > 0) return blockItems;
+
+    // 4. Glued numbers (Protshop)
+    const glued = this.extractGluedItems(lines);
+    if (glued.length > 0) return glued;
+
+    return [];
+  }
+
+  static extractDelimitedRows(lines) {
     const items = [];
-    const validUnits = ['PR', 'PAR', 'PARES', 'UN', 'UND', 'UNID', 'PC', 'PÇ', 'CX', 'M', 'MT', 'METRO', 'METROS', 'KG', 'L', 'LT', 'RL', 'ROLO', 'FD', 'TB', 'VB', 'CJ', 'JG'];
-    const unitRegex = new RegExp(`\\b(${validUnits.join('|')})\\b`, 'i');
+    for (const line of lines) {
+      if (!line.includes('|') && !line.includes('\t') && !line.includes(';')) continue;
+      if (this.isIgnoredLine(line)) continue;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const sep = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ';';
+      const cells = line.split(sep).map(c => c.trim()).filter(Boolean);
+      if (cells.length < 3) continue;
 
-      // Ignora linhas de cabeçalhos de tabela e rodapés
-      if (
-        /Id\s+Ref/i.test(line) ||
-        /Descrição.*Preço.*Total/i.test(line) ||
-        /Informações de Pagamento/i.test(line) ||
-        /Sub Total/i.test(line) ||
-        /Total Geral/i.test(line) ||
-        /Observações/i.test(line) ||
-        /Agradeçemos sua consulta/i.test(line)
-      ) {
-        continue;
+      let unitPrice = 0;
+      let totalPrice = 0;
+      let quantity = 0;
+      let unit = 'UN';
+      let description = '';
+      let code = '';
+
+      for (let cIdx = cells.length - 1; cIdx >= 0; cIdx--) {
+        const raw = cells[cIdx];
+        const val = this.parseBrNumber(raw);
+        if (val > 0 && /[\d]+[.,]\d{2}/.test(raw)) {
+          if (totalPrice === 0) {
+            totalPrice = val;
+          } else if (unitPrice === 0) {
+            unitPrice = val;
+          }
+        } else if (quantity === 0 && /^[\d]+(?:[.,]\d+)?$/.test(raw)) {
+          quantity = this.parseBrNumber(raw);
+        } else if (this.UNITS.includes(raw.toUpperCase())) {
+          unit = raw.toUpperCase();
+        } else if (!description && raw.length > 3 && !/^\d+$/.test(raw)) {
+          description = raw;
+        } else if (!code && /^[A-Za-z0-9_-]{3,}$/.test(raw)) {
+          code = raw;
+        }
       }
 
-      // Procura linha que termina com dois números decimais (preço unitário e total):
-      // Ex: "... 79,50 318,00" ou "... 3,50 175,00" ou "... 137,00 137,00"
-      const priceEndMatch = line.match(/^(.+?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})\s+([\d]{1,3}(?:\.\d{3})*,\d{2})$/);
-      if (priceEndMatch) {
-        const lead = priceEndMatch[1].trim();
-        const unitPrice = this.parseBrNumber(priceEndMatch[2]);
-        const totalPrice = this.parseBrNumber(priceEndMatch[3]);
-
-        // Dentro de lead, procura Unidade e Quantidade
-        const leadTokens = lead.split(/\s+/);
-        let foundUnitIndex = -1;
-        for (let t = leadTokens.length - 1; t >= 0; t--) {
-          if (validUnits.includes(leadTokens[t].toUpperCase())) {
-            if (t > 0 && /^\d+(?:[.,]\d+)?$/.test(leadTokens[t - 1])) {
-              foundUnitIndex = t;
-              break;
-            }
-          }
+      if (description && (unitPrice > 0 || totalPrice > 0)) {
+        if (unitPrice === 0 && totalPrice > 0 && quantity > 0) {
+          unitPrice = Number((totalPrice / quantity).toFixed(2));
+        } else if (totalPrice === 0 && unitPrice > 0 && quantity > 0) {
+          totalPrice = Number((unitPrice * quantity).toFixed(2));
+        } else if (quantity === 0 && unitPrice > 0 && totalPrice > 0) {
+          quantity = Math.max(1, Math.round(totalPrice / unitPrice));
         }
 
-        if (foundUnitIndex !== -1) {
-          const unit = leadTokens[foundUnitIndex].toUpperCase();
-          const qty = this.parseBrNumber(leadTokens[foundUnitIndex - 1]);
-          let desc = leadTokens.slice(foundUnitIndex + 1).join(' ').trim();
-          let code = leadTokens.slice(0, foundUnitIndex - 1).find(tok => /^[A-Za-z0-9_-]{3,}$/.test(tok) && !/^\d{5}$/.test(tok)) || `REF-${items.length + 1}`;
-
-          if (i + 1 < lines.length) {
-            const nextL = lines[i + 1];
-            if (!nextL.match(/[\d]{1,3},\d{2}/) && nextL.length < 50 && !unitRegex.test(nextL) && !/^\d+$/.test(nextL)) {
-              desc += ' ' + nextL;
-            }
-          }
-
-          items.push({
-            seq: items.length + 1,
-            code,
-            name: desc,
-            description: desc,
-            quantity: qty || (unitPrice > 0 ? Math.round(totalPrice / unitPrice) : 1),
-            unit,
-            unitPrice: Number(unitPrice.toFixed(2)),
-            unit_price: Number(unitPrice.toFixed(2)),
-            totalPrice: Number(totalPrice.toFixed(2)),
-            total_price: Number(totalPrice.toFixed(2)),
-            subtotal: Number(totalPrice.toFixed(2))
-          });
-          continue;
-        }
-
-        // Fallback para quando o formato é descrição simples
-        const qtyFallback = unitPrice > 0 ? Math.round(totalPrice / unitPrice) : 1;
         items.push({
           seq: items.length + 1,
-          code: `REF-${items.length + 1}`,
-          name: lead,
-          description: lead,
-          quantity: qtyFallback,
-          unit: 'UN',
+          code: code || `REF-${items.length + 1}`,
+          name: description,
+          description,
+          quantity: quantity || 1,
+          unit,
+          unitPrice: Number(unitPrice.toFixed(2)),
+          unit_price: Number(unitPrice.toFixed(2)),
+          totalPrice: Number(totalPrice.toFixed(2)),
+          total_price: Number(totalPrice.toFixed(2)),
+          subtotal: Number(totalPrice.toFixed(2))
+        });
+      }
+    }
+    return items;
+  }
+
+  static extractTableRows(lines) {
+    const items = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      if (this.isIgnoredLine(line)) continue;
+
+      // Limpa do final da linha colunas extras como IPI (ex: "5%"), Alíquotas ou NCM (ex: "8415.90" ou "7411.10.10")
+      let cleanLine = line
+        .replace(/\s+\d{1,2}(?:,\d+)?%\s*$/, '') // remove IPI no final
+        .replace(/\s+\b\d{4}\.\d{2}(?:\.\d{2})?\b\s*$/, '') // remove NCM no final
+        .replace(/\s+\b\d{8}\b\s*$/, '') // remove NCM numérico
+        .replace(/\s+\d{1,2}(?:,\d+)?%\s*$/, '') // se houver outro percentual
+        .trim();
+
+      // Procura os dois últimos números decimais (preço unitário e preço total)
+      const matches = [...cleanLine.matchAll(/(?:R\$\s*)?([\d]{1,3}(?:\.\d{3})*,\d{2}|[\d]+,\d{2}|[\d]+\.\d{2})/g)];
+      if (matches.length < 2) continue;
+
+      const lastMatch = matches[matches.length - 1];
+      const prevMatch = matches[matches.length - 2];
+
+      const valLast = this.parseBrNumber(lastMatch[1]);
+      const valPrev = this.parseBrNumber(prevMatch[1]);
+
+      let unitPrice = valPrev;
+      let totalPrice = valLast;
+
+      // Texto antes do preço unitário
+      let leadText = cleanLine.slice(0, prevMatch.index).trim();
+
+      let quantity = 0;
+      let unit = 'UN';
+
+      // Padrão 1: "04 PC" ou "10 UN" ou "15,00 MT" ou "1.000,00 CENTO" no final do leadText
+      const qtyUnitEndMatch = leadText.match(/([\d]{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:[.,]\d+)?)\s*([A-Za-zÀ-ÿ]{1,6})\s*$/);
+      if (qtyUnitEndMatch && this.UNITS.includes(qtyUnitEndMatch[2].toUpperCase())) {
+        quantity = this.parseBrNumber(qtyUnitEndMatch[1]);
+        unit = qtyUnitEndMatch[2].toUpperCase();
+        leadText = leadText.slice(0, qtyUnitEndMatch.index).trim();
+      } else {
+        // Padrão 2: unidade em qualquer lugar no leadText precedida por número
+        const anyUnitMatch = leadText.match(new RegExp(`([\\d]{1,3}(?:\\.\\d{3})*(?:,\\d+)?|\\d+(?:[.,]\\d+)?)\\s*(${this.UNITS.join('|')})\\b`, 'i'));
+        if (anyUnitMatch) {
+          quantity = this.parseBrNumber(anyUnitMatch[1]);
+          unit = anyUnitMatch[2].toUpperCase();
+          leadText = leadText.slice(0, anyUnitMatch.index).trim();
+        } else {
+          const qtyOnlyMatch = leadText.match(/([\d]{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:[.,]\d+)?)\s*$/);
+          if (qtyOnlyMatch) {
+            quantity = this.parseBrNumber(qtyOnlyMatch[1]);
+            leadText = leadText.slice(0, qtyOnlyMatch.index).trim();
+          }
+        }
+      }
+
+      // Validação matemática
+      if (quantity === 0 && unitPrice > 0 && totalPrice > 0) {
+        quantity = Math.max(1, Math.round(totalPrice / unitPrice));
+      }
+
+      if (unitPrice > totalPrice && totalPrice > 0 && quantity > 1) {
+        const temp = unitPrice;
+        unitPrice = totalPrice;
+        totalPrice = temp;
+      }
+
+      // Limpeza de código e descrição
+      let cleanDesc = leadText
+        .replace(/^(\d{1,3}[\.\-ºª]?\s+)/, '')
+        .replace(/\b(8415\.\d{2}(?:\.\d{2})?|7411\.\d{2}(?:\.\d{2})?|\d{4}\.\d{2}\.\d{2})\b/g, '')
+        .trim();
+
+      let code = '';
+      const codeMatch = cleanDesc.match(/^([A-Za-z0-9_-]{3,10})\s+(.+)$/);
+      if (codeMatch && !/^(dumper|damper|grelha|difusor|tubo|bomba|suporte|fita|parafuso|curva|valvula|v[aá]lvula|registro)/i.test(codeMatch[1])) {
+        code = codeMatch[1];
+        cleanDesc = codeMatch[2].trim();
+      }
+
+      if (i > 0 && cleanDesc.length < 20) {
+        const prevL = lines[i - 1];
+        if (!this.isIgnoredLine(prevL) && !/[\d]{1,3},\d{2}/.test(prevL) && prevL.length > 5) {
+          cleanDesc = `${prevL} ${cleanDesc}`.trim();
+        }
+      }
+
+      if (cleanDesc.length >= 2 && (unitPrice > 0 || totalPrice > 0)) {
+        items.push({
+          seq: items.length + 1,
+          code: code || `REF-${items.length + 1}`,
+          name: cleanDesc,
+          description: cleanDesc,
+          quantity: quantity || 1,
+          unit,
           unitPrice: Number(unitPrice.toFixed(2)),
           unit_price: Number(unitPrice.toFixed(2)),
           totalPrice: Number(totalPrice.toFixed(2)),
@@ -270,85 +416,82 @@ export class SupplierPdfParser {
       }
     }
 
-    // Se nenhum item foi encontrado com o padrão espaçado tradicional, tenta padrão de texto contínuo / concatenado (ex: Protshop)
-    if (items.length === 0) {
-      return this.extractGluedItems(lines, validUnits);
+    return items;
+  }
+
+  static extractMultiLineBlocks(lines) {
+    const items = [];
+    const unitRegex = new RegExp(`^(\\d+(?:[.,]\\d+)?)\\s*(${this.UNITS.join('|')})$`, 'i');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (/^(?:Item\s*)?\d{1,3}$/i.test(line) && i + 2 < lines.length) {
+        let desc = '';
+        let code = '';
+        let quantity = 0;
+        let unit = 'UN';
+        let unitPrice = 0;
+        let totalPrice = 0;
+
+        let j = i + 1;
+        while (j < lines.length && j < i + 8) {
+          const l = lines[j];
+          if (j > i + 1 && /^(?:Item\s*)?\d{1,3}$/i.test(l)) break;
+          if (this.isIgnoredLine(l)) break;
+
+          const cMatch = l.match(/\b(?:código|codigo|ref)\b\s*[:]?\s*([A-Za-z0-9_-]+)/i);
+          if (cMatch) {
+            code = cMatch[1];
+          } else if (unitRegex.test(l)) {
+            const uM = l.match(unitRegex);
+            quantity = this.parseBrNumber(uM[1]);
+            unit = uM[2].toUpperCase();
+          } else if (/(?:R\$\s*)?[\d]{1,3}(?:\.\d{3})*,\d{2}/.test(l)) {
+            const val = this.parseBrNumber(l);
+            if (unitPrice === 0) {
+              unitPrice = val;
+            } else if (totalPrice === 0) {
+              totalPrice = val;
+            }
+          } else if (!desc && l.length > 4 && !/^\d+$/.test(l)) {
+            desc = l;
+          }
+          j++;
+        }
+
+        if (desc && (unitPrice > 0 || totalPrice > 0)) {
+          if (quantity === 0 && unitPrice > 0 && totalPrice > 0) {
+            quantity = Math.round(totalPrice / unitPrice);
+          }
+          if (totalPrice === 0 && unitPrice > 0 && quantity > 0) {
+            totalPrice = Number((unitPrice * quantity).toFixed(2));
+          }
+
+          items.push({
+            seq: items.length + 1,
+            code: code || `REF-${items.length + 1}`,
+            name: desc,
+            description: desc,
+            quantity: quantity || 1,
+            unit,
+            unitPrice: Number(unitPrice.toFixed(2)),
+            unit_price: Number(unitPrice.toFixed(2)),
+            totalPrice: Number(totalPrice.toFixed(2)),
+            total_price: Number(totalPrice.toFixed(2)),
+            subtotal: Number(totalPrice.toFixed(2))
+          });
+
+          i = j - 1;
+        }
+      }
     }
 
     return items;
   }
 
-  static parseGluedNumbers(str) {
-    const commaMatches = [...str.matchAll(/,/g)];
-    if (commaMatches.length !== 2) return null;
-
-    const c1 = commaMatches[0].index;
-    const c2 = commaMatches[1].index;
-
-    const partAfterC2 = str.slice(c2 + 1, c2 + 3);
-    if (!/^\d{2}$/.test(partAfterC2)) return null;
-
-    const totalIntStr = str.slice(c1 + 3, c2);
-    const totalDecStr = partAfterC2;
-    const totalVal = parseFloat(`${totalIntStr}.${totalDecStr}`);
-
-    const unitDecStr = str.slice(c1 + 1, c1 + 3);
-    const prefix = str.slice(0, c1);
-
-    for (let splitIdx = 1; splitIdx < prefix.length; splitIdx++) {
-      const qtyStr = prefix.slice(0, splitIdx);
-      const unitIntStr = prefix.slice(splitIdx);
-
-      const qty = parseFloat(qtyStr);
-      const unitPrice = parseFloat(`${unitIntStr}.${unitDecStr}`);
-
-      if (qty > 0 && unitPrice > 0 && Math.abs(qty * unitPrice - totalVal) < 0.05) {
-        return {
-          quantity: qty,
-          unitPrice: Number(unitPrice.toFixed(2)),
-          totalPrice: Number(totalVal.toFixed(2))
-        };
-      }
-    }
-
-    return null;
-  }
-
-  static parseGluedDescription(descLine, validUnits) {
-    let unit = 'UN';
-    let rest = (descLine || '').trim();
-
-    for (const u of validUnits) {
-      if (rest.toUpperCase().startsWith(u)) {
-        unit = u;
-        rest = rest.slice(u.length).trim();
-        break;
-      }
-    }
-
-    let code = '';
-    let name = rest;
-
-    const splitMatch = rest.match(/^([A-Za-z0-9/\-]+\d+)\s*([A-Za-zÀ-ÿ]{3,}.*)$/);
-    if (splitMatch) {
-      code = splitMatch[1].trim();
-      name = splitMatch[2].trim();
-    } else {
-      const fallbackMatch = rest.match(/^([A-Za-z0-9/_-]+(?:\s*-\s*\d+)?)\s*(.+)$/);
-      if (fallbackMatch && fallbackMatch[1].length >= 3) {
-        code = fallbackMatch[1];
-        name = fallbackMatch[2];
-      }
-    }
-
-    name = name.replace(/\d{4,7}\s*[/]?\s*$/, '').replace(/\d+$/, '').trim();
-
-    return { unit, code, name };
-  }
-
-  static extractGluedItems(lines, validUnits) {
+  static extractGluedItems(lines) {
     const items = [];
-
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const glued = this.parseGluedNumbers(line);
@@ -357,56 +500,57 @@ export class SupplierPdfParser {
         let j = i + 1;
         while (j < lines.length) {
           const nextL = lines[j];
-          if (
-            this.parseGluedNumbers(nextL) ||
-            /^(?:Sub Total|Total Geral|Informações de Pagamento|Vendedor|Observações|Frete|Desconto)/i.test(nextL) ||
-            /^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(nextL)
-          ) {
+          if (this.parseGluedNumbers(nextL) || this.isIgnoredLine(nextL)) {
             break;
           }
-
-          if (/^\d+$/.test(nextL) && nextL.length <= 3) {
-            // índice do item
-          } else if (/^\d{5}$/.test(nextL)) {
-            // CA standalone
-          } else {
+          if (!/^\d+$/.test(nextL)) {
             descLine = descLine ? `${descLine} ${nextL}` : nextL;
           }
           j++;
         }
 
-        const { unit, code, name } = this.parseGluedDescription(descLine, validUnits);
         items.push({
           seq: items.length + 1,
-          code: code || `REF-${items.length + 1}`,
-          name: name || descLine,
-          description: name || descLine,
+          code: `REF-${items.length + 1}`,
+          name: descLine || 'Material',
+          description: descLine || 'Material',
           quantity: glued.quantity,
-          unit,
+          unit: 'UN',
           unitPrice: glued.unitPrice,
           unit_price: glued.unitPrice,
           totalPrice: glued.totalPrice,
           total_price: glued.totalPrice,
           subtotal: glued.totalPrice
         });
-
         i = j - 1;
       }
     }
-
     return items;
   }
 
-  static parseBrNumber(valStr) {
-    if (!valStr) return 0;
-    const clean = String(valStr).replace(/R\$/i, '').trim();
-    if (clean.includes(',') && clean.includes('.')) {
-      // 1.307,00 -> 1307.00
-      return parseFloat(clean.replace(/\./g, '').replace(',', '.')) || 0;
-    } else if (clean.includes(',')) {
-      // 79,50 -> 79.50
-      return parseFloat(clean.replace(',', '.')) || 0;
+  static parseGluedNumbers(str) {
+    const commaMatches = [...str.matchAll(/,/g)];
+    if (commaMatches.length !== 2) return null;
+    const c1 = commaMatches[0].index;
+    const c2 = commaMatches[1].index;
+    const partAfterC2 = str.slice(c2 + 1, c2 + 3);
+    if (!/^\d{2}$/.test(partAfterC2)) return null;
+
+    const totalIntStr = str.slice(c1 + 3, c2);
+    const totalDecStr = partAfterC2;
+    const totalVal = parseFloat(`${totalIntStr}.${totalDecStr}`);
+    const unitDecStr = str.slice(c1 + 1, c1 + 3);
+    const prefix = str.slice(0, c1);
+
+    for (let splitIdx = 1; splitIdx < prefix.length; splitIdx++) {
+      const qtyStr = prefix.slice(0, splitIdx);
+      const unitIntStr = prefix.slice(splitIdx);
+      const qty = parseFloat(qtyStr);
+      const unitPrice = parseFloat(`${unitIntStr}.${unitDecStr}`);
+      if (qty > 0 && unitPrice > 0 && Math.abs(qty * unitPrice - totalVal) < 0.05) {
+        return { quantity: qty, unitPrice, totalPrice: totalVal };
+      }
     }
-    return parseFloat(clean) || 0;
+    return null;
   }
 }

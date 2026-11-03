@@ -73,6 +73,21 @@ export async function initializeDatabase() {
         created_by_name VARCHAR(150),
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS tracked_purchase_deadlines (
+        id SERIAL PRIMARY KEY,
+        order_number TEXT NOT NULL,
+        supplier_name TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+        project_name TEXT NOT NULL,
+        expected_billing_date DATE NOT NULL,
+        notes TEXT,
+        status TEXT DEFAULT 'Em Acompanhamento',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        notified BOOLEAN DEFAULT FALSE
+      );
     `);
     console.log('[Database] Esquema de tabelas e colunas sincronizado com sucesso.');
   } catch (err) {

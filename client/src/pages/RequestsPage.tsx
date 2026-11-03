@@ -750,11 +750,37 @@ export const RequestsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Central Unificada de Aprovações Pendentes no Topo da Página (Item 6 & Item 4 - Admins, Sabrina e Emily) */}
+      {/* Central Unificada de Aprovações Pendentes no Topo da Página (Admins, Sabrina, Emily e status das obras do engenheiro) */}
       {!loading && (() => {
-        const pendingExtraReqs = requests.filter(r => !/manuten/i.test(r.project_name || '') && (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')));
-        const pendingSubs = substitutions.filter(s => s.status === 'Pendente');
-        const pendingQty = quantityChanges.filter(q => q.status === 'Pendente');
+        const isEng = currentUser?.role === 'engenharia' || currentUser?.role === 'orcamento_engenharia' || (currentUser?.role as string) === 'engineer';
+        const assignedProjIds = new Set(
+          projects
+            .filter(p => (p.assigned_engineer_ids && p.assigned_engineer_ids.includes(currentUser?.id || 0)) ||
+                         (p.responsible_engineer && currentUser?.name && p.responsible_engineer.toLowerCase().includes(currentUser.name.toLowerCase())))
+            .map(p => p.id)
+        );
+
+        // Se for engenheiro, filtra estritamente solicitações das obras atribuídas a ele ou criadas por ele
+        const filterForUser = (item: any) => {
+          if (!isEng) return true;
+          if (item.project_id && assignedProjIds.has(Number(item.project_id))) return true;
+          if (item.requested_by && Number(item.requested_by) === Number(currentUser?.id)) return true;
+          if (item.request_created_by && Number(item.request_created_by) === Number(currentUser?.id)) return true;
+          return false;
+        };
+
+        const pendingExtraReqs = requests
+          .filter(filterForUser)
+          .filter(r => (r.status === 'Aguardando aprovação' || (r.requires_admin_approval && r.admin_approval_status === 'Pendente')));
+        
+        const pendingSubs = substitutions
+          .filter(filterForUser)
+          .filter(s => s.status === 'Pendente');
+
+        const pendingQty = quantityChanges
+          .filter(filterForUser)
+          .filter(q => q.status === 'Pendente');
+
         const grandTotalPending = pendingExtraReqs.length + pendingSubs.length + pendingQty.length;
 
         if (grandTotalPending === 0) return null;

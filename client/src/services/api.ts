@@ -93,6 +93,27 @@ export const api = {
     fetchJson<any[]>(`/projects/${projectId}/addenda`),
   createProjectAddendum: (projectId: number | string, data: any) =>
     fetchJson<any>(`/projects/${projectId}/addenda`, { method: 'POST', body: JSON.stringify(data) }),
+  parseAddendumDocument: async (projectId: number | string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('sabrar_token') : null;
+    const res = await fetch(`${API_BASE}/projects/${projectId}/addenda/parse-document`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData
+    });
+    if (!res.ok) {
+      let errText = 'Erro ao processar documento';
+      try {
+        const j = await res.json();
+        errText = j.error || errText;
+      } catch {
+        errText = await res.text();
+      }
+      throw new Error(errText);
+    }
+    return res.json();
+  },
   deleteProjectAddendum: (projectId: number | string, addendumId: number | string) =>
     fetchJson<any>(`/projects/${projectId}/addenda/${addendumId}`, { method: 'DELETE' }),
   getLinkableProjects: (projectId: number | string, search?: string) =>
@@ -585,6 +606,15 @@ export const api = {
     fetchJson<any>(`/materials/${materialId}/price-intelligence`),
   approvePurchase: (purchaseId: number, data: { approval_status: string; userId?: number; rejection_notes?: string }) =>
     fetchJson<any>(`/purchases/${purchaseId}/approval`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Item 4: Acompanhamento de Prazos em Risco (Compras de Itens Específicos por Obra)
+  getTrackedDeadlines: () => fetchJson<any[]>('/purchases/tracked-deadlines'),
+  createTrackedDeadline: (data: any) =>
+    fetchJson<any>('/purchases/tracked-deadlines', { method: 'POST', body: JSON.stringify(data) }),
+  updateTrackedDeadline: (id: number, data: any) =>
+    fetchJson<any>(`/purchases/tracked-deadlines/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTrackedDeadline: (id: number) =>
+    fetchJson<any>(`/purchases/tracked-deadlines/${id}`, { method: 'DELETE' }),
 
   // 3. Checklist de Recebimento de Materiais (Fase 3 - Print 3)
   getReceivingChecklists: () => fetchJson<any[]>('/receiving-checklists'),

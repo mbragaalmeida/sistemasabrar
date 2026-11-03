@@ -106,6 +106,17 @@ export const GenerateOCFromPdfModal: React.FC<GenerateOCFromPdfModalProps> = ({
         if (data.supplier.delivery_deadline) setDeliveryDate(data.supplier.delivery_deadline);
       }
 
+      if (data.proposal) {
+        if (data.proposal.proposalNumber) setProposalNumber(data.proposal.proposalNumber);
+        if (data.proposal.paymentTerms) setPaymentTerms(data.proposal.paymentTerms);
+        if (data.proposal.deliveryTime) setDeliveryDate(data.proposal.deliveryTime);
+      }
+
+      if (data.totals) {
+        if (data.totals.freight) setFreight(Number(data.totals.freight) || 0);
+        if (data.totals.discount) setDiscount(Number(data.totals.discount) || 0);
+      }
+
       if (Array.isArray(data.items) && data.items.length > 0) {
         setItems(
           data.items.map((it: any) => {

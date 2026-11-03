@@ -48,8 +48,9 @@ requestsRouter.get('/', async (req, res) => {
 
     let requests = await db.prepare(query).all(...params);
 
-    // Item 3: Aparecer apenas solicitações de materiais das obras de cada engenheiro (Admins, Emily e Sabrina veem todas)
-    if (userRole === 'engenharia' && userId) {
+    // Item 3 & Requisito Engenharia: Aparecer apenas solicitações de materiais das obras de cada engenheiro (Admins, Emily e Sabrina veem todas)
+    const isEngineer = userRole === 'engenharia' || userRole === 'engineer';
+    if (isEngineer && userId) {
       const engUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(Number(userId));
       const assignedRows = await db.prepare('SELECT project_id FROM project_engineers WHERE user_id = ?').all(Number(userId));
       const assignedProjectIds = new Set(assignedRows.map(r => Number(r.project_id)));
@@ -57,6 +58,7 @@ requestsRouter.get('/', async (req, res) => {
 
       requests = requests.filter(r => {
         if (assignedProjectIds.has(Number(r.project_id))) return true;
+        if (Number(r.requested_by) === Number(userId)) return true;
         if (r.project_code === 'SAB-INTERNO' && Number(r.requested_by) === Number(userId)) return true;
         if (normUser && r.responsible_engineer) {
           const normProj = String(r.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
@@ -317,7 +319,11 @@ requestsRouter.post('/substitutions', async (req, res) => {
 // Listar substituições pendentes/gerais
 requestsRouter.get('/substitutions', async (req, res) => {
   try {
-    const subs = await db.prepare(`
+    const userRole = req.headers['x-user-role'] || req.query.role;
+    const userId = req.headers['x-user-id'] || req.query.user_id;
+    const isEngineer = userRole === 'engenharia' || userRole === 'engineer';
+
+    let subs = await db.prepare(`
       SELECT ms.*,
              COALESCE(m_orig.name, ms.original_custom_name, 'Material Fora da Base') as original_material_name,
              COALESCE(m_orig.code, 'FORA-BASE') as original_material_code,
@@ -328,7 +334,10 @@ requestsRouter.get('/substitutions', async (req, res) => {
              u.name as requested_by_name,
              u_rev.name as reviewed_by_name,
              mr.code as request_code,
-             p.name as project_name
+             mr.requested_by as request_created_by,
+             mr.project_id as project_id,
+             p.name as project_name,
+             p.responsible_engineer
       FROM material_substitutions ms
       LEFT JOIN materials m_orig ON ms.original_material_id = m_orig.id
       LEFT JOIN materials m_sub ON ms.substitute_material_id = m_sub.id
@@ -338,6 +347,25 @@ requestsRouter.get('/substitutions', async (req, res) => {
       LEFT JOIN projects p ON mr.project_id = p.id
       ORDER BY ms.id DESC
     `).all();
+
+    // Filtro restrito para perfil de engenheiro: apenas das suas obras ou solicitações dele
+    if (isEngineer && userId) {
+      const engUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(Number(userId));
+      const assignedRows = await db.prepare('SELECT project_id FROM project_engineers WHERE user_id = ?').all(Number(userId));
+      const assignedProjectIds = new Set(assignedRows.map(r => Number(r.project_id)));
+      const normUser = (engUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+
+      subs = subs.filter(s => {
+        if (assignedProjectIds.has(Number(s.project_id))) return true;
+        if (Number(s.requested_by) === Number(userId)) return true;
+        if (Number(s.request_created_by) === Number(userId)) return true;
+        if (normUser && s.responsible_engineer) {
+          const normProj = String(s.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          if (normProj.includes(normUser) || normUser.includes(normProj)) return true;
+        }
+        return false;
+      });
+    }
 
     res.json(subs);
   } catch (err) {
@@ -529,7 +557,11 @@ requestsRouter.post('/quantity-changes', async (req, res) => {
 // Listar alterações de quantidade
 requestsRouter.get('/quantity-changes', async (req, res) => {
   try {
-    const changes = await db.prepare(`
+    const userRole = req.headers['x-user-role'] || req.query.role;
+    const userId = req.headers['x-user-id'] || req.query.user_id;
+    const isEngineer = userRole === 'engenharia' || userRole === 'engineer';
+
+    let changes = await db.prepare(`
       SELECT mqc.*,
              COALESCE(m.name, mri.custom_name, 'Material Fora da Base') as material_name,
              COALESCE(m.code, 'FORA-BASE') as material_code,
@@ -538,7 +570,10 @@ requestsRouter.get('/quantity-changes', async (req, res) => {
              u.name as requested_by_name,
              u_rev.name as reviewed_by_name,
              mr.code as request_code,
-             p.name as project_name
+             mr.requested_by as request_created_by,
+             mr.project_id as project_id,
+             p.name as project_name,
+             p.responsible_engineer
       FROM material_quantity_changes mqc
       JOIN material_request_items mri ON mqc.request_item_id = mri.id
       LEFT JOIN materials m ON mri.material_id = m.id
@@ -548,6 +583,25 @@ requestsRouter.get('/quantity-changes', async (req, res) => {
       LEFT JOIN projects p ON mr.project_id = p.id
       ORDER BY mqc.id DESC
     `).all();
+
+    // Filtro restrito para perfil de engenheiro: apenas das suas obras ou solicitações dele
+    if (isEngineer && userId) {
+      const engUser = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(Number(userId));
+      const assignedRows = await db.prepare('SELECT project_id FROM project_engineers WHERE user_id = ?').all(Number(userId));
+      const assignedProjectIds = new Set(assignedRows.map(r => Number(r.project_id)));
+      const normUser = (engUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+
+      changes = changes.filter(c => {
+        if (assignedProjectIds.has(Number(c.project_id))) return true;
+        if (Number(c.requested_by) === Number(userId)) return true;
+        if (Number(c.request_created_by) === Number(userId)) return true;
+        if (normUser && c.responsible_engineer) {
+          const normProj = String(c.responsible_engineer).toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+          if (normProj.includes(normUser) || normUser.includes(normProj)) return true;
+        }
+        return false;
+      });
+    }
 
     res.json(changes);
   } catch (err) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calculator, ArrowRight, CheckCircle, Clock, Send, Sparkles } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 
 interface BudgetsPageProps {
@@ -9,23 +10,41 @@ interface BudgetsPageProps {
 }
 
 export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate }) => {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.getProjects().then(data => {
+      const isEngineer = currentUser?.role === 'engenharia' || currentUser?.role === 'orcamento_engenharia' || (currentUser?.role as string) === 'engineer';
+      const normUser = (currentUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+
       // Exibe exclusivamente orçamentos de obras aprovadas ou em execução
-      const approvedOnly = data.filter((p: Project) => 
-        p.code !== 'SAB-INTERNO' &&
-        (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado')
-      );
+      const approvedOnly = data.filter((p: Project) => {
+        if (p.code === 'SAB-INTERNO') return false;
+        const isApprovedOrExecuting = (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado');
+        if (!isApprovedOrExecuting) return false;
+
+        // Se for engenheiro, mostra apenas as obras atribuídas a ele
+        if (isEngineer && currentUser) {
+          if (p.assigned_engineer_ids && p.assigned_engineer_ids.includes(currentUser.id)) return true;
+          if (p.assigned_engineers && p.assigned_engineers.some(e => e.id === currentUser.id)) return true;
+          if (normUser && p.responsible_engineer) {
+            const normProj = p.responsible_engineer.toLowerCase().replace(/^eng\.?\s*/i, '').trim();
+            return normProj.includes(normUser) || normUser.includes(normProj);
+          }
+          return false;
+        }
+
+        return true;
+      });
       setProjects(approvedOnly);
       setLoading(false);
     }).catch(err => {
       console.error(err);
       setLoading(false);
     });
-  }, []);
+  }, [currentUser]);
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">

@@ -5,6 +5,14 @@ import { useAuth } from '../../context/AuthContext';
 import { extractTextFromPDF } from '../../utils/pdfExtractor';
 import { User } from '../../types';
 
+export const ESTIMATORS_LIST = [
+  'Gabriel',
+  'Rayan',
+  'Henrique',
+  'Ariane',
+  'Matheus'
+];
+
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -64,8 +72,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (currentUser?.name) {
+      if (currentUser?.name && ESTIMATORS_LIST.includes(currentUser.name)) {
         setResponsibleEstimator(currentUser.name);
+      } else {
+        setResponsibleEstimator('');
       }
       // Data padrão de retorno: 3 dias úteis
       const d = new Date();
@@ -337,13 +347,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 className="w-full text-xs p-2.5 rounded-xl border border-sabrar-500/40 bg-dark-900 text-white focus:outline-none focus:ring-2 focus:ring-sabrar-500 font-bold"
               >
                 <option value="">Selecione o orçamentista responsável...</option>
-                {availableEstimators.map((est) => (
-                  <option key={est.id} value={est.name}>
-                    {est.name} ({est.role_label || est.department || 'Orçamento'})
+                {ESTIMATORS_LIST.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
-                {currentUser?.name && !availableEstimators.some(e => e.name === currentUser.name) && (
-                  <option value={currentUser.name}>{currentUser.name}</option>
+                {responsibleEstimator && !ESTIMATORS_LIST.includes(responsibleEstimator) && (
+                  <option value={responsibleEstimator}>{responsibleEstimator}</option>
                 )}
               </select>
             </div>
