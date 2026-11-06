@@ -146,13 +146,13 @@ const AppContent: React.FC = () => {
             />
           )}
 
-          {(currentPage === 'projects' || currentPage === 'maintenance' || currentPage === 'estanque-dutos') && (
+          {(currentPage === 'projects' || currentPage === 'maintenance' || currentPage === 'stanque-dutos' || currentPage === 'estanque-dutos') && (
             <ProjectsPage
               onNavigate={handleNavigate}
               onOpenNewProject={() => setIsNewProjectModalOpen(true)}
               initialCategory={
-                currentPage === 'estanque-dutos'
-                  ? 'Estanque Dutos'
+                currentPage === 'stanque-dutos' || currentPage === 'estanque-dutos'
+                  ? 'Stanque Dutos'
                   : currentPage === 'maintenance'
                     ? 'Manutenção'
                     : 'Obra'
@@ -165,7 +165,7 @@ const AppContent: React.FC = () => {
               projectId={selectedProjectId}
               onBack={() => {
                 if (/stanquedutos/i.test(currentUser?.email || '')) {
-                  setCurrentPage('estanque-dutos');
+                  setCurrentPage('stanque-dutos');
                 } else {
                   setCurrentPage('projects');
                 }
@@ -270,8 +270,8 @@ const AppContent: React.FC = () => {
         onClose={() => setIsNewProjectModalOpen(false)}
         onSuccess={(id) => handleNavigate('project-detail', id)}
         initialCategory={
-          currentPage === 'estanque-dutos'
-            ? 'Estanque Dutos'
+          currentPage === 'stanque-dutos' || currentPage === 'estanque-dutos'
+            ? 'Stanque Dutos'
             : currentPage === 'maintenance'
               ? 'Manutenção'
               : 'Obra'

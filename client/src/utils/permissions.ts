@@ -6,6 +6,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   // Item 2 e Item 6: Remover projetos para engenheiros; ceder acesso a projetos e obras para Emily (compras_solicitacoes)
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'maintenance': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia', 'compras', 'almoxarifado'],
+  'stanque-dutos': ['admin', 'orcamento', 'orcamento_engenharia'],
   'estanque-dutos': ['admin', 'orcamento', 'orcamento_engenharia'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
   // Item 1: Quero que os engenheiros tenham acesso a aba 'orçamentos aprovados'
@@ -37,13 +38,13 @@ export function isPageAllowed(page: string, role: UserRole, user?: { name?: stri
   const email = String(user?.email || '').toLowerCase();
   const name = String(user?.name || '').toLowerCase();
 
-  // Escopo de Estanque Dutos (Nathalia Souza / comercial@stanquedutos.com)
+  // Escopo de Stanque Dutos (Nathalia Souza / comercial@stanquedutos.com)
   if (/stanquedutos/i.test(email) || /nathalia.*souza/i.test(name)) {
-    return ['estanque-dutos', 'project-detail', 'budgets', 'clients', 'notifications'].includes(page);
+    return ['stanque-dutos', 'estanque-dutos', 'project-detail', 'budgets', 'clients', 'notifications'].includes(page);
   }
 
-  // Acesso à aba Estanque Dutos para Administradores e Setor de Orçamento
-  if (page === 'estanque-dutos') {
+  // Acesso à aba Stanque Dutos para Administradores e Setor de Orçamento
+  if (page === 'stanque-dutos' || page === 'estanque-dutos') {
     return ['admin', 'orcamento', 'orcamento_engenharia'].includes(role) || /stanquedutos/i.test(email);
   }
 
@@ -62,7 +63,7 @@ export function isPageAllowed(page: string, role: UserRole, user?: { name?: stri
 export function getDefaultPageForRole(role?: UserRole, user?: { email?: string; name?: string } | null): string {
   const email = String(user?.email || '').toLowerCase();
   if (/stanquedutos/i.test(email)) {
-    return 'estanque-dutos';
+    return 'stanque-dutos';
   }
 
   switch (role) {

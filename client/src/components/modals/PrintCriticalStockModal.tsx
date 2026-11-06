@@ -333,23 +333,28 @@ export const PrintCriticalStockModal: React.FC<PrintCriticalStockModalProps> = (
                       );
                     })
                   )}
+
+                  {/* Total Consolidado de Reposição: exibido estritamente uma única vez após o último item na última folha */}
+                  {materials.length > 0 && (
+                    <tr
+                      style={{ backgroundColor: '#f1f5f9', color: '#0f172a', pageBreakInside: 'avoid', breakInside: 'avoid' }}
+                      className="bg-slate-100 border-t-2 border-slate-900 font-black text-xs print-avoid-break total-consolidated-row"
+                    >
+                      <td colSpan={7} className="py-2.5 px-3 text-right uppercase border-r border-slate-300">
+                        Total Consolidado de Reposição:
+                      </td>
+                      <td style={{ backgroundColor: '#fee2e2', color: '#991b1b' }} className="py-2.5 px-2.5 text-right font-mono font-black text-rose-900 border-r border-slate-300">
+                        -{totalDeficitUnits.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right border-r border-slate-300 text-[11px] text-slate-600">
+                        {totalItems} itens
+                      </td>
+                      <td style={{ backgroundColor: '#dcfce7', color: '#064e3b' }} className="py-2.5 px-2.5 text-right font-mono font-black text-emerald-950">
+                        {formatCurrencyBR(totalEstimatedCost)}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
-                <tfoot>
-                  <tr style={{ backgroundColor: '#f1f5f9', color: '#0f172a' }} className="bg-slate-100 border-t-2 border-slate-900 font-black text-xs">
-                    <td colSpan={7} className="py-2.5 px-3 text-right uppercase border-r border-slate-300">
-                      Total Consolidado de Reposição:
-                    </td>
-                    <td style={{ backgroundColor: '#fee2e2', color: '#991b1b' }} className="py-2.5 px-2.5 text-right font-mono font-black text-rose-900 border-r border-slate-300">
-                      -{totalDeficitUnits.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="py-2.5 px-2.5 text-right border-r border-slate-300 text-[11px] text-slate-600">
-                      {totalItems} itens
-                    </td>
-                    <td style={{ backgroundColor: '#dcfce7', color: '#064e3b' }} className="py-2.5 px-2.5 text-right font-mono font-black text-emerald-950">
-                      {formatCurrencyBR(totalEstimatedCost)}
-                    </td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
 
@@ -442,7 +447,11 @@ export const PrintCriticalStockModal: React.FC<PrintCriticalStockModalProps> = (
             display: table-header-group !important;
           }
           tfoot {
-            display: table-footer-group !important;
+            display: none !important;
+          }
+          .total-consolidated-row {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           tr {
             page-break-inside: avoid !important;

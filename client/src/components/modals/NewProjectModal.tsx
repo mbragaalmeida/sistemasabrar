@@ -19,7 +19,7 @@ interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (createdId: number) => void;
-  initialCategory?: 'Obra' | 'Manutenção' | 'Estanque Dutos';
+  initialCategory?: 'Obra' | 'Manutenção' | 'Stanque Dutos' | 'Estanque Dutos';
 }
 
 interface UploadedDoc {
@@ -45,7 +45,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
-  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Estanque Dutos'>('Obra');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Stanque Dutos'>('Obra');
   
   // Requisito 2 e 3: Orçamentista Responsável (obrigatório) e Data de Retorno
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
@@ -78,9 +78,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       if (initialCategory) {
-        setCategory(initialCategory);
+        setCategory(initialCategory === 'Estanque Dutos' ? 'Stanque Dutos' : (initialCategory as any));
       } else if (/stanquedutos/i.test(currentUser?.email || '')) {
-        setCategory('Estanque Dutos');
+        setCategory('Stanque Dutos');
       } else {
         setCategory('Obra');
       }
@@ -315,14 +315,14 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setCategory('Estanque Dutos')}
+                onClick={() => setCategory('Stanque Dutos')}
                 className={`flex-1 min-w-[120px] py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  category === 'Estanque Dutos'
+                  category === 'Stanque Dutos'
                     ? 'bg-sky-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Estanque Dutos
+                Stanque Dutos
               </button>
             </div>
           </div>

@@ -31,7 +31,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
-  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Estanque Dutos'>('Obra');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Stanque Dutos'>('Obra');
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
   const [returnDeadline, setReturnDeadline] = useState('');
@@ -185,14 +185,14 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setCategory('Estanque Dutos')}
+                onClick={() => setCategory('Stanque Dutos')}
                 className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  category === 'Estanque Dutos'
+                  category === 'Stanque Dutos'
                     ? 'bg-sky-600 text-white shadow-md'
                     : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
                 }`}
               >
-                Estanque Dutos
+                Stanque Dutos
               </button>
             </div>
           </div>
