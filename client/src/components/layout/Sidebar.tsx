@@ -21,7 +21,8 @@ import {
   Eye,
   RotateCcw,
   Shield,
-  KeyRound
+  KeyRound,
+  Wrench
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -67,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
+        { id: 'maintenance', label: 'Manutenção', icon: Wrench },
         { id: 'budgets', label: 'Orçamentos Aprovados', icon: Calculator },
         // 3 Abas solicitadas pelo usuário para a Engenharia
         { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },
@@ -108,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navGroups: NavGroup[] = rawNavGroups
     .map(group => ({
       ...group,
-      items: group.items.filter(item => isPageAllowed(item.id, userRole))
+      items: group.items.filter(item => isPageAllowed(item.id, userRole, currentUser))
     }))
     .filter(group => group.items.length > 0);
 

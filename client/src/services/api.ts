@@ -737,5 +737,26 @@ export const api = {
     }
     if (userId) params.append('userId', String(userId));
     return `/api/purchases/export-oc?${params.toString()}`;
+  },
+
+  exportCustomOc: async (data: any, defaultFilename?: string) => {
+    const res = await fetch('/api/purchases/export-oc-custom', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Erro ao gerar Ordem de Compra em Excel');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFilename || `Ordem_de_Compra_Estoque_Critico_${Date.now()}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   }
 };

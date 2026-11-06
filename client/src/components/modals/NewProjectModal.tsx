@@ -6,11 +6,13 @@ import { extractTextFromPDF } from '../../utils/pdfExtractor';
 import { User } from '../../types';
 
 export const ESTIMATORS_LIST = [
-  'Gabriel',
-  'Rayan',
-  'Henrique',
   'Ariane',
-  'Matheus'
+  'Gabriel',
+  'Matheus',
+  'Henrique',
+  'Rayan',
+  'Sabrina',
+  'Nathalia'
 ];
 
 interface NewProjectModalProps {
@@ -41,6 +43,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção'>('Obra');
   
   // Requisito 2 e 3: Orçamentista Responsável (obrigatório) e Data de Retorno
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
@@ -201,6 +204,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         client_phone: clientPhone.trim(),
         address: address.trim(),
         project_type: projectType,
+        category,
         responsible_estimator: responsibleEstimator.trim(),
         return_deadline: returnDeadline || null,
         responsible_engineer: responsibleEngineer || null,
@@ -268,6 +272,37 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               <span>{error}</span>
             </div>
           )}
+
+          {/* Categoria do Cadastro: Obra vs Manutenção (Item 4) */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+              Tipo de Cadastro *
+            </label>
+            <div className="flex p-1 bg-dark-850 rounded-2xl border border-dark-700">
+              <button
+                type="button"
+                onClick={() => setCategory('Obra')}
+                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  category === 'Obra'
+                    ? 'bg-sabrar-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Nova Obra / Projeto de Engenharia
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategory('Manutenção')}
+                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  category === 'Manutenção'
+                    ? 'bg-amber-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Contrato de Manutenção Recorrente
+              </button>
+            </div>
+          </div>
 
           {/* Nome e Cliente */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -18,6 +18,8 @@ export const RequestsPage: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [selectedRequester, setSelectedRequester] = useState<string>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | 'Obra' | 'Manutenção'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'by_project' | 'linear'>('by_project');
   const [expandedProjects, setExpandedProjects] = useState<Set<number | string>>(new Set());
@@ -180,10 +182,32 @@ export const RequestsPage: React.FC = () => {
     fetchRequests();
   }, [selectedStatus, selectedPriority, currentUser?.id]);
 
+  // Lista única de solicitantes para o filtro
+  const uniqueRequesters = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of requests) {
+      if (r.requested_by_name) set.add(r.requested_by_name.trim());
+    }
+    return Array.from(set).sort();
+  }, [requests]);
+
   // Filtro de solicitações: para engenheiros, exibe apenas solicitações das obras atribuídas a ele
   // Admins, Emily (compras_solicitacoes) e Sabrina (orcamento_engenharia) veem todas
   const visibleRequests = useMemo(() => {
     let list = requests;
+
+    // Filtro por solicitante (Item 9 - Pedido da Gabi)
+    if (selectedRequester !== 'all') {
+      list = list.filter((r: any) => (r.requested_by_name || '').toLowerCase() === selectedRequester.toLowerCase());
+    }
+
+    // Filtro por categoria (Obras vs Manutenção)
+    if (selectedCategoryFilter !== 'all') {
+      list = list.filter((r: any) => {
+        const isMaint = (r.project_name || '').toLowerCase().includes('manuten');
+        return selectedCategoryFilter === 'Manutenção' ? isMaint : !isMaint;
+      });
+    }
 
     // Filtro por obra selecionada
     if (selectedProjectId !== 'all') {
@@ -249,7 +273,7 @@ export const RequestsPage: React.FC = () => {
       const dateB = new Date(b.created_at).getTime() || Number(b.id) || 0;
       return dateB - dateA;
     });
-  }, [requests, projects, currentUser, searchQuery]);
+  }, [requests, projects, currentUser, searchQuery, selectedProjectId, selectedRequester, selectedCategoryFilter]);
 
   // Agrupamento de solicitações por Obra (igual ao Almoxarifado)
   const groupedByProject = useMemo(() => {
@@ -705,6 +729,33 @@ export const RequestsPage: React.FC = () => {
             ))}
           </select>
 
+          {/* Filtro de Solicitante (Item 9 - Pedido da Gabi) */}
+          <select
+            value={selectedRequester}
+            onChange={(e) => setSelectedRequester(e.target.value)}
+            className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-sabrar-500 max-w-[180px] truncate"
+            title="Filtrar solicitações pelo nome do solicitante (ex: Gabriela)"
+          >
+            <option value="all">Todos os Solicitantes</option>
+            {uniqueRequesters.map((reqName) => (
+              <option key={reqName} value={reqName}>
+                {reqName}
+              </option>
+            ))}
+          </select>
+
+          {/* Filtro Obras vs Manutenção */}
+          <select
+            value={selectedCategoryFilter}
+            onChange={(e) => setSelectedCategoryFilter(e.target.value as any)}
+            className="p-2 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+            title="Filtrar entre Obras e Manutenção"
+          >
+            <option value="all">Obras & Manutenção</option>
+            <option value="Obra">Apenas Obras</option>
+            <option value="Manutenção">Apenas Manutenção</option>
+          </select>
+
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
@@ -729,12 +780,15 @@ export const RequestsPage: React.FC = () => {
             <option value="Urgente">Urgente</option>
           </select>
 
-          {(selectedStatus || selectedPriority || searchQuery) && (
+          {(selectedStatus || selectedPriority || searchQuery || selectedRequester !== 'all' || selectedCategoryFilter !== 'all' || selectedProjectId !== 'all') && (
             <button
               onClick={() => {
                 setSelectedStatus('');
                 setSelectedPriority('');
                 setSearchQuery('');
+                setSelectedRequester('all');
+                setSelectedCategoryFilter('all');
+                setSelectedProjectId('all');
               }}
               className="text-xs text-rose-400 font-semibold hover:underline shrink-0 ml-auto"
             >

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3, Trash2, AlertTriangle } from 'lucide-react';
+import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3, Trash2, AlertTriangle, Wrench } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -12,11 +12,13 @@ import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
   onOpenNewProject: () => void;
+  initialCategory?: 'Obra' | 'Manutenção';
 }
 
-export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNewProject }) => {
+export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNewProject, initialCategory }) => {
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [activeCategory, setActiveCategory] = useState<'Obra' | 'Manutenção'>(initialCategory || 'Obra');
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedType, setSelectedType] = useState('');
@@ -26,32 +28,55 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
 
+  // Sincroniza categoria inicial quando muda rota
+  useEffect(() => {
+    if (initialCategory) {
+      setActiveCategory(initialCategory);
+    }
+  }, [initialCategory]);
+
+  // Contagens totais por categoria principal
+  const obrasTotalCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && p.category !== 'Manutenção' && !p.name.toLowerCase().includes('manuten')).length;
+  }, [projects]);
+
+  const manutencaoTotalCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.category === 'Manutenção' || p.name.toLowerCase().includes('manuten'))).length;
+  }, [projects]);
+
+  // Lista de projetos da categoria ativa (Obras vs Manutenção)
+  const categoryProjects = useMemo(() => {
+    return projects.filter(p => {
+      if (p.code === 'SAB-INTERNO') return false;
+      const isMaint = p.category === 'Manutenção' || p.name.toLowerCase().includes('manuten');
+      return activeCategory === 'Manutenção' ? isMaint : !isMaint;
+    });
+  }, [projects, activeCategory]);
+
   // Aba de estágio operacional: Todas vs Em Execução vs Em Orçamento vs Finalizadas vs Calendário de Execução
   const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas' | 'calendario'>('todas');
 
   const execucaoCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado')).length;
-  }, [projects]);
+    return categoryProjects.filter(p => p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado').length;
+  }, [categoryProjects]);
 
   const orcamentoCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
-  }, [projects]);
+    return categoryProjects.filter(p => !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
+  }, [categoryProjects]);
 
   const finalizadasCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && ['Finalizado', 'Concluído', 'Concluída'].includes(p.status)).length;
-  }, [projects]);
+    return categoryProjects.filter(p => ['Finalizado', 'Concluído', 'Concluída'].includes(p.status)).length;
+  }, [categoryProjects]);
 
   const calendarCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.expected_end_date || p.return_deadline)).length;
-  }, [projects]);
+    return categoryProjects.filter(p => (p.expected_end_date || p.return_deadline)).length;
+  }, [categoryProjects]);
 
   const displayedProjects = useMemo(() => {
     const isEngineer = currentUser?.role === 'engenharia' || currentUser?.role === 'orcamento_engenharia' || (currentUser?.role as string) === 'engineer';
     const normUser = (currentUser?.name || '').toLowerCase().replace(/^eng\.?\s*/i, '').trim();
 
-    return projects.filter(p => {
-      if (p.code === 'SAB-INTERNO') return false;
-
+    return categoryProjects.filter(p => {
       // Se o usuário for engenheiro, mostra apenas as obras atribuídas a ele
       if (isEngineer && currentUser) {
         const isAssigned = (p.assigned_engineer_ids && p.assigned_engineer_ids.includes(currentUser.id)) ||
@@ -71,7 +96,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
       }
       return true;
     });
-  }, [projects, workflowTab, currentUser]);
+  }, [categoryProjects, workflowTab, currentUser]);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -115,29 +140,82 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-sabrar-950/70 border border-sabrar-500/40 flex items-center justify-center text-sabrar-400">
-              <FolderKanban className="w-5 h-5" />
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Projetos & Obras
-            </h1>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Centralize projetos técnicos, upload de memoriais descritivos, orçamentos e execução
-          </p>
+      {/* SELETOR DE CATEGORIA: OBRAS vs MANUTENÇÃO (Item 4) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-2 sm:p-2.5 rounded-3xl border border-dark-750 shadow-md">
+        <div className="flex items-center gap-1.5 p-1 bg-dark-950/90 rounded-2xl border border-dark-750 flex-1 sm:max-w-md">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategory('Obra');
+              setWorkflowTab('todas');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeCategory === 'Obra'
+                ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-dark-850'
+            }`}
+          >
+            <FolderKanban className="w-4 h-4" />
+            <span>Obras & Projetos</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
+              {obrasTotalCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategory('Manutenção');
+              setWorkflowTab('todas');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeCategory === 'Manutenção'
+                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-dark-850'
+            }`}
+          >
+            <Wrench className="w-4 h-4" />
+            <span>Manutenção</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
+              {manutencaoTotalCount}
+            </span>
+          </button>
         </div>
 
         <button
           onClick={onOpenNewProject}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold transition-all shadow-lg shadow-sabrar-600/30 active:scale-95"
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-white text-xs font-bold transition-all shadow-lg active:scale-95 cursor-pointer ${
+            activeCategory === 'Manutenção'
+              ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
+              : 'bg-sabrar-600 hover:bg-sabrar-500 shadow-sabrar-600/30'
+          }`}
         >
           <Plus className="w-4 h-4" />
-          <span>Cadastrar Projeto</span>
+          <span>{activeCategory === 'Manutenção' ? 'Cadastrar Manutenção' : 'Cadastrar Projeto / Obra'}</span>
         </button>
+      </div>
+
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-2xl border flex items-center justify-center ${
+              activeCategory === 'Manutenção'
+                ? 'bg-amber-950/70 border-amber-500/40 text-amber-400'
+                : 'bg-sabrar-950/70 border-sabrar-500/40 text-sabrar-400'
+            }`}>
+              {activeCategory === 'Manutenção' ? <Wrench className="w-5 h-5" /> : <FolderKanban className="w-5 h-5" />}
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {activeCategory === 'Manutenção' ? 'Contratos de Manutenção Recorrente' : 'Projetos & Obras de Engenharia'}
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            {activeCategory === 'Manutenção'
+              ? 'Gestão de contratos mensais fixos, preventivas, corretivas e materiais solicitados para manutenção'
+              : 'Centralize projetos técnicos, upload de memoriais descritivos, orçamentos e execução'}
+          </p>
+        </div>
       </div>
 
       {/* Segmented Tabs: Visão Operacional por Estágio de Obra */}
@@ -151,9 +229,9 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
               : 'text-slate-400 hover:text-white hover:bg-dark-800'
           }`}
         >
-          <span>Todas as Obras</span>
+          <span>{activeCategory === 'Manutenção' ? 'Todos os Contratos' : 'Todas as Obras'}</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-800 text-slate-300 font-mono">
-            {projects.filter(p => p.code !== 'SAB-INTERNO').length}
+            {categoryProjects.length}
           </span>
         </button>
 
@@ -167,7 +245,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
           }`}
         >
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-          <span>Obras Aprovadas & Em Execução</span>
+          <span>{activeCategory === 'Manutenção' ? 'Manutenções Ativas' : 'Obras Aprovadas & Em Execução'}</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-mono">
             {execucaoCount}
           </span>
@@ -183,7 +261,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
           }`}
         >
           <Clock className="w-3.5 h-3.5 text-amber-300" />
-          <span>Em Levantamento & Orçamento</span>
+          <span>{activeCategory === 'Manutenção' ? 'Em Levantamento / Revisão' : 'Em Levantamento & Orçamento'}</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-950 text-amber-300 border border-amber-500/40 font-mono">
             {orcamentoCount}
           </span>
@@ -198,7 +276,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
               : 'text-slate-400 hover:text-white hover:bg-dark-800'
           }`}
         >
-          <span>Obras Finalizadas</span>
+          <span>{activeCategory === 'Manutenção' ? 'Encerradas / Canceladas' : 'Obras Finalizadas'}</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-800 text-slate-300 font-mono">
             {finalizadasCount}
           </span>

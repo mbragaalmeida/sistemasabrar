@@ -59,7 +59,7 @@ const AppContent: React.FC = () => {
   // Redireciona para a página padrão do perfil caso o usuário troque para um perfil sem permissão na página aberta
   useEffect(() => {
     const role = currentUser?.role || 'admin';
-    if (!isPageAllowed(currentPage, role)) {
+    if (!isPageAllowed(currentPage, role, currentUser)) {
       setCurrentPage(getDefaultPageForRole(role));
     }
   }, [currentUser, currentPage]);
@@ -81,7 +81,7 @@ const AppContent: React.FC = () => {
 
   const handleNavigate = (page: string, id?: number) => {
     const role = currentUser?.role || 'admin';
-    if (!isPageAllowed(page, role)) {
+    if (!isPageAllowed(page, role, currentUser)) {
       setCurrentPage(getDefaultPageForRole(role));
       return;
     }
@@ -146,10 +146,11 @@ const AppContent: React.FC = () => {
             />
           )}
 
-          {currentPage === 'projects' && (
+          {(currentPage === 'projects' || currentPage === 'maintenance') && (
             <ProjectsPage
               onNavigate={handleNavigate}
               onOpenNewProject={() => setIsNewProjectModalOpen(true)}
+              initialCategory={currentPage === 'maintenance' ? 'Manutenção' : 'Obra'}
             />
           )}
 

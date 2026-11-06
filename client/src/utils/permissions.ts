@@ -5,6 +5,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'dashboard': ['admin', 'orcamento_engenharia', 'compras_solicitacoes'],
   // Item 2 e Item 6: Remover projetos para engenheiros; ceder acesso a projetos e obras para Emily (compras_solicitacoes)
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
+  'maintenance': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia', 'compras', 'almoxarifado'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
   // Item 1: Quero que os engenheiros tenham acesso a aba 'orçamentos aprovados'
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
@@ -29,8 +30,16 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'notifications': ['admin', 'orcamento', 'engenharia', 'almoxarifado', 'compras', 'orcamento_engenharia', 'compras_solicitacoes']
 };
 
-export function isPageAllowed(page: string, role: UserRole): boolean {
+export function isPageAllowed(page: string, role: UserRole, user?: { name?: string; email?: string } | null): boolean {
   if (role === 'admin') return true;
+  // Acesso de Jennifer Souza ao Almoxarifado / Devoluções
+  if (page === 'stock') {
+    const name = String(user?.name || '').toLowerCase();
+    const email = String(user?.email || '').toLowerCase();
+    if (/jennifer/i.test(name) || /jennifer/i.test(email)) {
+      return true;
+    }
+  }
   const allowed = PAGE_PERMISSIONS[page];
   if (!allowed) return true;
   return allowed.includes(role);
@@ -150,7 +159,7 @@ export interface BottomNavItem {
   iconName: 'dashboard' | 'projects' | 'budgets' | 'materials' | 'stock' | 'requests' | 'purchases' | 'ai-hub' | 'suppliers';
 }
 
-export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
+export function getBottomNavItemsForRole(role: UserRole, user?: { name?: string; email?: string } | null): BottomNavItem[] {
   switch (role) {
     case 'orcamento':
       return [
@@ -175,12 +184,23 @@ export function getBottomNavItemsForRole(role: UserRole): BottomNavItem[] {
         { id: 'stock', label: 'Almoxarifado', iconName: 'stock' },
         { id: 'materials', label: 'Materiais', iconName: 'materials' }
       ];
-    case 'compras':
+    case 'compras': {
+      const name = String(user?.name || '').toLowerCase();
+      const email = String(user?.email || '').toLowerCase();
+      if (/jennifer/i.test(name) || /jennifer/i.test(email)) {
+        return [
+          { id: 'stock', label: 'Almoxarifado', iconName: 'stock' },
+          { id: 'purchases', label: 'Compras', iconName: 'purchases' },
+          { id: 'materials', label: 'Base Materiais', iconName: 'materials' },
+          { id: 'requests', label: 'Solicitar', iconName: 'requests' }
+        ];
+      }
       return [
         { id: 'purchases', label: 'Compras', iconName: 'purchases' },
         { id: 'materials', label: 'Base Materiais', iconName: 'materials' },
         { id: 'requests', label: 'Solicitar', iconName: 'requests' }
       ];
+    }
     case 'compras_solicitacoes':
       return [
         { id: 'dashboard', label: 'Início', iconName: 'dashboard' },

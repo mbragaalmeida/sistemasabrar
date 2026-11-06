@@ -14,6 +14,7 @@ export async function initializeDatabase() {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS categories TEXT;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contacts JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS vendors JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'Obra';
 
       CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
@@ -82,6 +83,7 @@ export async function initializeDatabase() {
         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
         project_name TEXT NOT NULL,
         expected_billing_date DATE NOT NULL,
+        expected_delivery_date DATE,
         notes TEXT,
         status TEXT DEFAULT 'Em Acompanhamento',
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,

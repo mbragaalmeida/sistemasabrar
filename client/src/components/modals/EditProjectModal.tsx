@@ -31,6 +31,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção'>('Obra');
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
   const [returnDeadline, setReturnDeadline] = useState('');
@@ -49,6 +50,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
       setCity((project as any).city || '');
       setState((project as any).state || '');
       setProjectType((project.project_type as any) || 'Comercial');
+      setCategory((project.category as any) || (project.name.toLowerCase().includes('manuten') ? 'Manutenção' : 'Obra'));
       setResponsibleEngineer(project.responsible_engineer || '');
       setResponsibleEstimator((project as any).responsible_estimator || '');
       setReturnDeadline((project as any).return_deadline ? (project as any).return_deadline.split('T')[0] : '');
@@ -79,6 +81,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
         city: city.trim(),
         state: state.trim(),
         project_type: projectType,
+        category,
         responsible_engineer: responsibleEngineer.trim(),
         responsible_estimator: responsibleEstimator.trim(),
         return_deadline: returnDeadline || null,
@@ -151,6 +154,37 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               <span>{error}</span>
             </div>
           )}
+
+          {/* Categoria: Obra vs Manutenção (Item 4) */}
+          <div>
+            <label className="block text-slate-400 font-bold uppercase tracking-wider text-[11px] mb-1.5">
+              Categoria do Registro *
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCategory('Obra')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  category === 'Obra'
+                    ? 'bg-sabrar-600 text-white shadow-md'
+                    : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
+                }`}
+              >
+                Obra / Projeto Novo
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategory('Manutenção')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  category === 'Manutenção'
+                    ? 'bg-amber-600 text-white shadow-md'
+                    : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
+                }`}
+              >
+                Contrato de Manutenção
+              </button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="sm:col-span-2">

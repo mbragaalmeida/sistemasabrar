@@ -43,12 +43,17 @@ import { sanitizeUnit } from '../utils/unitConverter';
 export const StockPage: React.FC = () => {
   const { currentUser } = useAuth();
   const canViewPrices = canUserViewPrices(currentUser);
-  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato' | 'transferencias'>('separacao');
+  const [activeTab, setActiveTab] = useState<'separacao' | 'devolucoes' | 'extrato' | 'transferencias'>(() => {
+    const isJennifer = /jennifer/i.test(currentUser?.name || '') || /jennifer/i.test(currentUser?.email || '');
+    return isJennifer ? 'devolucoes' : 'separacao';
+  });
   const [transfers, setTransfers] = useState<any[]>([]);
   const [reservedByProject, setReservedByProject] = useState<any[]>([]);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isNewReturnModalOpen, setIsNewReturnModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aguardando_aprovacao' | 'solicitado' | 'em_separacao' | 'separado_parcial' | 'separado'>('todos');
+  const [selectedRequester, setSelectedRequester] = useState<string>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | 'Obra' | 'Manutenção'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<any>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -405,6 +410,18 @@ export const StockPage: React.FC = () => {
             if (!['Separado Parcial', 'Parcialmente Atendido'].includes(req.status)) return false;
           } else if (statusFilter === 'separado') {
             if (!['Separado', 'Entregue'].includes(req.status)) return false;
+          }
+
+          // Filtro por solicitante (Item 9)
+          if (selectedRequester !== 'all') {
+            if ((req.requested_by_name || '').toLowerCase() !== selectedRequester.toLowerCase()) return false;
+          }
+
+          // Filtro por categoria (Obras vs Manutenção)
+          if (selectedCategoryFilter !== 'all') {
+            const isMaint = (req.project_name || '').toLowerCase().includes('manuten');
+            if (selectedCategoryFilter === 'Manutenção' && !isMaint) return false;
+            if (selectedCategoryFilter === 'Obra' && isMaint) return false;
           }
 
           if (searchQuery.trim()) {
@@ -1038,6 +1055,51 @@ export const StockPage: React.FC = () => {
                   <span>Lista Geral</span>
                 </button>
               </div>
+            </div>
+
+            {/* Filtros Avançados: Solicitante (Item 9 - Gabi) & Categoria */}
+            <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
+              <div className="flex items-center gap-1 text-slate-400 font-semibold shrink-0">
+                <Filter className="w-3.5 h-3.5 text-sabrar-400" />
+                <span>Solicitante:</span>
+              </div>
+              <select
+                value={selectedRequester}
+                onChange={(e) => setSelectedRequester(e.target.value)}
+                className="p-1.5 px-3 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-sabrar-500 max-w-[200px] truncate"
+                title="Filtrar fila de separação por solicitante"
+              >
+                <option value="all">Todos os Solicitantes</option>
+                {Array.from(new Set(pendingRequests.map((r: any) => r.requested_by_name).filter(Boolean))).sort().map((reqName: any) => (
+                  <option key={reqName} value={reqName}>
+                    {reqName}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value as any)}
+                className="p-1.5 px-3 rounded-xl border border-dark-700 bg-dark-850 text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-sabrar-500"
+                title="Filtrar fila de separação por tipo de obra"
+              >
+                <option value="all">Obras & Manutenção</option>
+                <option value="Obra">Apenas Obras</option>
+                <option value="Manutenção">Apenas Manutenção</option>
+              </select>
+
+              {(selectedRequester !== 'all' || selectedCategoryFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRequester('all');
+                    setSelectedCategoryFilter('all');
+                  }}
+                  className="text-xs text-rose-400 hover:underline font-semibold ml-2"
+                >
+                  Limpar
+                </button>
+              )}
             </div>
 
             {/* Filter Pills */}

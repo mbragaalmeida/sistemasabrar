@@ -3,6 +3,7 @@ import { RotateCcw, Check, X, AlertCircle, RefreshCw } from 'lucide-react';
 import { Project, Material } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { SearchableSelect, SearchableOption } from '../common/SearchableSelect';
 
 interface NewReturnModalProps {
   isOpen: boolean;
@@ -109,19 +110,17 @@ export const NewReturnModal: React.FC<NewReturnModalProps> = ({
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
               Obra de Origem *
             </label>
-            <select
+            <SearchableSelect
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-teal-500 text-white"
+              onChange={(val) => setSelectedProjectId(val ? Number(val) : '')}
+              options={projects.map((p) => ({
+                value: p.id,
+                label: `${p.code} — ${p.name}`,
+                sublabel: `Cliente: ${p.client}`
+              }))}
+              placeholder="Digite o nome ou código da obra..."
               required
-            >
-              <option value="">Selecione a obra que está devolvendo...</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.name} ({p.client})
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Material */}
@@ -129,19 +128,19 @@ export const NewReturnModal: React.FC<NewReturnModalProps> = ({
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
               Material a Retornar ao Estoque *
             </label>
-            <select
+            <SearchableSelect
               value={selectedMaterialId}
-              onChange={(e) => setSelectedMaterialId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-xs sm:text-sm p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-teal-500 text-white"
+              onChange={(val) => setSelectedMaterialId(val ? Number(val) : '')}
+              options={materials.map((m) => ({
+                value: m.id,
+                label: `${m.code} — ${m.name}`,
+                sublabel: `Físico atual: ${m.stock_physical} ${m.unit} | Categoria: ${m.category || 'Geral'}`,
+                badge: `${m.stock_physical} ${m.unit}`,
+                keywords: m.synonyms || ''
+              }))}
+              placeholder="Digite o código, nome ou sinônimo do material..."
               required
-            >
-              <option value="">Selecione o material...</option>
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.code} — {m.name} (Físico atual: {m.stock_physical} {m.unit})
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Quantidade */}

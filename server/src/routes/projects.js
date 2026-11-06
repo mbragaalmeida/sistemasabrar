@@ -37,7 +37,7 @@ export const projectsRouter = express.Router();
 // Lista todos os projetos com filtros e resumos
 projectsRouter.get('/', async (req, res) => {
   try {
-    const { status, search, project_type } = req.query;
+    const { status, search, project_type, category } = req.query;
     const userRole = req.headers['x-user-role'] || req.query.role;
     const userId = req.headers['x-user-id'] || req.query.user_id;
     const isEngineer = userRole === 'engenharia' || userRole === 'engineer';
@@ -45,6 +45,10 @@ projectsRouter.get('/', async (req, res) => {
     let query = 'SELECT * FROM projects WHERE (is_hidden IS FALSE OR is_hidden IS NULL)';
     const params = [];
 
+    if (category) {
+      query += ' AND category = ?';
+      params.push(category);
+    }
     if (status) {
       query += ' AND status = ?';
       params.push(status);
@@ -295,7 +299,7 @@ projectsRouter.post('/', async (req, res) => {
   try {
     const {
       name, client, client_email, client_phone, address, city, state,
-      project_type, start_date, expected_end_date, responsible_engineer,
+      project_type, category, start_date, expected_end_date, responsible_engineer,
       responsible_estimator, return_deadline, scope_summary,
       notes, initial_spec_text, uploadedDocuments, autoAnalyze,
       engineerIds, engineer_ids
@@ -304,6 +308,8 @@ projectsRouter.post('/', async (req, res) => {
     if (!name || !client) {
       return res.status(400).json({ error: 'Nome do projeto e cliente são obrigatórios' });
     }
+
+    const finalCategory = (category || '').trim() || (/manuten/i.test(name) ? 'Manutenção' : 'Obra');
 
     // Requisito 2: Orçamentista responsável é obrigatório
     const finalEstimator = (responsible_estimator || '').trim();
@@ -330,15 +336,15 @@ projectsRouter.post('/', async (req, res) => {
     const insert = db.prepare(`
       INSERT INTO projects (
         code, name, client, client_email, client_phone, address, city, state,
-        project_type, start_date, expected_end_date, return_deadline,
+        project_type, category, start_date, expected_end_date, return_deadline,
         responsible_engineer, responsible_estimator, scope_summary, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Novo')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Novo')
     `);
 
     const result = await insert.run(
       code, name, client, client_email || null, client_phone || null,
       address || 'Endereço a definir', city || 'São Paulo', state || 'SP',
-      project_type || 'Comercial', start_date || null, expected_end_date || null,
+      project_type || 'Comercial', finalCategory, start_date || null, expected_end_date || null,
       return_deadline || null,
       finalResponsible, finalEstimator, scope_summary || null, notes || null
     );
@@ -631,6 +637,7 @@ projectsRouter.put('/:id', async (req, res) => {
       city,
       state,
       project_type,
+      category,
       responsible_engineer,
       responsible_estimator,
       return_deadline,
@@ -654,6 +661,7 @@ projectsRouter.put('/:id', async (req, res) => {
         city = ?,
         state = ?,
         project_type = COALESCE(?, project_type),
+        category = COALESCE(?, category),
         responsible_engineer = COALESCE(?, responsible_engineer),
         responsible_estimator = COALESCE(?, responsible_estimator),
         return_deadline = COALESCE(?, return_deadline),
@@ -672,6 +680,7 @@ projectsRouter.put('/:id', async (req, res) => {
       city !== undefined ? city?.trim() : project.city,
       state !== undefined ? state?.trim() : project.state,
       project_type || project.project_type,
+      category !== undefined ? category?.trim() : project.category,
       responsible_engineer !== undefined ? responsible_engineer?.trim() : project.responsible_engineer,
       responsible_estimator !== undefined ? responsible_estimator?.trim() : project.responsible_estimator,
       return_deadline !== undefined ? return_deadline : project.return_deadline,

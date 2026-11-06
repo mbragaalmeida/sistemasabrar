@@ -478,6 +478,7 @@ purchasesRouter.post('/tracked-deadlines', async (req, res) => {
       project_id,
       project_name,
       expected_billing_date,
+      expected_delivery_date,
       notes,
       userId = 1
     } = req.body;
@@ -486,13 +487,20 @@ purchasesRouter.post('/tracked-deadlines', async (req, res) => {
       return res.status(400).json({ error: 'Campos obrigatórios: número do pedido, fornecedor, item e data de previsão de faturamento.' });
     }
 
+    let finalDeliveryDate = expected_delivery_date;
+    if (!finalDeliveryDate && expected_billing_date) {
+      const d = new Date(expected_billing_date);
+      d.setDate(d.getDate() + 7);
+      finalDeliveryDate = d.toISOString().slice(0, 10);
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const isDue = expected_billing_date <= today;
 
     const result = await db.prepare(`
       INSERT INTO tracked_purchase_deadlines (
         order_number, supplier_name, item_name, project_id, project_name,
-        expected_billing_date, notes, created_by, status, notified
+        expected_billing_date, expected_delivery_date, notes, created_by, status, notified
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Em Acompanhamento', ?)
     `).run(
       order_number.trim(),
@@ -501,6 +509,7 @@ purchasesRouter.post('/tracked-deadlines', async (req, res) => {
       project_id ? Number(project_id) : null,
       (project_name && project_name.trim()) || 'Obra Sabrar',
       expected_billing_date,
+      finalDeliveryDate,
       notes ? notes.trim() : '',
       Number(userId) || 1,
       isDue
@@ -531,6 +540,7 @@ purchasesRouter.put('/tracked-deadlines/:id', async (req, res) => {
       project_id,
       project_name,
       expected_billing_date,
+      expected_delivery_date,
       status,
       notes
     } = req.body;
@@ -546,6 +556,7 @@ purchasesRouter.put('/tracked-deadlines/:id', async (req, res) => {
           project_id = COALESCE(?, project_id),
           project_name = COALESCE(?, project_name),
           expected_billing_date = COALESCE(?, expected_billing_date),
+          expected_delivery_date = COALESCE(?, expected_delivery_date),
           status = COALESCE(?, status),
           notes = COALESCE(?, notes)
       WHERE id = ?
@@ -556,6 +567,7 @@ purchasesRouter.put('/tracked-deadlines/:id', async (req, res) => {
       project_id ? Number(project_id) : null,
       project_name ? project_name.trim() : null,
       expected_billing_date || null,
+      expected_delivery_date || null,
       status || null,
       notes != null ? notes.trim() : null,
       id
