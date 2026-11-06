@@ -19,6 +19,7 @@ interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (createdId: number) => void;
+  initialCategory?: 'Obra' | 'Manutenção' | 'Estanque Dutos';
 }
 
 interface UploadedDoc {
@@ -32,7 +33,8 @@ interface UploadedDoc {
 export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   isOpen,
   onClose,
-  onSuccess
+  onSuccess,
+  initialCategory
 }) => {
   const { currentUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +45,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
-  const [category, setCategory] = useState<'Obra' | 'Manutenção'>('Obra');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Estanque Dutos'>('Obra');
   
   // Requisito 2 e 3: Orçamentista Responsável (obrigatório) e Data de Retorno
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
@@ -75,7 +77,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (currentUser?.name && ESTIMATORS_LIST.includes(currentUser.name)) {
+      if (initialCategory) {
+        setCategory(initialCategory);
+      } else if (/stanquedutos/i.test(currentUser?.email || '')) {
+        setCategory('Estanque Dutos');
+      } else {
+        setCategory('Obra');
+      }
+
+      if (/stanquedutos/i.test(currentUser?.email || '') || /nathalia/i.test(currentUser?.name || '')) {
+        setResponsibleEstimator('Nathalia');
+      } else if (currentUser?.name && ESTIMATORS_LIST.includes(currentUser.name)) {
         setResponsibleEstimator(currentUser.name);
       } else {
         setResponsibleEstimator('');
@@ -273,33 +285,44 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </div>
           )}
 
-          {/* Categoria do Cadastro: Obra vs Manutenção (Item 4) */}
+          {/* Categoria do Cadastro: Obra vs Manutenção vs Estanque Dutos */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Tipo de Cadastro *
+              Tipo de Cadastro / Segmento *
             </label>
-            <div className="flex p-1 bg-dark-850 rounded-2xl border border-dark-700">
+            <div className="flex flex-wrap p-1 bg-dark-850 rounded-2xl border border-dark-700 gap-1">
               <button
                 type="button"
                 onClick={() => setCategory('Obra')}
-                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                className={`flex-1 min-w-[120px] py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                   category === 'Obra'
                     ? 'bg-sabrar-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Nova Obra / Projeto de Engenharia
+                Nova Obra / Projeto
               </button>
               <button
                 type="button"
                 onClick={() => setCategory('Manutenção')}
-                className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                className={`flex-1 min-w-[120px] py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                   category === 'Manutenção'
                     ? 'bg-amber-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Contrato de Manutenção Recorrente
+                Contrato Manutenção
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategory('Estanque Dutos')}
+                className={`flex-1 min-w-[120px] py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  category === 'Estanque Dutos'
+                    ? 'bg-sky-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Estanque Dutos
               </button>
             </div>
           </div>

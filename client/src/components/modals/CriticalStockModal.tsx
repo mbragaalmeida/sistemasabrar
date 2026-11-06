@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, X, Search, Filter, Package, ArrowUpRight, TrendingDown, Layers, ShieldAlert, Check, FileSpreadsheet } from 'lucide-react';
+import { AlertTriangle, X, Search, Filter, Package, ArrowUpRight, TrendingDown, Layers, ShieldAlert, Check, Printer } from 'lucide-react';
 import { api } from '../../services/api';
 import { sanitizeUnit } from '../../utils/unitConverter';
 import { useAuth } from '../../context/AuthContext';
+import { PrintCriticalStockModal } from './PrintCriticalStockModal';
 
 interface CriticalStockModalProps {
   isOpen: boolean;
@@ -21,43 +22,7 @@ export const CriticalStockModal: React.FC<CriticalStockModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [filterZeroOnly, setFilterZeroOnly] = useState(false);
   const { currentUser } = useAuth();
-  const [exporting, setExporting] = useState(false);
-
-  const handleExportOC = async () => {
-    if (filteredMaterials.length === 0) return;
-    setExporting(true);
-    try {
-      const ocItems = filteredMaterials.map((m) => {
-        const physical = Number(m.stock_physical || 0);
-        const minimum = Number(m.stock_minimum || 0);
-        const deficit = Math.max(1, Math.round((minimum - physical) * 100) / 100);
-        return {
-          code: m.code || 'SAB',
-          name: m.name,
-          unit: sanitizeUnit(m.unit),
-          quantity: deficit,
-          price: Number(m.reference_price || 0)
-        };
-      });
-
-      const categoryLabel = selectedCategory !== 'all' ? `_${selectedCategory.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
-      const filename = `Ordem_de_Compra_Estoque_Critico${categoryLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-
-      await api.exportCustomOc({
-        ocCode: `OC-ESTOQUE-CRITICO`,
-        orderCode: `PED-REPOSICAO-${new Date().getFullYear()}`,
-        projectName: 'ALMOXARIFADO CENTRAL - REPOSIÇÃO DE ESTOQUE CRÍTICO',
-        supplierName: selectedCategory !== 'all' ? `Fornecedores Homologados (${selectedCategory})` : 'Fornecedores Homologados SABRAR',
-        buyerName: currentUser?.name || 'Emily Bueno',
-        buyerEmail: currentUser?.email || 'emily@sabrar.com.br',
-        items: ocItems
-      }, filename);
-    } catch (err: any) {
-      alert(err.message || 'Erro ao exportar Ordem de Compra');
-    } finally {
-      setExporting(false);
-    }
-  };
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -366,13 +331,13 @@ export const CriticalStockModal: React.FC<CriticalStockModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={exporting || filteredMaterials.length === 0}
-              onClick={handleExportOC}
+              disabled={filteredMaterials.length === 0}
+              onClick={() => setIsPrintModalOpen(true)}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Gerar Ordem de Compra oficial Sabrar em Excel com os itens críticos e seus déficits"
+              title="Visualizar e Imprimir Romaneio / Relatório de Estoque Crítico em PDF"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>{exporting ? 'Gerando OC...' : `Gerar OC Excel (${filteredMaterials.length})`}</span>
+              <Printer className="w-4 h-4" />
+              <span>Imprimir / Gerar PDF ({filteredMaterials.length})</span>
             </button>
             {onNavigateToStock && (
               <button
@@ -398,6 +363,15 @@ export const CriticalStockModal: React.FC<CriticalStockModalProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Impressão de Estoque Crítico */}
+      <PrintCriticalStockModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        materials={filteredMaterials}
+        selectedCategory={selectedCategory}
+        filterZeroOnly={filterZeroOnly}
+      />
     </div>
   );
 };

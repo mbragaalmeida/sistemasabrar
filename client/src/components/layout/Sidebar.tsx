@@ -69,6 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'projects', label: 'Projetos & Obras', icon: FolderKanban },
         { id: 'maintenance', label: 'Manutenção', icon: Wrench },
+        { id: 'estanque-dutos', label: 'Estanque Dutos', icon: Wind },
         { id: 'budgets', label: 'Orçamentos Aprovados', icon: Calculator },
         // 3 Abas solicitadas pelo usuário para a Engenharia
         { id: 'requests', label: 'Solicitar Material', icon: ClipboardList },

@@ -59,3 +59,34 @@ returnsRouter.post('/', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// Registra lote de devoluções de múltiplos materiais para a mesma obra
+returnsRouter.post('/batch', async (req, res) => {
+  try {
+    const { projectId, items, userId, defaultReason } = req.body;
+
+    if (!projectId || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Obra e ao menos um material são obrigatórios para a devolução' });
+    }
+
+    const results = [];
+    for (const item of items) {
+      const returnedQty = Number(item.quantity);
+      if (!item.materialId || returnedQty <= 0) continue;
+
+      const result = await StockService.recordMaterialReturn(
+        Number(projectId),
+        Number(item.materialId),
+        returnedQty,
+        userId || 22,
+        item.reason || defaultReason || 'Sobra de obra em condição reutilizável'
+      );
+      results.push(result);
+    }
+
+    res.status(201).json({ success: true, count: results.length, results });
+  } catch (err) {
+    console.error('[Batch Return Error]', err);
+    res.status(400).json({ error: err.message });
+  }
+});

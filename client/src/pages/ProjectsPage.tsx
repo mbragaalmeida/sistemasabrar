@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3, Trash2, AlertTriangle, Wrench } from 'lucide-react';
+import { FolderKanban, Plus, Search, Filter, Calendar, MapPin, HardHat, FileText, ArrowRight, CheckCircle2, Clock, Edit3, Trash2, AlertTriangle, Wrench, Wind } from 'lucide-react';
 import { Project } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -12,13 +12,13 @@ import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 interface ProjectsPageProps {
   onNavigate: (page: string, id?: number) => void;
   onOpenNewProject: () => void;
-  initialCategory?: 'Obra' | 'Manutenção';
+  initialCategory?: 'Obra' | 'Manutenção' | 'Estanque Dutos';
 }
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNewProject, initialCategory }) => {
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [activeCategory, setActiveCategory] = useState<'Obra' | 'Manutenção'>(initialCategory || 'Obra');
+  const [activeCategory, setActiveCategory] = useState<'Obra' | 'Manutenção' | 'Estanque Dutos'>(initialCategory || 'Obra');
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedType, setSelectedType] = useState('');
@@ -35,21 +35,30 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
     }
   }, [initialCategory]);
 
+  const isEstanqueUser = /stanquedutos/i.test(currentUser?.email || '') || /nathalia.*souza/i.test(currentUser?.name || '');
+
   // Contagens totais por categoria principal
   const obrasTotalCount = useMemo(() => {
-    return projects.filter(p => p.code !== 'SAB-INTERNO' && p.category !== 'Manutenção' && !p.name.toLowerCase().includes('manuten')).length;
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && p.category !== 'Manutenção' && p.category !== 'Estanque Dutos' && !p.name.toLowerCase().includes('manuten') && !p.name.toLowerCase().includes('estanque')).length;
   }, [projects]);
 
   const manutencaoTotalCount = useMemo(() => {
     return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.category === 'Manutenção' || p.name.toLowerCase().includes('manuten'))).length;
   }, [projects]);
 
-  // Lista de projetos da categoria ativa (Obras vs Manutenção)
+  const estanqueTotalCount = useMemo(() => {
+    return projects.filter(p => p.code !== 'SAB-INTERNO' && (p.category === 'Estanque Dutos' || p.name.toLowerCase().includes('estanque') || (p.client && p.client.toLowerCase().includes('estanque')))).length;
+  }, [projects]);
+
+  // Lista de projetos da categoria ativa (Obras vs Manutenção vs Estanque Dutos)
   const categoryProjects = useMemo(() => {
     return projects.filter(p => {
       if (p.code === 'SAB-INTERNO') return false;
-      const isMaint = p.category === 'Manutenção' || p.name.toLowerCase().includes('manuten');
-      return activeCategory === 'Manutenção' ? isMaint : !isMaint;
+      const isEstanque = p.category === 'Estanque Dutos' || p.name.toLowerCase().includes('estanque') || (p.client && p.client.toLowerCase().includes('estanque'));
+      const isMaint = (p.category === 'Manutenção' || p.name.toLowerCase().includes('manuten')) && !isEstanque;
+      if (activeCategory === 'Estanque Dutos') return isEstanque;
+      if (activeCategory === 'Manutenção') return isMaint;
+      return !isMaint && !isEstanque;
     });
   }, [projects, activeCategory]);
 
@@ -140,82 +149,135 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-12">
-      {/* SELETOR DE CATEGORIA: OBRAS vs MANUTENÇÃO (Item 4) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-2 sm:p-2.5 rounded-3xl border border-dark-750 shadow-md">
-        <div className="flex items-center gap-1.5 p-1 bg-dark-950/90 rounded-2xl border border-dark-750 flex-1 sm:max-w-md">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('Obra');
-              setWorkflowTab('todas');
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeCategory === 'Obra'
-                ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-dark-850'
-            }`}
-          >
-            <FolderKanban className="w-4 h-4" />
-            <span>Obras & Projetos</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
-              {obrasTotalCount}
-            </span>
-          </button>
+      {/* SELETOR DE CATEGORIA: OBRAS vs MANUTENÇÃO vs ESTANQUE DUTOS */}
+      {!isEstanqueUser && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-2 sm:p-2.5 rounded-3xl border border-dark-750 shadow-md">
+          <div className="flex items-center gap-1.5 p-1 bg-dark-950/90 rounded-2xl border border-dark-750 flex-1 sm:max-w-xl overflow-x-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCategory('Obra');
+                setWorkflowTab('todas');
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                activeCategory === 'Obra'
+                  ? 'bg-sabrar-600 text-white shadow-md shadow-sabrar-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-dark-850'
+              }`}
+            >
+              <FolderKanban className="w-4 h-4" />
+              <span>Obras & Projetos</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
+                {obrasTotalCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCategory('Manutenção');
+                setWorkflowTab('todas');
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                activeCategory === 'Manutenção'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-dark-850'
+              }`}
+            >
+              <Wrench className="w-4 h-4" />
+              <span>Manutenção</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
+                {manutencaoTotalCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCategory('Estanque Dutos');
+                setWorkflowTab('todas');
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                activeCategory === 'Estanque Dutos'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-dark-850'
+              }`}
+            >
+              <Wind className="w-4 h-4" />
+              <span>Estanque Dutos</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
+                {estanqueTotalCount}
+              </span>
+            </button>
+          </div>
 
           <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('Manutenção');
-              setWorkflowTab('todas');
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeCategory === 'Manutenção'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-dark-850'
+            onClick={onOpenNewProject}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-white text-xs font-bold transition-all shadow-lg active:scale-95 cursor-pointer ${
+              activeCategory === 'Estanque Dutos'
+                ? 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/30'
+                : activeCategory === 'Manutenção'
+                  ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
+                  : 'bg-sabrar-600 hover:bg-sabrar-500 shadow-sabrar-600/30'
             }`}
           >
-            <Wrench className="w-4 h-4" />
-            <span>Manutenção</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-dark-900/80 text-slate-300 font-mono">
-              {manutencaoTotalCount}
+            <Plus className="w-4 h-4" />
+            <span>
+              {activeCategory === 'Estanque Dutos'
+                ? 'Cadastrar Orçamento Estanque Dutos'
+                : activeCategory === 'Manutenção'
+                  ? 'Cadastrar Manutenção'
+                  : 'Cadastrar Projeto / Obra'}
             </span>
           </button>
         </div>
-
-        <button
-          onClick={onOpenNewProject}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-white text-xs font-bold transition-all shadow-lg active:scale-95 cursor-pointer ${
-            activeCategory === 'Manutenção'
-              ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
-              : 'bg-sabrar-600 hover:bg-sabrar-500 shadow-sabrar-600/30'
-          }`}
-        >
-          <Plus className="w-4 h-4" />
-          <span>{activeCategory === 'Manutenção' ? 'Cadastrar Manutenção' : 'Cadastrar Projeto / Obra'}</span>
-        </button>
-      </div>
+      )}
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
         <div>
           <div className="flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-2xl border flex items-center justify-center ${
-              activeCategory === 'Manutenção'
-                ? 'bg-amber-950/70 border-amber-500/40 text-amber-400'
-                : 'bg-sabrar-950/70 border-sabrar-500/40 text-sabrar-400'
+              activeCategory === 'Estanque Dutos'
+                ? 'bg-sky-950/70 border-sky-500/40 text-sky-400'
+                : activeCategory === 'Manutenção'
+                  ? 'bg-amber-950/70 border-amber-500/40 text-amber-400'
+                  : 'bg-sabrar-950/70 border-sabrar-500/40 text-sabrar-400'
             }`}>
-              {activeCategory === 'Manutenção' ? <Wrench className="w-5 h-5" /> : <FolderKanban className="w-5 h-5" />}
+              {activeCategory === 'Estanque Dutos' ? (
+                <Wind className="w-5 h-5" />
+              ) : activeCategory === 'Manutenção' ? (
+                <Wrench className="w-5 h-5" />
+              ) : (
+                <FolderKanban className="w-5 h-5" />
+              )}
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {activeCategory === 'Manutenção' ? 'Contratos de Manutenção Recorrente' : 'Projetos & Obras de Engenharia'}
+              {activeCategory === 'Estanque Dutos'
+                ? 'Estanque Dutos — Orçamentos & Projetos'
+                : activeCategory === 'Manutenção'
+                  ? 'Contratos de Manutenção Recorrente'
+                  : 'Projetos & Obras de Engenharia'}
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            {activeCategory === 'Manutenção'
-              ? 'Gestão de contratos mensais fixos, preventivas, corretivas e materiais solicitados para manutenção'
-              : 'Centralize projetos técnicos, upload de memoriais descritivos, orçamentos e execução'}
+            {activeCategory === 'Estanque Dutos'
+              ? 'Gestão comercial, fabricação sob medida e orçamentos para clientes e parceiros Estanque Dutos'
+              : activeCategory === 'Manutenção'
+                ? 'Gestão de contratos mensais fixos, preventivas, corretivas e materiais solicitados para manutenção'
+                : 'Centralize projetos técnicos, upload de memoriais descritivos, orçamentos e execução'}
           </p>
         </div>
+
+        {isEstanqueUser && (
+          <button
+            onClick={onOpenNewProject}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-white text-xs font-bold transition-all shadow-lg active:scale-95 cursor-pointer bg-sky-600 hover:bg-sky-500 shadow-sky-600/30"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Cadastrar Orçamento Estanque Dutos</span>
+          </button>
+        )}
       </div>
 
       {/* Segmented Tabs: Visão Operacional por Estágio de Obra */}

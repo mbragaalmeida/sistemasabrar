@@ -402,6 +402,12 @@ export const api = {
     return fetchJson<any[]>(`/returns${qs}`);
   },
   createReturn: (data: any) => fetchJson<any>('/returns', { method: 'POST', body: JSON.stringify(data) }),
+  createBatchReturns: (data: {
+    projectId: number;
+    items: Array<{ materialId: number; quantity: number; reason?: string }>;
+    userId?: number;
+    defaultReason?: string;
+  }) => fetchJson<any>('/returns/batch', { method: 'POST', body: JSON.stringify(data) }),
 
   // Movimentações & Sumário
   getStockMovements: (params?: Record<string, string>) => {

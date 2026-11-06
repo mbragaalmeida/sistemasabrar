@@ -31,7 +31,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [projectType, setProjectType] = useState<'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura'>('Comercial');
-  const [category, setCategory] = useState<'Obra' | 'Manutenção'>('Obra');
+  const [category, setCategory] = useState<'Obra' | 'Manutenção' | 'Estanque Dutos'>('Obra');
   const [responsibleEngineer, setResponsibleEngineer] = useState('');
   const [responsibleEstimator, setResponsibleEstimator] = useState('');
   const [returnDeadline, setReturnDeadline] = useState('');
@@ -160,28 +160,39 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <label className="block text-slate-400 font-bold uppercase tracking-wider text-[11px] mb-1.5">
               Categoria do Registro *
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setCategory('Obra')}
-                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   category === 'Obra'
                     ? 'bg-sabrar-600 text-white shadow-md'
                     : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
                 }`}
               >
-                Obra / Projeto Novo
+                Obra Nova
               </button>
               <button
                 type="button"
                 onClick={() => setCategory('Manutenção')}
-                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   category === 'Manutenção'
                     ? 'bg-amber-600 text-white shadow-md'
                     : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
                 }`}
               >
-                Contrato de Manutenção
+                Manutenção
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategory('Estanque Dutos')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  category === 'Estanque Dutos'
+                    ? 'bg-sky-600 text-white shadow-md'
+                    : 'bg-slate-100 dark:bg-dark-850 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-dark-700 hover:text-white'
+                }`}
+              >
+                Estanque Dutos
               </button>
             </div>
           </div>

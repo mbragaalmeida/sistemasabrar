@@ -6,6 +6,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   // Item 2 e Item 6: Remover projetos para engenheiros; ceder acesso a projetos e obras para Emily (compras_solicitacoes)
   'projects': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes'],
   'maintenance': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia', 'compras', 'almoxarifado'],
+  'estanque-dutos': ['admin', 'orcamento', 'orcamento_engenharia'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
   // Item 1: Quero que os engenheiros tenham acesso a aba 'orçamentos aprovados'
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
@@ -32,20 +33,38 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
 
 export function isPageAllowed(page: string, role: UserRole, user?: { name?: string; email?: string } | null): boolean {
   if (role === 'admin') return true;
+
+  const email = String(user?.email || '').toLowerCase();
+  const name = String(user?.name || '').toLowerCase();
+
+  // Escopo de Estanque Dutos (Nathalia Souza / comercial@stanquedutos.com)
+  if (/stanquedutos/i.test(email) || /nathalia.*souza/i.test(name)) {
+    return ['estanque-dutos', 'project-detail', 'budgets', 'clients', 'notifications'].includes(page);
+  }
+
+  // Acesso à aba Estanque Dutos para Administradores e Setor de Orçamento
+  if (page === 'estanque-dutos') {
+    return ['admin', 'orcamento', 'orcamento_engenharia'].includes(role) || /stanquedutos/i.test(email);
+  }
+
   // Acesso de Jennifer Souza ao Almoxarifado / Devoluções
   if (page === 'stock') {
-    const name = String(user?.name || '').toLowerCase();
-    const email = String(user?.email || '').toLowerCase();
     if (/jennifer/i.test(name) || /jennifer/i.test(email)) {
       return true;
     }
   }
+
   const allowed = PAGE_PERMISSIONS[page];
   if (!allowed) return true;
   return allowed.includes(role);
 }
 
-export function getDefaultPageForRole(role?: UserRole): string {
+export function getDefaultPageForRole(role?: UserRole, user?: { email?: string; name?: string } | null): string {
+  const email = String(user?.email || '').toLowerCase();
+  if (/stanquedutos/i.test(email)) {
+    return 'estanque-dutos';
+  }
+
   switch (role) {
     case 'admin':
     case 'orcamento_engenharia':

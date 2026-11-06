@@ -47,7 +47,7 @@ export interface Project {
   city?: string;
   state?: string;
   project_type: 'Comercial' | 'Residencial' | 'Industrial' | 'Reforma' | 'Infraestrutura';
-  category?: 'Obra' | 'Manutenção';
+  category?: 'Obra' | 'Manutenção' | 'Estanque Dutos' | string;
   start_date?: string;
   expected_end_date?: string;
   return_deadline?: string | null;

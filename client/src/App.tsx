@@ -42,7 +42,7 @@ const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  const [currentPage, setCurrentPage] = useState<string>(() => getDefaultPageForRole(currentUser?.role));
+  const [currentPage, setCurrentPage] = useState<string>(() => getDefaultPageForRole(currentUser?.role, currentUser));
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
 
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
@@ -60,7 +60,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const role = currentUser?.role || 'admin';
     if (!isPageAllowed(currentPage, role, currentUser)) {
-      setCurrentPage(getDefaultPageForRole(role));
+      setCurrentPage(getDefaultPageForRole(role, currentUser));
     }
   }, [currentUser, currentPage]);
 
@@ -82,7 +82,7 @@ const AppContent: React.FC = () => {
   const handleNavigate = (page: string, id?: number) => {
     const role = currentUser?.role || 'admin';
     if (!isPageAllowed(page, role, currentUser)) {
-      setCurrentPage(getDefaultPageForRole(role));
+      setCurrentPage(getDefaultPageForRole(role, currentUser));
       return;
     }
 
@@ -146,18 +146,30 @@ const AppContent: React.FC = () => {
             />
           )}
 
-          {(currentPage === 'projects' || currentPage === 'maintenance') && (
+          {(currentPage === 'projects' || currentPage === 'maintenance' || currentPage === 'estanque-dutos') && (
             <ProjectsPage
               onNavigate={handleNavigate}
               onOpenNewProject={() => setIsNewProjectModalOpen(true)}
-              initialCategory={currentPage === 'maintenance' ? 'Manutenção' : 'Obra'}
+              initialCategory={
+                currentPage === 'estanque-dutos'
+                  ? 'Estanque Dutos'
+                  : currentPage === 'maintenance'
+                    ? 'Manutenção'
+                    : 'Obra'
+              }
             />
           )}
 
           {currentPage === 'project-detail' && selectedProjectId && (
             <ProjectDetailPage
               projectId={selectedProjectId}
-              onBack={() => setCurrentPage('projects')}
+              onBack={() => {
+                if (/stanquedutos/i.test(currentUser?.email || '')) {
+                  setCurrentPage('estanque-dutos');
+                } else {
+                  setCurrentPage('projects');
+                }
+              }}
               onNavigate={handleNavigate}
             />
           )}
@@ -257,6 +269,13 @@ const AppContent: React.FC = () => {
         isOpen={isNewProjectModalOpen}
         onClose={() => setIsNewProjectModalOpen(false)}
         onSuccess={(id) => handleNavigate('project-detail', id)}
+        initialCategory={
+          currentPage === 'estanque-dutos'
+            ? 'Estanque Dutos'
+            : currentPage === 'maintenance'
+              ? 'Manutenção'
+              : 'Obra'
+        }
       />
 
       <QuickEntryModal
