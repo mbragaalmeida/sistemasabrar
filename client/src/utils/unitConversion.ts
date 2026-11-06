@@ -86,7 +86,37 @@ export function normalizeUnit(unit) {
   if (['LATA', 'LATAS'].includes(u)) return 'LATA';
   if (['SACO', 'SACOS', 'SC'].includes(u)) return 'SACO';
   if (['BALDE', 'BALDES', 'BD'].includes(u)) return 'BALDE';
+  if (u.includes('BOTIJA') || u.includes('CILINDRO') || u.includes('BUJAO')) return 'BOTIJA';
   return u;
+}
+
+/**
+ * Extrai a capacidade em KG de botija/cilindro de gás refrigerante ou industrial
+ */
+export function extractGasCylinderKg(materialName = '', unit = ''): number {
+  const combined = `${materialName} ${unit}`.toUpperCase();
+
+  // 1. Procura especificação direta de kg na unidade ou nome (ex: "botija c/ 13,6kg", "13.6 KG", "9KG", "1KG", "3KG", "11,3KG")
+  const directMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*k(?:g|ilos?|gs?)\b/i);
+  if (directMatch) {
+    const val = parseFloat(directMatch[1].replace(',', '.'));
+    if (!isNaN(val) && val > 0) return val;
+  }
+
+  // 2. Procura pelo tipo de gás nos padrões conhecidos
+  const gasType = detectRefrigerant(combined);
+  if (gasType && (REFRIGERANT_CYLINDER_KG as any)[gasType]) {
+    return (REFRIGERANT_CYLINDER_KG as any)[gasType];
+  }
+
+  // Se for R-410A / R-407C padrão
+  if (combined.includes('R410') || combined.includes('R-410') || combined.includes('R407') || combined.includes('R-407')) return 11.3;
+  // Se for R-22 / R-134A / R-141B padrão
+  if (combined.includes('R22') || combined.includes('R-22') || combined.includes('R134') || combined.includes('R-134') || combined.includes('R141') || combined.includes('R-141')) return 13.6;
+  // Se for R-32 padrão
+  if (combined.includes('R32') || combined.includes('R-32')) return 3.0;
+
+  return 11.3; // Default refrigerante
 }
 
 /**
@@ -250,11 +280,33 @@ export function convertMaterialUnits(materialName, fromUnit, toUnit, quantity = 
     };
   }
 
-  // 4. CASO: GÁS REFRIGERANTE (Comprado em Botija/Cilindro e estocado em KG)
-  const isGas = (nameUpper.includes('GAS') || nameUpper.includes('GÁS') || nameUpper.includes('REFRIGERANTE') || nameUpper.includes('R-410') || nameUpper.includes('R410'));
-  if (isGas && (normFrom === 'UN' || normFrom === 'CX' || normFrom === 'LATA') && normTo === 'KG') {
-    const gasType = detectRefrigerant(nameUpper);
-    const kgPerCylinder = gasType ? (REFRIGERANT_CYLINDER_KG[gasType] || 11.3) : 11.3;
+  // 4. CASO: GÁS REFRIGERANTE E GASES INDUSTRIAIS (Botija/Cilindro <-> KG)
+  const isGas = (
+    nameUpper.includes('GAS') ||
+    nameUpper.includes('GÁS') ||
+    nameUpper.includes('REFRIGERANTE') ||
+    nameUpper.includes('ACETILENO') ||
+    nameUpper.includes('NITROGÊNIO') ||
+    nameUpper.includes('NITROGENIO') ||
+    nameUpper.includes('OXIGÊNIO') ||
+    nameUpper.includes('OXIGENIO') ||
+    nameUpper.includes('R-410') ||
+    nameUpper.includes('R410') ||
+    nameUpper.includes('R-22') ||
+    nameUpper.includes('R22') ||
+    nameUpper.includes('R-134') ||
+    nameUpper.includes('R134') ||
+    nameUpper.includes('R-32') ||
+    nameUpper.includes('R32') ||
+    nameUpper.includes('R-407') ||
+    nameUpper.includes('R407') ||
+    nameUpper.includes('R-141') ||
+    nameUpper.includes('R141')
+  );
+
+  // 4A: Gás em Botija/Cilindro/Unidade -> convertendo para KG
+  if (isGas && (normFrom === 'UN' || normFrom === 'CX' || normFrom === 'LATA' || normFrom === 'BOTIJA') && normTo === 'KG') {
+    const kgPerCylinder = extractGasCylinderKg(nameUpper, fromUnit);
     const convertedQty = Number((quantity * kgPerCylinder).toFixed(2));
     const convertedPrice = Number((unitPrice / kgPerCylinder).toFixed(2));
 
@@ -262,7 +314,22 @@ export function convertMaterialUnits(materialName, fromUnit, toUnit, quantity = 
       convertedQuantity: convertedQty,
       convertedUnitPrice: convertedPrice,
       factor: kgPerCylinder,
-      explanation: `Conversão Refrigerante ${gasType || 'R-410A'}: 1 cilindro = ${kgPerCylinder} kg. Preço convertido: R$ ${convertedPrice.toFixed(2)}/kg`,
+      explanation: `Conversão Gás: 1 botija/cilindro = ${kgPerCylinder} kg. Preço convertido: R$ ${convertedPrice.toFixed(2)}/kg`,
+      isConverted: true
+    };
+  }
+
+  // 4B: Gás informado em KG -> convertendo para Botija/Cilindro/Unidade de estoque
+  if (isGas && normFrom === 'KG' && (normTo === 'UN' || normTo === 'CX' || normTo === 'LATA' || normTo === 'BOTIJA')) {
+    const kgPerCylinder = extractGasCylinderKg(nameUpper, toUnit);
+    const convertedQty = Number((quantity / kgPerCylinder).toFixed(2));
+    const convertedPrice = Number((unitPrice * kgPerCylinder).toFixed(2));
+
+    return {
+      convertedQuantity: convertedQty,
+      convertedUnitPrice: convertedPrice,
+      factor: 1 / kgPerCylinder,
+      explanation: `Conversão Gás em KG: ${quantity} kg = ${convertedQty} botija(s) (capacidade: ${kgPerCylinder} kg/botija). Preço convertido: R$ ${convertedPrice.toFixed(2)}/${toUnit}`,
       isConverted: true
     };
   }

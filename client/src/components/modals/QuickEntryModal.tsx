@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Package, Check, X, AlertCircle, Search } from 'lucide-react';
+import { PlusCircle, Package, Check, X, AlertCircle, Search, Scale, Sparkles } from 'lucide-react';
 import { Material } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { extractGasCylinderKg } from '../../utils/unitConversion';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | ''>('');
   const [quantity, setQuantity] = useState<string>('');
+  const [entryUnitMode, setEntryUnitMode] = useState<'standard' | 'kg'>('standard');
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       }
       setSearchTerm('');
       setQuantity('');
+      setEntryUnitMode('standard');
       setNotes('');
       setError(null);
     }
@@ -44,6 +47,23 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   if (!isOpen) return null;
 
   const selectedMat = materials.find(m => m.id === Number(selectedMaterialId));
+  const isGas = Boolean(
+    selectedMat && (
+      (selectedMat.category || '').toUpperCase().includes('GAS') ||
+      (selectedMat.name || '').toUpperCase().includes('GÁS') ||
+      (selectedMat.name || '').toUpperCase().includes('GAS') ||
+      (selectedMat.name || '').toUpperCase().includes('REFRIGERANTE') ||
+      (selectedMat.unit || '').toLowerCase().includes('botija')
+    )
+  );
+
+  const gasCapacityKg = isGas && selectedMat ? extractGasCylinderKg(selectedMat.name, selectedMat.unit) : 0;
+
+  const rawQty = Number(quantity);
+  const effectiveQty = isGas && entryUnitMode === 'kg' && gasCapacityKg > 0 && !isNaN(rawQty)
+    ? Number((rawQty / gasCapacityKg).toFixed(2))
+    : rawQty;
+
   const filteredMaterials = materials.filter(m =>
     !searchTerm.trim() ||
     m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -56,15 +76,20 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    const qty = Number(quantity);
-    if (!selectedMaterialId || isNaN(qty) || qty <= 0) {
+    if (!selectedMaterialId || isNaN(effectiveQty) || effectiveQty <= 0) {
       setError('Selecione um material e informe uma quantidade válida');
       return;
     }
 
     setLoading(true);
     try {
-      await api.quickStockEntry(Number(selectedMaterialId), qty, notes, currentUser?.id);
+      let finalNotes = notes.trim();
+      if (isGas && entryUnitMode === 'kg') {
+        const kgNote = `[Entrada realizada em KG: ${quantity} kg / Cilindro: ${gasCapacityKg} kg = +${effectiveQty} ${selectedMat?.unit}]`;
+        finalNotes = finalNotes ? `${kgNote} ${finalNotes}` : kgNote;
+      }
+
+      await api.quickStockEntry(Number(selectedMaterialId), effectiveQty, finalNotes, currentUser?.id);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
@@ -144,27 +169,82 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
           )}
 
+          {/* Seletor de Unidade para Categoria de Gases */}
+          {isGas && selectedMat && (
+            <div className="p-3 bg-dark-850 rounded-2xl border border-teal-500/30 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-teal-400 flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5" />
+                  Entrada de Gás — Escolha a Unidade:
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Capacidade: {gasCapacityKg} kg / botija
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEntryUnitMode('standard')}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                    entryUnitMode === 'standard'
+                      ? 'bg-teal-600 text-white border-teal-500 shadow-xs'
+                      : 'bg-dark-800 text-slate-400 border-dark-700 hover:text-white'
+                  }`}
+                >
+                  {selectedMat.unit} (Botijas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEntryUnitMode('kg')}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
+                    entryUnitMode === 'kg'
+                      ? 'bg-teal-600 text-white border-teal-500 shadow-xs'
+                      : 'bg-dark-800 text-slate-400 border-dark-700 hover:text-white'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  Em Quilos (kg)
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Quantidade de Entrada (+){selectedMat ? ` em ${selectedMat.unit}` : ''}
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                Quantidade de Entrada (+)
+              </label>
+              <span className="text-xs font-mono font-bold text-sabrar-400">
+                {isGas && entryUnitMode === 'kg' ? 'Informar em QUILOS (kg)' : `em ${selectedMat?.unit || 'unidade'}`}
+              </span>
+            </div>
             <input
               type="number"
               step="any"
-              min="0.1"
+              min="0.01"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Ex: 500"
+              placeholder={isGas && entryUnitMode === 'kg' ? `Ex: ${gasCapacityKg * 2} (para 2 botijas)` : "Ex: 10"}
               className="w-full text-base font-bold p-3 rounded-2xl border border-dark-700 bg-dark-850 focus:outline-none focus:ring-2 focus:ring-sabrar-500 text-white placeholder-slate-500"
               required
             />
+            {isGas && entryUnitMode === 'kg' && Number(quantity) > 0 && (
+              <div className="text-[11px] text-teal-400 font-medium mt-1 flex items-center gap-1">
+                <span>💡 {quantity} kg ÷ {gasCapacityKg} kg = <strong>+{effectiveQty} {selectedMat?.unit}</strong></span>
+              </div>
+            )}
           </div>
 
           {selectedMat && quantity && Number(quantity) > 0 && (
             <div className="p-3 bg-sabrar-950/80 rounded-2xl border border-sabrar-500/40 flex items-center justify-between text-xs">
               <span className="text-sabrar-300 font-medium">Novo Estoque Físico Previsto:</span>
               <span className="font-black text-sabrar-400 text-base">
-                {selectedMat.stock_physical + Number(quantity)} {selectedMat.unit}
+                {Number((selectedMat.stock_physical + effectiveQty).toFixed(2))} {selectedMat.unit}
+                {isGas && entryUnitMode === 'kg' && (
+                  <span className="text-xs text-slate-400 font-normal ml-1.5 font-mono">
+                    ({quantity} kg inseridos)
+                  </span>
+                )}
               </span>
             </div>
           )}

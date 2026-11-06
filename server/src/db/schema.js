@@ -88,6 +88,15 @@ export async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         notified BOOLEAN DEFAULT FALSE
       );
+      CREATE TABLE IF NOT EXISTS direct_billing_invoices (
+        id SERIAL PRIMARY KEY,
+        direct_billing_id INTEGER NOT NULL REFERENCES direct_billings(id) ON DELETE CASCADE,
+        invoice_number VARCHAR(100) NOT NULL,
+        amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        issue_date DATE DEFAULT CURRENT_DATE,
+        description TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
     console.log('[Database] Esquema de tabelas e colunas sincronizado com sucesso.');
   } catch (err) {

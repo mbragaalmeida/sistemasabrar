@@ -632,6 +632,10 @@ export const api = {
     fetchJson<any>('/direct-billings', { method: 'POST', body: JSON.stringify(data) }),
   toggleDirectBillingStep: (id: number, stepName: string, value: boolean) =>
     fetchJson<any>(`/direct-billings/${id}/step`, { method: 'PATCH', body: JSON.stringify({ stepName, value }) }),
+  addDirectBillingInvoice: (id: number | string, data: { invoice_number: string; amount: number; issue_date?: string; description?: string }) =>
+    fetchJson<any>(`/direct-billings/${id}/invoices`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteDirectBillingInvoice: (invoiceId: number | string) =>
+    fetchJson<any>(`/direct-billings/invoices/${invoiceId}`, { method: 'DELETE' }),
   getWebPurchases: () => fetchJson<any[]>('/direct-billings/web-purchases'),
   createWebPurchase: (data: any) =>
     fetchJson<any>('/direct-billings/web-purchases', { method: 'POST', body: JSON.stringify(data) }),

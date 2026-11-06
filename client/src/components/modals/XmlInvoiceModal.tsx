@@ -1,7 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { FileCode, UploadCloud, X, CheckCircle, AlertCircle, ArrowRight, RefreshCw, Layers, DollarSign, Building2, PackagePlus } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { FileCode, UploadCloud, X, CheckCircle, AlertCircle, ArrowRight, RefreshCw, Layers, DollarSign, Building2, PackagePlus, Link2, Sparkles, Check } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { Material } from '../../types';
+import { convertMaterialUnits } from '../../utils/unitConversion';
 
 interface XmlInvoiceModalProps {
   isOpen: boolean;
@@ -23,6 +25,13 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<any | null>(null);
   const [successResult, setSuccessResult] = useState<any | null>(null);
+  const [baseMaterials, setBaseMaterials] = useState<Material[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      api.getMaterials().then(setBaseMaterials).catch(console.error);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -43,12 +52,64 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
       try {
         const preview = await api.previewNfeXml(selected);
         setPreviewData(preview);
+        if (preview.availableMaterials && Array.isArray(preview.availableMaterials)) {
+          setBaseMaterials(preview.availableMaterials);
+        }
       } catch (err: any) {
         setError(err.message || 'Erro ao processar o arquivo XML.');
       } finally {
         setLoadingPreview(false);
       }
     }
+  };
+
+  const handleMatchChange = (itemIndex: number, materialIdStr: string) => {
+    if (!previewData || !previewData.items) return;
+
+    const newItems = [...previewData.items];
+    const item = { ...newItems[itemIndex] };
+
+    if (!materialIdStr || materialIdStr === 'NEW') {
+      item.matchedMaterialId = null;
+      item.matchedMaterialCode = null;
+      item.matchedMaterialName = item.xmlName;
+      item.currentBasePrice = 0;
+      item.currentPhysicalStock = 0;
+      item.targetUnit = item.xmlUnit;
+      item.convertedQuantity = item.xmlQuantity;
+      item.convertedUnitPrice = item.xmlUnitPrice;
+      item.isConverted = false;
+      item.conversionExplanation = 'Novo material a ser cadastrado na base';
+      item.action = 'CREATE_NEW_MATERIAL';
+    } else {
+      const matId = Number(materialIdStr);
+      const selectedMat = baseMaterials.find(m => m.id === matId);
+      if (selectedMat) {
+        item.matchedMaterialId = selectedMat.id;
+        item.matchedMaterialCode = selectedMat.code;
+        item.matchedMaterialName = selectedMat.name;
+        item.currentBasePrice = selectedMat.reference_price;
+        item.currentPhysicalStock = selectedMat.stock_physical;
+        item.targetUnit = selectedMat.unit;
+
+        const conversion = convertMaterialUnits(
+          selectedMat.name,
+          item.xmlUnit,
+          selectedMat.unit,
+          item.xmlQuantity,
+          item.xmlUnitPrice
+        );
+
+        item.convertedQuantity = conversion.convertedQuantity;
+        item.convertedUnitPrice = conversion.convertedUnitPrice;
+        item.isConverted = conversion.isConverted;
+        item.conversionExplanation = conversion.explanation;
+        item.action = 'UPDATE_PRICE_AND_STOCK';
+      }
+    }
+
+    newItems[itemIndex] = item;
+    setPreviewData({ ...previewData, items: newItems });
   };
 
   const handleConfirm = async () => {
@@ -85,7 +146,7 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-4xl bg-dark-900 border border-dark-750 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-slate-100 max-h-[90vh]">
+      <div className="w-full max-w-5xl bg-dark-900 border border-dark-750 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-slate-100 max-h-[90vh]">
         {/* Header */}
         <div className="p-4 sm:p-5 bg-dark-850 border-b border-dark-750 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -251,71 +312,121 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
                 </div>
               </div>
 
-              {/* Tabela de Produtos */}
+              {/* Conferência & Vínculo de Itens (De-Para Interativo) */}
               <div className="bg-dark-850 rounded-2xl border border-dark-700 overflow-hidden">
-                <div className="p-3 bg-dark-800 border-b border-dark-700 flex items-center justify-between text-xs font-bold text-white">
-                  <span>Itens Identificados ({previewData.items.length})</span>
+                <div className="p-3 bg-dark-800 border-b border-dark-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-white">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-sabrar-400" />
+                    <span>Conferência & Vínculo de Itens (De-Para) — {previewData.items.length} itens</span>
+                  </div>
                   <span className="text-[11px] text-slate-400 font-normal">
-                    Verifique os preços e conversões de unidade calculadas
+                    Confirme o material correspondente da base ou cadastre como novo insumo
                   </span>
                 </div>
 
-                <div className="overflow-x-auto max-h-72">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-dark-800/80 text-slate-400 font-semibold sticky top-0 border-b border-dark-700">
-                      <tr>
-                        <th className="p-2.5">Item / Descrição</th>
-                        <th className="p-2.5 text-center">Unidade NF vs Base</th>
-                        <th className="p-2.5 text-center">Qtd Entrada</th>
-                        <th className="p-2.5 text-right">Preço Atual</th>
-                        <th className="p-2.5 text-right font-bold text-white">Novo Preço Base</th>
-                        <th className="p-2.5 text-center">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-dark-750">
-                      {previewData.items.map((item: any) => (
-                        <tr key={item.itemNumber} className="hover:bg-dark-800/50">
-                          <td className="p-2.5">
-                            <div className="font-bold text-white max-w-xs truncate">{item.xmlName}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              Cód: {item.xmlCode} • {item.inferredCategory}
+                <div className="overflow-y-auto max-h-[50vh] divide-y divide-dark-750 p-3 space-y-3">
+                  {previewData.items.map((item: any, idx: number) => {
+                    const isMatched = Boolean(item.matchedMaterialId);
+                    return (
+                      <div
+                        key={item.itemNumber || idx}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isMatched
+                            ? 'bg-dark-900/90 border-dark-700 hover:border-dark-600'
+                            : 'bg-dark-900/60 border-amber-500/30'
+                        }`}
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          {/* Coluna 1: Produto na NF-e */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-dark-800 text-slate-400 border border-dark-700">
+                                Item #{item.itemNumber || idx + 1}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500">
+                                Cód NF: {item.xmlCode}
+                              </span>
+                              {item.action === 'UPDATE_PRICE_AND_STOCK' ? (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40">
+                                  🔗 Vinculado à Base
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 text-amber-400" />
+                                  Novo Insumo
+                                </span>
+                              )}
                             </div>
+
+                            <div className="font-bold text-white text-sm mt-1">
+                              {item.xmlName}
+                            </div>
+
+                            <div className="text-xs text-slate-400 mt-0.5 font-mono">
+                              NF-e: <strong className="text-white">{item.xmlQuantity} {item.xmlUnit}</strong> a R$ {Number(item.xmlUnitPrice || 0).toFixed(2)}/un
+                              {' '}(Total: R$ {Number(item.xmlTotalPrice || 0).toFixed(2)})
+                            </div>
+
                             {item.isConverted && (
-                              <div className="text-[10px] text-teal-400 font-medium mt-0.5">
-                                💡 {item.conversionExplanation}
+                              <div className="text-[11px] text-teal-400 font-medium mt-1 flex items-center gap-1">
+                                <span>💡 {item.conversionExplanation}</span>
                               </div>
                             )}
-                          </td>
-                          <td className="p-2.5 text-center">
-                            <span className="font-mono text-slate-300">
-                              {item.xmlUnit} {item.isConverted && `➜ ${item.targetUnit}`}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-center font-bold text-white font-mono">
-                            {item.convertedQuantity} {item.targetUnit}
-                          </td>
-                          <td className="p-2.5 text-right text-slate-400 font-mono">
-                            {item.currentBasePrice > 0 ? `R$ ${item.currentBasePrice.toFixed(2)}` : '—'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-black text-sabrar-300">
-                            R$ {item.convertedUnitPrice.toFixed(2)}
-                            <span className="text-[10px] text-slate-400 font-normal">/{item.targetUnit}</span>
-                          </td>
-                          <td className="p-2.5 text-center">
-                            {item.action === 'UPDATE_PRICE_AND_STOCK' ? (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sabrar-950 text-sabrar-300 border border-sabrar-500/40">
-                                Atualizar Preço
-                              </span>
+                          </div>
+
+                          {/* Coluna 2: De-Para Selector */}
+                          <div className="lg:w-80 shrink-0 space-y-1.5">
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                              Corresponde a qual Insumo da Base?
+                            </label>
+                            <select
+                              value={item.matchedMaterialId || 'NEW'}
+                              onChange={(e) => handleMatchChange(idx, e.target.value)}
+                              className="w-full text-xs p-2.5 rounded-xl border border-dark-700 bg-dark-850 text-white font-medium focus:outline-none focus:border-sabrar-500 cursor-pointer"
+                            >
+                              <option value="NEW">
+                                ✨ [Cadastrar como Novo Insumo na Base]
+                              </option>
+                              <optgroup label="Materiais Existentes no Catálogo SABRAR">
+                                {baseMaterials.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.code} — {m.name} ({m.stock_physical} {m.unit} | R$ {Number(m.reference_price).toFixed(2)})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+
+                            {/* Resumo do Impacto da Seleção */}
+                            {isMatched ? (
+                              <div className="p-2 bg-dark-850 rounded-xl border border-dark-750 text-[11px] text-slate-300 space-y-0.5">
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Entrada Física:</span>
+                                  <strong className="text-sabrar-300 font-mono">
+                                    +{item.convertedQuantity} {item.targetUnit} (Total: {item.currentPhysicalStock + item.convertedQuantity})
+                                  </strong>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Novo Preço Base:</span>
+                                  <strong className="text-white font-mono">
+                                    R$ {Number(item.convertedUnitPrice).toFixed(2)}/{item.targetUnit}
+                                    {item.currentBasePrice > 0 && (
+                                      <span className="text-[10px] text-slate-500 font-normal ml-1">
+                                        (antigo: R$ {Number(item.currentBasePrice).toFixed(2)})
+                                      </span>
+                                    )}
+                                  </strong>
+                                </div>
+                              </div>
                             ) : (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-500/40">
-                                Novo Cadastro
-                              </span>
+                              <div className="p-2 bg-dark-850 rounded-xl border border-dark-750 text-[11px] text-amber-300/80">
+                                Será criado com estoque inicial de <strong>{item.xmlQuantity} {item.xmlUnit}</strong> a <strong>R$ {Number(item.xmlUnitPrice).toFixed(2)}</strong>.
+                              </div>
                             )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

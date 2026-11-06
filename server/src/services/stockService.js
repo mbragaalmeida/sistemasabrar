@@ -680,6 +680,51 @@ export class StockService {
     const approverUser = await db.prepare('SELECT name FROM users WHERE id = ?').get(adminUserId);
     const approverName = approverUser?.name || 'Administrador';
 
+    // 1. Libera qualquer reserva existente e estorna estoque caso já estivesse marcado como separado
+    const items = await db.prepare('SELECT * FROM material_request_items WHERE request_id = ?').all(requestId);
+    for (const it of items) {
+      if (it.material_id) {
+        const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').get(it.material_id);
+        if (mat) {
+          let newReserved = mat.stock_reserved;
+          let newPhysical = mat.stock_physical;
+          let changed = false;
+
+          if (it.quantity_reserved > 0) {
+            const conv = convertItemQuantityAndPrice(mat, it.quantity_reserved, it.custom_unit);
+            newReserved = Math.max(0, newReserved - conv.standardQty);
+            changed = true;
+          }
+
+          if ((req.status === 'Separado' || req.status === 'Entregue') && (it.quantity_delivered > 0 || it.quantity_requested > 0)) {
+            const qtyDelivered = it.quantity_delivered > 0 ? it.quantity_delivered : it.quantity_requested;
+            const conv = convertItemQuantityAndPrice(mat, qtyDelivered, it.custom_unit);
+            newPhysical = Number((newPhysical + conv.standardQty).toFixed(2));
+            changed = true;
+
+            await db.prepare(`
+              INSERT INTO stock_movements (material_id, type, quantity, previous_stock, new_stock, project_id, reference_id, user_id, notes)
+              VALUES (?, 'AJUSTE', ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              mat.id, conv.standardQty, mat.stock_physical, newPhysical,
+              project.id, requestId, adminUserId,
+              `Estorno de baixa: solicitação ${req.code} rejeitada por ${approverName}`
+            );
+          }
+
+          if (changed) {
+            await db.prepare(`
+              UPDATE materials 
+              SET stock_reserved = ?, stock_physical = ?, updated_at = CURRENT_TIMESTAMP 
+              WHERE id = ?
+            `).run(newReserved, newPhysical, mat.id);
+          }
+        }
+      }
+    }
+
+    await db.prepare('UPDATE material_request_items SET quantity_reserved = 0, quantity_delivered = 0 WHERE request_id = ?').run(requestId);
+
     await db.prepare(`
       UPDATE material_requests 
       SET status = 'Cancelado', admin_approval_status = 'Rejeitado', admin_approved_by = ?,
@@ -721,6 +766,10 @@ export class StockService {
   static async updateRequestStatus(requestId, newStatus, userId, notes = '') {
     const req = await db.prepare('SELECT * FROM material_requests WHERE id = ?').get(requestId);
     if (!req) throw new Error('Solicitação não encontrada');
+
+    if (req.admin_approval_status === 'Rejeitado' || req.status === 'Cancelado') {
+      throw new Error(`Esta solicitação (${req.code}) foi cancelada/rejeitada pelo administrador e não pode ser separada nem ter baixa no estoque.`);
+    }
 
     const items = await db.prepare('SELECT * FROM material_request_items WHERE request_id = ?').all(requestId);
     if (!items || items.length === 0) throw new Error('Itens da solicitação não encontrados');

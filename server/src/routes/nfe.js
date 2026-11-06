@@ -3,6 +3,7 @@ import multer from 'multer';
 import { db } from '../db/connection.js';
 import { parseNfeXml } from '../utils/nfeParser.js';
 import { convertMaterialUnits, normalizeUnit } from '../utils/unitConversion.js';
+import { generateNextPurchaseCode } from '../services/stockService.js';
 
 export const nfeRouter = express.Router();
 
@@ -55,20 +56,35 @@ nfeRouter.post('/preview', upload.single('xmlFile'), async (req, res) => {
     }
 
     // Busca todos os materiais existentes para tentar matching
-    const existingMaterials = await db.prepare('SELECT * FROM materials').all();
+    const existingMaterials = await db.prepare('SELECT id, code, name, category, unit, reference_price, stock_physical FROM materials ORDER BY name ASC').all();
+    const aliases = await db.prepare('SELECT alias_name, material_id FROM material_aliases').all();
+    const aliasMap = new Map();
+    aliases.forEach(a => {
+      aliasMap.set(String(a.alias_name).toLowerCase().trim(), a.material_id);
+    });
 
     const previewItems = parsedNfe.items.map(item => {
       const cleanItemName = item.name.trim();
+      const lowerName = cleanItemName.toLowerCase();
 
-      // Tenta localizar material existente por código idêntico ou busca por palavras-chave
-      let matchedMaterial = existingMaterials.find(m =>
-        m.code.toUpperCase() === item.code.toUpperCase() ||
-        m.name.toLowerCase() === cleanItemName.toLowerCase()
-      );
+      // 1. Tenta por alias previamente confirmado
+      let matchedMaterial = null;
+      if (aliasMap.has(lowerName)) {
+        const matId = aliasMap.get(lowerName);
+        matchedMaterial = existingMaterials.find(m => m.id === matId);
+      }
 
+      // 2. Tenta por código idêntico ou nome exato
       if (!matchedMaterial) {
-        // Tenta encontrar por similaridade parcial
-        const words = cleanItemName.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        matchedMaterial = existingMaterials.find(m =>
+          m.code.toUpperCase() === item.code.toUpperCase() ||
+          m.name.toLowerCase() === lowerName
+        );
+      }
+
+      // 3. Tenta por similaridade de palavras-chave
+      if (!matchedMaterial) {
+        const words = lowerName.split(/\s+/).filter(w => w.length > 3);
         if (words.length > 0) {
           matchedMaterial = existingMaterials.find(m => {
             const mName = m.name.toLowerCase();
@@ -111,7 +127,8 @@ nfeRouter.post('/preview', upload.single('xmlFile'), async (req, res) => {
       emissionDate: parsedNfe.emissionDate,
       totalValue: parsedNfe.totalValue,
       supplier: parsedNfe.supplier,
-      items: previewItems
+      items: previewItems,
+      availableMaterials: existingMaterials
     });
   } catch (err) {
     console.error('[NF-e Preview Error]', err);
@@ -255,6 +272,47 @@ nfeRouter.post('/confirm', async (req, res) => {
         );
 
         createdCount++;
+      }
+
+      // 3. Registra na tabela purchases para alimentar histórico e inteligência de preços
+      try {
+        const purchaseCode = await generateNextPurchaseCode();
+        const finalQty = Number(item.convertedQuantity) || Number(item.xmlQuantity) || 1;
+        const finalUnitPrice = Number(item.convertedUnitPrice) || Number(item.xmlUnitPrice) || 0;
+        const finalTotalPrice = Number((finalQty * finalUnitPrice).toFixed(2)) || Number(item.xmlTotalPrice) || 0;
+
+        await db.prepare(`
+          INSERT INTO purchases (
+            code, material_id, quantity, supplier_id,
+            unit_price, total_price, status, priority,
+            purchase_date, received_date, buyer_id,
+            notes, custom_name, custom_unit, approval_status
+          ) VALUES (?, ?, ?, ?, ?, ?, 'Recebido', 'Normal', CURRENT_DATE, CURRENT_DATE, ?, ?, ?, ?, 'Aprovado')
+        `).run(
+          purchaseCode,
+          materialId,
+          finalQty,
+          supplierId,
+          finalUnitPrice,
+          finalTotalPrice,
+          userId || 1,
+          `Entrada via NF-e nº ${invoiceNumber} (${supplier?.name || 'Fornecedor'})`,
+          item.xmlName.trim(),
+          item.targetUnit || item.xmlUnit || 'un'
+        );
+      } catch (purErr) {
+        console.warn('[NF-e Purchase Record Warning]', purErr.message);
+      }
+
+      // 4. Salva vínculo permanente na tabela material_aliases para auto-reconhecimento em notas futuras
+      if (item.matchedMaterialId) {
+        try {
+          const cleanAlias = item.xmlName.trim().toLowerCase();
+          const existingAlias = await db.prepare('SELECT id FROM material_aliases WHERE LOWER(alias_name) = ? AND material_id = ?').get(cleanAlias, materialId);
+          if (!existingAlias) {
+            await db.prepare('INSERT INTO material_aliases (alias_name, material_id) VALUES (?, ?)').run(cleanAlias, materialId);
+          }
+        } catch (_) {}
       }
     }
 

@@ -444,21 +444,23 @@ materialsRouter.get('/:id/price-intelligence', async (req, res) => {
       SELECT 
         p.id,
         p.code,
-        p.created_at as purchase_date,
+        COALESCE(p.purchase_date, p.created_at::date, CURRENT_DATE) as purchase_date,
         p.quantity,
-        p.unit,
+        COALESCE(p.custom_unit, m.unit, 'un') as unit,
         p.unit_price,
         p.total_price,
         p.status,
-        p.approval_status,
-        p.supplier_name,
+        COALESCE(p.approval_status, 'Aprovado') as approval_status,
+        COALESCE(s.name, 'Fornecedor') as supplier_name,
         pr.name as project_name
       FROM purchases p
       LEFT JOIN projects pr ON pr.id = p.project_id
-      WHERE (p.material_id = ? OR p.material_name ILIKE ?) AND p.unit_price > 0
+      LEFT JOIN materials m ON p.material_id = m.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE (p.material_id = ? OR p.custom_name ILIKE ? OR (m.name IS NOT NULL AND m.name ILIKE ?)) AND p.unit_price > 0
       ORDER BY p.created_at DESC
       LIMIT 20
-    `).all(id, mat.name);
+    `).all(id, mat.name, mat.name);
 
     // 1. Último Preço Autorizado (Print 1)
     const lastAuthorized = purchases.find(p => p.approval_status === 'Aprovado' || p.status === 'Recebido');

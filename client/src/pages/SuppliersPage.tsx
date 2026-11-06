@@ -25,10 +25,74 @@ const COMMON_CATEGORIES = [
   'Válvulas & Registros'
 ];
 
+// Helper para normalizar texto removendo acentos e pontuações
+const normalizeText = (text: string = ''): string => {
+  return String(text)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+};
+
+// Helper para converter string, JSON ou array em lista de categorias
+const parseCategories = (categories: any, fallbackCategory?: string | null): string[] => {
+  if (Array.isArray(categories)) {
+    return categories.map(c => String(c).trim()).filter(Boolean);
+  }
+  if (typeof categories === 'string' && categories.trim()) {
+    try {
+      if (categories.startsWith('[') && categories.endsWith(']')) {
+        const parsed = JSON.parse(categories);
+        if (Array.isArray(parsed)) return parsed.map(c => String(c).trim()).filter(Boolean);
+      }
+    } catch (_) {}
+    return categories.split(',').map(c => c.trim()).filter(Boolean);
+  }
+  if (fallbackCategory && typeof fallbackCategory === 'string' && fallbackCategory.trim()) {
+    return [fallbackCategory.trim()];
+  }
+  return [];
+};
+
+// Helper para converter contatos
+const parseContacts = (contacts: any, person?: string | null, phone?: string | null, email?: string | null): ContactRow[] => {
+  if (Array.isArray(contacts) && contacts.length > 0) {
+    return contacts.map(c => ({
+      name: c.name || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      role: c.role || 'Vendas'
+    }));
+  }
+  if (typeof contacts === 'string' && contacts.trim()) {
+    try {
+      const parsed = JSON.parse(contacts);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(c => ({
+          name: c.name || '',
+          phone: c.phone || '',
+          email: c.email || '',
+          role: c.role || 'Vendas'
+        }));
+      }
+    } catch (_) {}
+  }
+  if (person || phone || email) {
+    return [{
+      name: person || '',
+      phone: phone || '',
+      email: email || '',
+      role: 'Vendas'
+    }];
+  }
+  return [];
+};
+
 export const SuppliersPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   // Permissão de exclusão: restrito a Administradores e Emily
@@ -93,33 +157,13 @@ export const SuppliersPage: React.FC = () => {
     setCnpj(s.cnpj || '');
     
     // Categorias múltiplas (Item 13)
-    if (Array.isArray(s.categories) && s.categories.length > 0) {
-      setCategories(s.categories);
-    } else if (s.category) {
-      setCategories([s.category]);
-    } else {
-      setCategories([]);
-    }
+    const parsedCats = parseCategories(s.categories, s.category);
+    setCategories(parsedCats);
     setCustomCategoryInput('');
 
     // Múltiplos contatos/vendedores (Item 12)
-    if (Array.isArray(s.contacts) && s.contacts.length > 0) {
-      setContacts(s.contacts.map((c: any) => ({
-        name: c.name || '',
-        phone: c.phone || '',
-        email: c.email || '',
-        role: c.role || 'Vendas'
-      })));
-    } else if (s.contact_person || s.phone || s.email) {
-      setContacts([{
-        name: s.contact_person || '',
-        phone: s.phone || '',
-        email: s.email || '',
-        role: 'Vendas'
-      }]);
-    } else {
-      setContacts([{ name: '', phone: '', email: '', role: 'Vendas' }]);
-    }
+    const parsedContacts = parseContacts(s.contacts, s.contact_person, s.phone, s.email);
+    setContacts(parsedContacts.length > 0 ? parsedContacts : [{ name: '', phone: '', email: '', role: 'Vendas' }]);
 
     setMaterialsSupplied(s.materials_supplied || '');
     setNotes(s.notes || '');
@@ -207,33 +251,87 @@ export const SuppliersPage: React.FC = () => {
     }
   };
 
+  // Lista de todas as categorias dinâmicas (Padrão + Cadastradas por usuários)
+  const allCategories = useMemo(() => {
+    const set = new Set<string>();
+    COMMON_CATEGORIES.forEach(c => set.add(c));
+    suppliers.forEach(s => {
+      const cats = parseCategories(s.categories, s.category);
+      cats.forEach(c => {
+        if (c.trim()) set.add(c.trim());
+      });
+    });
+    return Array.from(set);
+  }, [suppliers]);
+
   // Filtragem flexível por produto vendido, vendedor, nome, cnpj ou categorias
   const filteredSuppliers = useMemo(() => {
     let result = suppliers;
+
+    // 1. Filtro por Categoria Selecionada
+    if (selectedCategory !== 'all') {
+      const normCat = normalizeText(selectedCategory);
+
+      // Mapeamento inteligente de palavras-chave para categorias com termos sinônimos ou compostos
+      const categoryKeywords: Record<string, string[]> = {
+        'tubulação & conexões de cobre': ['cobre', 'tubulac', 'conexo', 'solda'],
+        'isolamento térmico (armaflex)': ['armaflex', 'isolamento', 'isotubo', 'la de vidro', 'la de rocha', 'fita tdc', 'vedacao', 'manta', 'termo'],
+        'dutos mpu & chapas': ['duto', 'mpu', 'chapa', 'galvaniz', 'difus', 'grelha', 'flange'],
+        'gases refrigerantes': ['gas', 'refrigeran', 'r410', 'r-410', 'r22', 'r-22', 'r134', 'r-134', 'r32', 'r-32', 'r407', 'r-407', 'nitrogenio', 'oxigenio', 'acetileno'],
+        'climatização vrf / split': ['climatiz', 'vrf', 'split', 'ar condicionado', 'chiller', 'fancoil', 'evaporadora', 'condensadora'],
+        'elétrica & comandos': ['eletric', 'cabo', 'fio', 'disjuntor', 'quadro', 'sensor', 'termostato', 'painel'],
+        'fixação & suportes': ['fixac', 'suporte', 'chumbador', 'barra roscada', 'tirante', 'parafuso', 'porca', 'arruela'],
+        'epis & segurança': ['epi', 'seguranca', 'bota', 'luva', 'oculos', 'capacete', 'cinto'],
+        'ferramentas & instrumentação': ['ferramenta', 'manometro', 'manifold', 'bomba de vacuo', 'vacuometro', 'alicate', 'maquina'],
+        'civil & hidráulica': ['hidraulic', 'civil', 'pvc', 'registro', 'valvula', 'cano', 'conexao hidraulica', 'construcao', 'gesso', 'drywall'],
+        'válvulas & registros': ['valvula', 'registro', 'esfera', 'solenoide', 'globo', 'borboleta', 'retencao', 'filtro y']
+      };
+
+      const customKeywords = categoryKeywords[normCat] || normCat.split(/[\s,&/()\-]+/).filter(w => w.length >= 3);
+
+      result = result.filter(s => {
+        const sCats = parseCategories(s.categories, s.category).map(normalizeText);
+        const sMaterials = normalizeText(s.materials_supplied || '');
+        const sName = normalizeText(s.name || '');
+
+        // Match direto em categorias cadastradas
+        if (sCats.some(c => c.includes(normCat) || normCat.includes(c))) return true;
+
+        // Match direto no texto de materiais fornecidos
+        if (sMaterials.includes(normCat)) return true;
+
+        // Match por palavras-chave relevantes
+        if (customKeywords.length > 0) {
+          const matchCatWord = sCats.some(c => customKeywords.some(kw => c.includes(kw)));
+          const matchMatWord = customKeywords.some(kw => sMaterials.includes(kw) || sName.includes(kw));
+          if (matchCatWord || matchMatWord) return true;
+        }
+
+        return false;
+      });
+    }
+
+    // 2. Filtro textual por nome, material, vendedor, cnpj, etc.
     if (search.trim()) {
-      const q = search.toLowerCase().trim();
-      result = suppliers.filter(s => {
-        const matchesName = (s.name || '').toLowerCase().includes(q);
-        const matchesCorp = (s.corporate_name || '').toLowerCase().includes(q);
-        const matchesMaterials = (s.materials_supplied || '').toLowerCase().includes(q);
-        const matchesNotes = (s.notes || '').toLowerCase().includes(q);
-        const matchesCnpj = (s.cnpj || '').includes(q);
+      const q = normalizeText(search);
+      result = result.filter(s => {
+        const matchesName = normalizeText(s.name || '').includes(q);
+        const matchesCorp = normalizeText(s.corporate_name || '').includes(q);
+        const matchesMaterials = normalizeText(s.materials_supplied || '').includes(q);
+        const matchesNotes = normalizeText(s.notes || '').includes(q);
+        const matchesCnpj = (s.cnpj || '').replace(/\D/g, '').includes(q.replace(/\D/g, '')) || (s.cnpj || '').toLowerCase().includes(q);
 
-        const cats = Array.isArray(s.categories) ? s.categories.join(' ').toLowerCase() : (s.category || '').toLowerCase();
-        const matchesCats = cats.includes(q);
+        const sCats = parseCategories(s.categories, s.category).map(normalizeText).join(' ');
+        const matchesCats = sCats.includes(q);
 
-        const contactsList = Array.isArray(s.contacts) ? s.contacts : [];
-        const matchesContacts = contactsList.some((c: any) =>
-          (c.name || '').toLowerCase().includes(q) ||
+        const contactsList = parseContacts(s.contacts, s.contact_person, s.phone, s.email);
+        const matchesContacts = contactsList.some(c =>
+          normalizeText(c.name || '').includes(q) ||
           (c.phone || '').includes(q) ||
-          (c.email || '').toLowerCase().includes(q)
+          normalizeText(c.email || '').includes(q)
         );
 
-        const matchesLegacyPerson = (s.contact_person || '').toLowerCase().includes(q);
-        const matchesLegacyPhone = (s.phone || '').includes(q);
-        const matchesLegacyEmail = (s.email || '').toLowerCase().includes(q);
-
-        return matchesName || matchesCorp || matchesMaterials || matchesNotes || matchesCnpj || matchesCats || matchesContacts || matchesLegacyPerson || matchesLegacyPhone || matchesLegacyEmail;
+        return matchesName || matchesCorp || matchesMaterials || matchesNotes || matchesCnpj || matchesCats || matchesContacts;
       });
     }
 
@@ -241,7 +339,7 @@ export const SuppliersPage: React.FC = () => {
     return [...result].sort((a, b) =>
       (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' })
     );
-  }, [suppliers, search]);
+  }, [suppliers, search, selectedCategory]);
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
@@ -293,30 +391,37 @@ export const SuppliersPage: React.FC = () => {
           </div>
 
           <div className="text-xs text-slate-400 shrink-0 font-medium">
-            <strong className="text-white">{filteredSuppliers.length}</strong> fornecedor(es) em ordem alfabética
+            <strong className="text-white">{filteredSuppliers.length}</strong> fornecedor(es) {selectedCategory !== 'all' ? `em "${selectedCategory}"` : 'em ordem alfabética'}
           </div>
         </div>
 
         {/* Chips de Categorias para Busca Rápida */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs pt-1 border-t border-dark-800 no-scrollbar">
-          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider shrink-0 mr-1">Filtro Rápido:</span>
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider shrink-0 mr-1">Filtro de Categoria:</span>
           <button
-            onClick={() => setSearch('')}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 ${
-              !search ? 'bg-sabrar-600 text-white shadow-xs' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750'
+            onClick={() => setSelectedCategory('all')}
+            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+              selectedCategory === 'all'
+                ? 'bg-sabrar-600 text-white shadow-xs'
+                : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750'
             }`}
           >
             Todos
           </button>
-          {COMMON_CATEGORIES.slice(0, 6).map((cat) => (
+          {allCategories.map((cat) => (
             <button
               key={cat}
-              onClick={() => setSearch(cat)}
-              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 ${
-                search === cat ? 'bg-sabrar-600 text-white shadow-xs' : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750'
+              onClick={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                selectedCategory === cat
+                  ? 'bg-sabrar-600 text-white shadow-xs'
+                  : 'bg-dark-850 text-slate-400 hover:text-white border border-dark-750'
               }`}
             >
-              {cat}
+              <span>{cat}</span>
+              {selectedCategory === cat && (
+                <X className="w-3 h-3 ml-0.5 text-white/80 hover:text-white" />
+              )}
             </button>
           ))}
         </div>
@@ -327,26 +432,26 @@ export const SuppliersPage: React.FC = () => {
         <div className="p-12 text-center text-slate-400 text-xs">Carregando catálogo de fornecedores...</div>
       ) : filteredSuppliers.length === 0 ? (
         <div className="p-12 bg-dark-900 border border-dark-750 rounded-3xl text-center text-slate-400 text-xs space-y-2">
-          <p>Nenhum fornecedor encontrado para "{search}".</p>
-          <button onClick={handleOpenCreate} className="text-sabrar-400 font-bold hover:underline">
-            + Cadastrar novo fornecedor agora
-          </button>
+          <p>Nenhum fornecedor encontrado para {selectedCategory !== 'all' ? `a categoria "${selectedCategory}"` : ''} {search ? `o termo "${search}"` : ''}.</p>
+          <div className="flex items-center justify-center gap-3 pt-1">
+            {(selectedCategory !== 'all' || search) && (
+              <button
+                onClick={() => { setSelectedCategory('all'); setSearch(''); }}
+                className="text-xs text-slate-300 bg-dark-800 hover:bg-dark-750 px-3 py-1.5 rounded-xl border border-dark-700"
+              >
+                Limpar Filtros
+              </button>
+            )}
+            <button onClick={handleOpenCreate} className="text-sabrar-400 font-bold hover:underline">
+              + Cadastrar novo fornecedor agora
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSuppliers.map((s) => {
-            const supplierCats: string[] = Array.isArray(s.categories) && s.categories.length > 0
-              ? s.categories
-              : (s.category ? [s.category] : []);
-            
-            const supplierContacts: ContactRow[] = Array.isArray(s.contacts) && s.contacts.length > 0
-              ? s.contacts
-              : (s.contact_person || s.phone || s.email ? [{
-                  name: s.contact_person || '',
-                  phone: s.phone || '',
-                  email: s.email || '',
-                  role: 'Vendas'
-                }] : []);
+            const supplierCats = parseCategories(s.categories, s.category);
+            const supplierContacts = parseContacts(s.contacts, s.contact_person, s.phone, s.email);
 
             return (
               <div

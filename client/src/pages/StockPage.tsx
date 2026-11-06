@@ -857,116 +857,127 @@ export const StockPage: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Interactive Stepper Pipeline */}
-                  <div className="pt-2 border-t border-dark-750">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2 font-medium">
-                      <span>Etapa do Fluxo de Separação</span>
-                      <span className="text-slate-500">Clique nas etapas para alterar o status</span>
+                  {/* Interactive Stepper Pipeline ou Alerta de Cancelamento */}
+                  {req.admin_approval_status === 'Rejeitado' || req.status === 'Cancelado' ? (
+                    <div className="pt-2 border-t border-dark-750">
+                      <div className="flex items-center gap-2 p-3 bg-rose-950/40 border border-rose-800/40 rounded-2xl text-rose-300 text-xs font-bold">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>Solicitação Rejeitada / Cancelada pelo Administrador ({req.admin_approval_notes || 'Cancelada'}). Nenhuma baixa ou separação é permitida.</span>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
-                      {[
-                        { key: 'solicitado', label: '1. Solicitado', statuses: ['Solicitado', 'Reservado'], targetStatus: 'Solicitado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
-                        { key: 'em_separacao', label: '2. Em Separação', statuses: ['Em Separação', 'Em separação'], targetStatus: 'Em Separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
-                        { key: 'separado_parcial', label: '3. Separado Parcial', statuses: ['Separado Parcial', 'Parcialmente Atendido'], targetStatus: 'Separado Parcial', color: 'border-indigo-500/50 bg-indigo-950/40 text-indigo-300' },
-                        { key: 'separado', label: '4. Separado', statuses: ['Separado', 'Entregue'], targetStatus: 'Separado', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
-                      ].map((step, idx) => {
-                        const isCurrent = step.statuses.includes(req.status);
-                        const isCompleted = (
-                          (step.key === 'solicitado' && ['Em Separação', 'Em separação', 'Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'em_separacao' && ['Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
-                          (step.key === 'separado_parcial' && ['Separado', 'Entregue'].includes(req.status))
-                        );
-
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => handleUpdateStatus(req.id, step.targetStatus)}
-                            disabled={updatingId === req.id}
-                            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                              isCurrent
-                                ? `${step.color} ring-2 ring-white/20 shadow-md`
-                                : isCompleted
-                                ? 'border-dark-700 bg-dark-850 text-slate-300 hover:border-slate-500'
-                                : 'border-dark-800 bg-dark-900/40 text-slate-500 hover:border-dark-700'
-                            }`}
-                            title={`Mover para: ${step.label}`}
-                          >
-                            {isCompleted && <Check className="w-3 h-3 text-sabrar-400 shrink-0" />}
-                            <span className="truncate">{step.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Almoxarifado Step-Actions & Status Selector */}
-                  <div className="pt-2 border-t border-dark-750 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-400 font-semibold">Alterar status:</span>
-                      <select
-                        value={req.status}
-                        disabled={updatingId === req.id}
-                        onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
-                        className="bg-dark-800 text-white text-xs border border-dark-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sabrar-500 font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        <option value="Solicitado">Solicitado</option>
-                        <option value="Em Separação">Em Separação</option>
-                        <option value="Separado Parcial">Separado Parcial</option>
-                        <option value="Separado">Separado</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {['Solicitado', 'Reservado'].includes(req.status) && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Em Separação')}
-                          disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-white" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Iniciar Separação'}</span>
-                        </button>
-                      )}
-
-                      {['Em Separação', 'Em separação'].includes(req.status) && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleUpdateStatus(req.id, 'Separado Parcial')}
-                            disabled={updatingId === req.id}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition-all active:scale-95 disabled:opacity-50"
-                          >
-                            <span>{updatingId === req.id ? 'Atualizando...' : 'Separado Parcial'}</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateStatus(req.id, 'Separado')}
-                            disabled={updatingId === req.id}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
-                          </button>
+                  ) : (
+                    <>
+                      <div className="pt-2 border-t border-dark-750">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2 font-medium">
+                          <span>Etapa do Fluxo de Separação</span>
+                          <span className="text-slate-500">Clique nas etapas para alterar o status</span>
                         </div>
-                      )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+                          {[
+                            { key: 'solicitado', label: '1. Solicitado', statuses: ['Solicitado', 'Reservado'], targetStatus: 'Solicitado', color: 'border-amber-500/50 bg-amber-950/40 text-amber-300' },
+                            { key: 'em_separacao', label: '2. Em Separação', statuses: ['Em Separação', 'Em separação'], targetStatus: 'Em Separação', color: 'border-purple-500/50 bg-purple-950/40 text-purple-300' },
+                            { key: 'separado_parcial', label: '3. Separado Parcial', statuses: ['Separado Parcial', 'Parcialmente Atendido'], targetStatus: 'Separado Parcial', color: 'border-indigo-500/50 bg-indigo-950/40 text-indigo-300' },
+                            { key: 'separado', label: '4. Separado', statuses: ['Separado', 'Entregue'], targetStatus: 'Separado', color: 'border-sabrar-500/50 bg-sabrar-950/40 text-sabrar-300' },
+                          ].map((step, idx) => {
+                            const isCurrent = step.statuses.includes(req.status);
+                            const isCompleted = (
+                              (step.key === 'solicitado' && ['Em Separação', 'Em separação', 'Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
+                              (step.key === 'em_separacao' && ['Separado Parcial', 'Parcialmente Atendido', 'Separado', 'Entregue'].includes(req.status)) ||
+                              (step.key === 'separado_parcial' && ['Separado', 'Entregue'].includes(req.status))
+                            );
 
-                      {['Separado Parcial', 'Parcialmente Atendido'].includes(req.status) && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Separado')}
-                          disabled={updatingId === req.id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{updatingId === req.id ? 'Atualizando...' : 'Concluir Separação Total'}</span>
-                        </button>
-                      )}
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => handleUpdateStatus(req.id, step.targetStatus)}
+                                disabled={updatingId === req.id}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                  isCurrent
+                                    ? `${step.color} ring-2 ring-white/20 shadow-md`
+                                    : isCompleted
+                                    ? 'border-dark-700 bg-dark-850 text-slate-300 hover:border-slate-500'
+                                    : 'border-dark-800 bg-dark-900/40 text-slate-500 hover:border-dark-700'
+                                }`}
+                                title={`Mover para: ${step.label}`}
+                              >
+                                {isCompleted && <Check className="w-3 h-3 text-sabrar-400 shrink-0" />}
+                                <span className="truncate">{step.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                      {['Separado', 'Entregue'].includes(req.status) && (
-                        <span className="flex items-center gap-1 text-xs text-sabrar-300 font-bold bg-sabrar-950 px-3 py-1 rounded-xl border border-sabrar-500/40">
-                          <CheckCircle className="w-4 h-4 text-sabrar-400" />
-                          <span>Separado</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                      {/* Almoxarifado Step-Actions & Status Selector */}
+                      <div className="pt-2 border-t border-dark-750 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-400 font-semibold">Alterar status:</span>
+                          <select
+                            value={req.status}
+                            disabled={updatingId === req.id}
+                            onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
+                            className="bg-dark-800 text-white text-xs border border-dark-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sabrar-500 font-semibold cursor-pointer disabled:opacity-50"
+                          >
+                            <option value="Solicitado">Solicitado</option>
+                            <option value="Em Separação">Em Separação</option>
+                            <option value="Separado Parcial">Separado Parcial</option>
+                            <option value="Separado">Separado</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {['Solicitado', 'Reservado'].includes(req.status) && (
+                            <button
+                              onClick={() => handleUpdateStatus(req.id, 'Em Separação')}
+                              disabled={updatingId === req.id}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-white" />
+                              <span>{updatingId === req.id ? 'Atualizando...' : 'Iniciar Separação'}</span>
+                            </button>
+                          )}
+
+                          {['Em Separação', 'Em separação'].includes(req.status) && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleUpdateStatus(req.id, 'Separado Parcial')}
+                                disabled={updatingId === req.id}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition-all active:scale-95 disabled:opacity-50"
+                              >
+                                <span>{updatingId === req.id ? 'Atualizando...' : 'Separado Parcial'}</span>
+                              </button>
+                              <button
+                                onClick={() => handleUpdateStatus(req.id, 'Separado')}
+                                disabled={updatingId === req.id}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>{updatingId === req.id ? 'Atualizando...' : 'Marcar como Separado'}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {['Separado Parcial', 'Parcialmente Atendido'].includes(req.status) && (
+                            <button
+                              onClick={() => handleUpdateStatus(req.id, 'Separado')}
+                              disabled={updatingId === req.id}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-sabrar-600 hover:bg-sabrar-500 text-white text-xs font-bold shadow-md shadow-sabrar-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>{updatingId === req.id ? 'Atualizando...' : 'Concluir Separação Total'}</span>
+                            </button>
+                          )}
+
+                          {['Separado', 'Entregue'].includes(req.status) && (
+                            <span className="flex items-center gap-1 text-xs text-sabrar-300 font-bold bg-sabrar-950 px-3 py-1 rounded-xl border border-sabrar-500/40">
+                              <CheckCircle className="w-4 h-4 text-sabrar-400" />
+                              <span>Separado</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

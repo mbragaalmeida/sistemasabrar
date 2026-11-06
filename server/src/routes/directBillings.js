@@ -26,7 +26,39 @@ directBillingsRouter.get('/', async (req, res) => {
       ORDER BY db.created_at DESC
     `).all();
 
-    res.json(records);
+    // Carrega notas fiscais de cada faturamento direto
+    const allInvoices = await db.prepare(`
+      SELECT * FROM direct_billing_invoices ORDER BY issue_date DESC, id DESC
+    `).all().catch(() => []);
+
+    const invoicesByBillingId = new Map();
+    for (const inv of allInvoices) {
+      if (!invoicesByBillingId.has(inv.direct_billing_id)) {
+        invoicesByBillingId.set(inv.direct_billing_id, []);
+      }
+      invoicesByBillingId.get(inv.direct_billing_id).push(inv);
+    }
+
+    const enriched = records.map(b => {
+      const invoices = invoicesByBillingId.get(b.id) || [];
+      const totalCeiling = Number(b.authorized_ceiling || 0);
+      // Se houver notas fiscais cadastradas, o total faturado é a soma exata das notas
+      const totalBilled = invoices.length > 0
+        ? invoices.reduce((acc, inv) => acc + Number(inv.amount || 0), 0)
+        : Number(b.billed_amount || 0);
+
+      const remainingBalance = Math.max(0, totalCeiling - totalBilled);
+
+      return {
+        ...b,
+        authorized_ceiling: totalCeiling,
+        billed_amount: totalBilled,
+        remaining_balance: remainingBalance,
+        invoices
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -107,6 +139,101 @@ directBillingsRouter.patch('/:id/step', async (req, res) => {
     `).run(Boolean(value), id);
 
     res.json({ success: true, message: `Etapa ${stepName} atualizada para ${value ? 'OK' : 'Pendente'}.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/direct-billings/:id/invoices
+ * Inclui uma nota fiscal em um pedido de faturamento direto (abate do valor total e soma no faturado)
+ */
+directBillingsRouter.post('/:id/invoices', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoice_number, amount, issue_date, description } = req.body;
+
+    const val = Number(amount);
+    if (!invoice_number || isNaN(val) || val <= 0) {
+      return res.status(400).json({ error: 'Número da nota e valor válido são obrigatórios.' });
+    }
+
+    const billing = await db.prepare('SELECT * FROM direct_billings WHERE id = ?').get(id);
+    if (!billing) return res.status(404).json({ error: 'Pedido de faturamento direto não encontrado.' });
+
+    // Insere a nota fiscal
+    const insertInv = await db.prepare(`
+      INSERT INTO direct_billing_invoices (
+        direct_billing_id, invoice_number, amount, issue_date, description
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      id,
+      invoice_number.trim(),
+      val,
+      issue_date || new Date().toISOString().split('T')[0],
+      description || null
+    );
+
+    // Recalcula o total faturado
+    const sumRes = await db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM direct_billing_invoices WHERE direct_billing_id = ?
+    `).get(id);
+    const newTotalBilled = Number(sumRes?.total || 0);
+
+    // Atualiza o registro principal
+    await db.prepare(`
+      UPDATE direct_billings 
+      SET billed_amount = ?, step_nf_recebida = true, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(newTotalBilled, id);
+
+    const ceiling = Number(billing.authorized_ceiling || 0);
+    const remaining = Math.max(0, ceiling - newTotalBilled);
+
+    res.status(201).json({
+      success: true,
+      invoiceId: insertInv.lastInsertRowid,
+      billed_amount: newTotalBilled,
+      remaining_balance: remaining,
+      message: `Nota fiscal ${invoice_number} incluída com sucesso!`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/direct-billings/invoices/:invoiceId
+ * Remove uma nota fiscal de um pedido de faturamento direto
+ */
+directBillingsRouter.delete('/invoices/:invoiceId', async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    const inv = await db.prepare('SELECT * FROM direct_billing_invoices WHERE id = ?').get(invoiceId);
+    if (!inv) return res.status(404).json({ error: 'Nota fiscal não encontrada.' });
+
+    const billingId = inv.direct_billing_id;
+
+    await db.prepare('DELETE FROM direct_billing_invoices WHERE id = ?').run(invoiceId);
+
+    // Recalcula o total faturado
+    const sumRes = await db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM direct_billing_invoices WHERE direct_billing_id = ?
+    `).get(billingId);
+    const newTotalBilled = Number(sumRes?.total || 0);
+
+    await db.prepare(`
+      UPDATE direct_billings 
+      SET billed_amount = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(newTotalBilled, billingId);
+
+    res.json({
+      success: true,
+      billed_amount: newTotalBilled,
+      message: 'Nota fiscal removida com sucesso.'
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
