@@ -101,6 +101,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [commercialTerms, setCommercialTerms] = useState('');
   const [materialsMarginPercent, setMaterialsMarginPercent] = useState<number>(0);
   const [laborMarginPercent, setLaborMarginPercent] = useState<number>(0);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [savingBudget, setSavingBudget] = useState(false);
   const [approvingBudget, setApprovingBudget] = useState(false);
   const [concludingProject, setConcludingProject] = useState(false);
@@ -377,13 +378,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
       setData(res);
       fetchCostControl();
       setScopeEditText(res.project?.scope_summary || '');
+      let verRes: any[] = [];
       try {
-        const [addRes, verRes] = await Promise.all([
+        const [addRes, fetchedVersions] = await Promise.all([
           api.getProjectAddenda(projectId),
           api.getBudgetVersions(projectId)
         ]);
+        verRes = fetchedVersions || [];
         setAddenda(addRes || []);
-        setVersions(verRes || []);
+        setVersions(verRes);
       } catch (e) {
         console.error('Erro ao buscar aditivos e versões:', e);
       }
@@ -404,6 +407,19 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         setCommercialTerms(res.budget.commercial_terms || '');
         setMaterialsMarginPercent(Number(res.budget.materials_margin_percent) || 0);
         setLaborMarginPercent(Number(res.budget.labor_margin_percent) || 0);
+        const bDisc = Number(res.budget.discount_amount || 0);
+        if (bDisc > 0) {
+          setDiscountAmount(bDisc);
+        } else if (verRes && verRes.length > 0) {
+          const latestWithDisc = verRes.slice().reverse().find((v: any) => Number(v.discount_amount) > 0);
+          if (latestWithDisc) {
+            setDiscountAmount(Number(latestWithDisc.discount_amount));
+          } else {
+            setDiscountAmount(0);
+          }
+        } else {
+          setDiscountAmount(0);
+        }
       }
     } catch (err) {
       console.error('Erro ao buscar detalhes do projeto:', err);
@@ -439,6 +455,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   };
 
   const getServiceSubtotal = (s: any) => {
+    if (s.unit === '%' || s.unit === 'pct' || s.unit === 'porcentagem') {
+      const pct = (Number(s.unit_price) > 0 && Number(s.quantity) === 1)
+        ? Number(s.unit_price)
+        : (Number(s.quantity) || Number(s.unit_price) || 0);
+      const otherServices = editableServices
+        .filter((other) => other !== s && other.unit !== '%' && other.unit !== 'pct')
+        .reduce((sum, item) => sum + (Number(item.subtotal) || (Number(item.quantity || 0) * Number(item.unit_price || 0))), 0);
+      const baseGlobal = totalMaterials + otherServices + totalEquipment;
+      return Number(((baseGlobal * pct) / 100).toFixed(2));
+    }
     if (s.subtotal !== undefined && s.subtotal !== null && !isNaN(Number(s.subtotal)) && Number(s.subtotal) > 0) {
       return Number(Number(s.subtotal).toFixed(2));
     }
@@ -461,10 +487,10 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const totalEquipment = Number(editableEquipment.reduce((acc, eq) => acc + getEquipmentSubtotal(eq), 0).toFixed(2));
   const totalBudgetCalculated = Number((totalMaterials + totalServices + totalEquipment).toFixed(2));
 
-  // Totais com margem para a proposta comercial do cliente
+  // Totais com margem para a proposta comercial do cliente (incluindo eventual desconto comercial/Pix)
   const totalMaterialsClient = Number((totalMaterials * (1 + (Number(materialsMarginPercent) || 0) / 100)).toFixed(2));
   const totalServicesClient = Number((totalServices * (1 + (Number(laborMarginPercent) || 0) / 100)).toFixed(2));
-  const totalBudgetCalculatedClient = Number((totalMaterialsClient + totalServicesClient + totalEquipment).toFixed(2));
+  const totalBudgetCalculatedClient = Number(Math.max(0, (totalMaterialsClient + totalServicesClient + totalEquipment) - (Number(discountAmount) || 0)).toFixed(2));
 
   const handleAddEquipmentRow = () => {
     const newIdx = editableEquipment.length;
@@ -553,6 +579,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         commercialTerms,
         materialsMarginPercent: Number(materialsMarginPercent) || 0,
         laborMarginPercent: Number(laborMarginPercent) || 0,
+        discountAmount: Number(discountAmount) || 0,
+        discount_amount: Number(discountAmount) || 0,
         userId: currentUser?.id,
         userName: currentUser?.name
       });
@@ -585,6 +613,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
     }
     setConcludingProject(true);
     try {
+      await api.updateProjectStatus(project.id, 'Concluído', currentUser?.id);
       await api.updateProject(project.id, { status: 'Concluído' });
       await fetchProjectData();
       alert('Obra concluída com sucesso! Solicitações de materiais foram encerradas.');
@@ -720,8 +749,12 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         created_by: currentUser?.id,
         created_by_name: currentUser?.name
       });
+      if (vData.discount_amount !== undefined) {
+        setDiscountAmount(Number(vData.discount_amount) || 0);
+      }
       const verRes = await api.getBudgetVersions(projectId);
       setVersions(verRes || []);
+      await fetchProjectData();
       alert(`Versão ${currentVer + 1} gravada com sucesso!`);
     } catch (err: any) {
       alert(err.message || 'Erro ao gravar versão');
@@ -1572,11 +1605,22 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                     R$ {totalBudgetCalculated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
+                {discountAmount > 0 && (
+                  <>
+                    <div className="h-8 w-px bg-slate-200 dark:bg-dark-700" />
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase font-bold text-rose-500 dark:text-rose-400">Desconto PIX / Negociação</div>
+                      <div className="text-xs font-bold text-rose-600 dark:text-rose-400 font-mono">
+                        - R$ {discountAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Cards dos controles de margem */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* Cards dos controles de margem e desconto */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* 1. Margem de Materiais */}
               <div className="bg-white dark:bg-dark-850 p-4 rounded-2xl border-2 border-emerald-400/50 dark:border-dark-700 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
@@ -1652,6 +1696,38 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                 <div className="text-[11px] text-slate-600 dark:text-slate-400 flex justify-between pt-2 border-t border-slate-100 dark:border-dark-750">
                   <span>Itens: {editableEquipment.length}</span>
                   <span className="font-semibold text-slate-600 dark:text-slate-300">Sem acréscimo</span>
+                </div>
+              </div>
+
+              {/* 4. Desconto Comercial / PIX */}
+              <div className="bg-white dark:bg-dark-850 p-4 rounded-2xl border-2 border-rose-400/50 dark:border-rose-900/50 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">4. Desconto Comercial / PIX</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-700">
+                    Abatimento
+                  </span>
+                </div>
+                <div className="my-3 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={discountAmount || ''}
+                      onChange={(e) => setDiscountAmount(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full text-xl font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-dark-900 border-2 border-rose-500 rounded-xl pl-9 pr-3 py-1.5 outline-none focus:ring-2 focus:ring-rose-400 font-mono"
+                      placeholder="0,00"
+                    />
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 flex justify-between pt-2 border-t border-slate-100 dark:border-dark-750">
+                  <span>Desconto no Total</span>
+                  {discountAmount > 0 ? (
+                    <span className="font-bold text-rose-600 dark:text-rose-400">- R$ {discountAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  ) : (
+                    <span className="text-slate-400">Sem desconto</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1847,6 +1923,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   })}
                 </tbody>
               </table>
+              <datalist id="services-units-options">
+                <option value="%">Porcentagem (% sobre valor global)</option>
+                <option value="vb">Verba (vb)</option>
+                <option value="h">Horas (h)</option>
+                <option value="KG">Quilos (KG)</option>
+                <option value="m">Metros (m)</option>
+                <option value="m²">Metros Quadrados (m²)</option>
+                <option value="un">Unidade (un)</option>
+              </datalist>
             </div>
           </div>
 
@@ -1937,7 +2022,7 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                               setEditableServices(prev => prev.map((item, i) => i === idx ? {
                                 ...item,
                                 quantity: val,
-                                subtotal: Number((val * (Number(item.unit_price) || 0)).toFixed(2))
+                                subtotal: item.unit === '%' ? 0 : Number((val * (Number(item.unit_price) || 0)).toFixed(2))
                               } : item));
                             }}
                             className="w-16 text-center font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
@@ -1945,33 +2030,49 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                         </td>
                         <td className="p-3 text-center">
                           <input
+                            list="services-units-options"
                             type="text"
                             value={s.unit || 'vb'}
                             onChange={(e) => {
                               const val = e.target.value;
-                              setEditableServices(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
+                              setEditableServices(prev => prev.map((item, i) => i === idx ? {
+                                ...item,
+                                unit: val,
+                                subtotal: val === '%' ? 0 : item.subtotal
+                              } : item));
                             }}
-                            className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-amber-500 p-1 rounded-lg outline-none"
+                            className={`w-16 text-center text-xs font-bold p-1 rounded-lg outline-none transition-all ${
+                              s.unit === '%'
+                                ? 'bg-amber-500/20 text-amber-300 border-2 border-amber-500'
+                                : 'text-slate-300 bg-dark-850 border border-dark-700 focus:border-amber-500'
+                            }`}
+                            placeholder="vb"
                           />
                         </td>
                         <td className="p-3 text-right">
                           <input
                             type="number"
-                            step="0.1"
+                            step="0.01"
                             value={s.unit_price}
                             onChange={(e) => {
                               const val = Number(e.target.value);
                               setEditableServices(prev => prev.map((item, i) => i === idx ? {
                                 ...item,
                                 unit_price: val,
-                                subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
+                                subtotal: item.unit === '%' ? 0 : Number(((Number(item.quantity) || 1) * val).toFixed(2))
                               } : item));
                             }}
                             className="w-20 text-right font-bold text-white bg-dark-850 border border-dark-700 p-1 rounded-lg outline-none"
+                            placeholder={s.unit === '%' ? '% taxa' : '0,00'}
                           />
                         </td>
                         <td className="p-3 text-right font-black text-white">
-                          R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          <div>R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                          {s.unit === '%' && (
+                            <span className="text-[10px] text-amber-400 block font-normal">
+                              ({(Number(s.unit_price) > 0 && Number(s.quantity) === 1 ? s.unit_price : (s.quantity || s.unit_price))}% do global)
+                            </span>
+                          )}
                         </td>
                         <td className="p-3 text-center">
                           <button
@@ -1987,6 +2088,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   })}
                 </tbody>
               </table>
+              <datalist id="services-units-options">
+                <option value="%">Porcentagem (% sobre valor global)</option>
+                <option value="vb">Verba (vb)</option>
+                <option value="h">Horas (h)</option>
+                <option value="KG">Quilos (KG)</option>
+                <option value="m">Metros (m)</option>
+                <option value="m²">Metros Quadrados (m²)</option>
+                <option value="un">Unidade (un)</option>
+              </datalist>
             </div>
           </div>
 
@@ -2714,6 +2824,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   })}
                 </tbody>
               </table>
+              <datalist id="services-units-options">
+                <option value="%">Porcentagem (% sobre valor global)</option>
+                <option value="vb">Verba (vb)</option>
+                <option value="h">Horas (h)</option>
+                <option value="KG">Quilos (KG)</option>
+                <option value="m">Metros (m)</option>
+                <option value="m²">Metros Quadrados (m²)</option>
+                <option value="un">Unidade (un)</option>
+              </datalist>
             </div>
           </div>
         </div>

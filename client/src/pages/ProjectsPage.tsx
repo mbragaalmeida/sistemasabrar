@@ -81,16 +81,18 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
   // Aba de estágio operacional: Todas vs Em Execução vs Em Orçamento vs Finalizadas vs Calendário de Execução
   const [workflowTab, setWorkflowTab] = useState<'todas' | 'execucao' | 'orcamento' | 'finalizadas' | 'calendario'>('todas');
 
+  const isFinalizada = (status: string) => ['Finalizado', 'Concluído', 'Concluída'].includes(status);
+
   const execucaoCount = useMemo(() => {
-    return categoryProjects.filter(p => p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado').length;
+    return categoryProjects.filter(p => !isFinalizada(p.status) && !['Cancelado', 'Perdido'].includes(p.status) && (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado')).length;
   }, [categoryProjects]);
 
   const orcamentoCount = useMemo(() => {
-    return categoryProjects.filter(p => !['Em execução', 'Aprovado', 'Finalizado', 'Concluído', 'Concluída', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
+    return categoryProjects.filter(p => !isFinalizada(p.status) && !['Em execução', 'Aprovado', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado').length;
   }, [categoryProjects]);
 
   const finalizadasCount = useMemo(() => {
-    return categoryProjects.filter(p => ['Finalizado', 'Concluído', 'Concluída'].includes(p.status)).length;
+    return categoryProjects.filter(p => isFinalizada(p.status)).length;
   }, [categoryProjects]);
 
   const calendarCount = useMemo(() => {
@@ -111,13 +113,13 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
       }
 
       if (workflowTab === 'execucao') {
-        return p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado';
+        return !isFinalizada(p.status) && !['Cancelado', 'Perdido'].includes(p.status) && (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado');
       }
       if (workflowTab === 'orcamento') {
-        return !['Em execução', 'Aprovado', 'Finalizado', 'Cancelado'].includes(p.status) && p.budget?.status !== 'Aprovado';
+        return !isFinalizada(p.status) && !['Em execução', 'Aprovado', 'Cancelado', 'Perdido'].includes(p.status) && p.budget?.status !== 'Aprovado';
       }
       if (workflowTab === 'finalizadas') {
-        return ['Finalizado', 'Concluído', 'Concluída'].includes(p.status);
+        return isFinalizada(p.status);
       }
       return true;
     });
@@ -330,9 +332,9 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate, onOpenNe
         </button>
       </div>
 
-      {/* Visualização de Calendário de Execução (Item 4) */}
+      {/* Visualização de Calendário de Execução / Entregas */}
       {workflowTab === 'calendario' ? (
-        <ExecutionCalendar projects={projects} onNavigate={onNavigate} />
+        <ExecutionCalendar projects={categoryProjects} onNavigate={onNavigate} />
       ) : (
         <>
           {/* Filters & Search Bar (Mobile First) */}

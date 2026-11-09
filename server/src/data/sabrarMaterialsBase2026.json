@@ -13924,10 +13924,10 @@
   {
     "num": 727,
     "code": "SAB-0727",
-    "name": "FELTRO LÃ DE VIDRO ISOFLEX RT 1.0 - 25m X 1,2m E=38mm - ROLO C/ 30M²",
+    "name": "FELTRO LÃ DE VIDRO ISOFLEX RT 1.0 - 25m X 1,2m E=38mm",
     "category": "ISOLAMENTO",
     "synonyms": "LÃ DE VIDRO",
-    "unit": "rolo c/30m²",
+    "unit": "m",
     "price": 480.03,
     "avgCostStr": "R$ 480,03",
     "priceBase": "R$ 480,03 por rolo c/30m²",
@@ -13938,7 +13938,10 @@
     "convertedPrice": 16.001,
     "validationStatus": "OK",
     "pendingNotes": null,
-    "imageUrl": "/materials/image117.png"
+    "imageUrl": "/materials/image117.png",
+    "reference_price": 16,
+    "package_content": 1,
+    "converted_unit": "m"
   },
   {
     "num": 728,

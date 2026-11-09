@@ -175,7 +175,11 @@ const AppContent: React.FC = () => {
           )}
 
           {currentPage === 'budgets' && (
-            <BudgetsPage onNavigate={handleNavigate} />
+            <BudgetsPage onNavigate={handleNavigate} filterMode="obras" />
+          )}
+
+          {currentPage === 'stanque-budgets' && (
+            <BudgetsPage onNavigate={handleNavigate} filterMode="stanque-dutos" />
           )}
 
           {currentPage === 'ducts' && (

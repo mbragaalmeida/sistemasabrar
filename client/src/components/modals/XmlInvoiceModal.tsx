@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { FileCode, UploadCloud, X, CheckCircle, AlertCircle, ArrowRight, RefreshCw, Layers, DollarSign, Building2, PackagePlus, Link2, Sparkles, Check } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { Material } from '../../types';
 import { convertMaterialUnits } from '../../utils/unitConversion';
+import { SearchableSelect, SearchableOption } from '../common/SearchableSelect';
 
 interface XmlInvoiceModalProps {
   isOpen: boolean;
@@ -32,6 +33,25 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
       api.getMaterials().then(setBaseMaterials).catch(console.error);
     }
   }, [isOpen]);
+
+  const materialOptions = useMemo<SearchableOption[]>(() => {
+    return [
+      {
+        value: 'NEW',
+        label: '✨ [Cadastrar como Novo Insumo na Base]',
+        sublabel: 'Criar novo item no catálogo com os dados da NF-e',
+        badge: 'Novo',
+        keywords: 'novo cadastrar insumo base criar'
+      },
+      ...baseMaterials.map((m) => ({
+        value: String(m.id),
+        label: `${m.code} — ${m.name}`,
+        sublabel: `${m.stock_physical} ${m.unit} em estoque • R$ ${Number(m.reference_price).toFixed(2)}`,
+        badge: m.category,
+        keywords: `${m.code} ${m.name} ${m.category || ''} ${m.synonyms || ''}`
+      }))
+    ];
+  }, [baseMaterials]);
 
   if (!isOpen) return null;
 
@@ -379,22 +399,13 @@ export const XmlInvoiceModal: React.FC<XmlInvoiceModalProps> = ({
                             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
                               Corresponde a qual Insumo da Base?
                             </label>
-                            <select
-                              value={item.matchedMaterialId || 'NEW'}
-                              onChange={(e) => handleMatchChange(idx, e.target.value)}
-                              className="w-full text-xs p-2.5 rounded-xl border border-dark-700 bg-dark-850 text-white font-medium focus:outline-none focus:border-sabrar-500 cursor-pointer"
-                            >
-                              <option value="NEW">
-                                ✨ [Cadastrar como Novo Insumo na Base]
-                              </option>
-                              <optgroup label="Materiais Existentes no Catálogo SABRAR">
-                                {baseMaterials.map((m) => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.code} — {m.name} ({m.stock_physical} {m.unit} | R$ {Number(m.reference_price).toFixed(2)})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
+                            <SearchableSelect
+                              value={item.matchedMaterialId ? String(item.matchedMaterialId) : 'NEW'}
+                              onChange={(val) => handleMatchChange(idx, String(val))}
+                              options={materialOptions}
+                              placeholder="Digite o código ou nome do insumo..."
+                              className="w-full text-xs"
+                            />
 
                             {/* Resumo do Impacto da Seleção */}
                             {isMatched ? (

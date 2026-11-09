@@ -961,6 +961,12 @@ export const DirectBillingModal: React.FC<DirectBillingModalProps> = ({
                       >
                         <option value="Cartão Corporativo">Cartão Corporativo</option>
                         <option value="Pix">Pix Sabrar</option>
+                        <option value="Pix - Sabrar Comercial">Pix - Sabrar Comercial</option>
+                        <option value="Pix - Sabrar Instalações">Pix - Sabrar Instalações</option>
+                        <option value="Pix - Sabrar Rio">Pix - Sabrar Rio</option>
+                        <option value="Pix - Sabrar Ar">Pix - Sabrar Ar</option>
+                        <option value="Pix - Stanque Dutos">Pix - Stanque Dutos</option>
+                        <option value="Pix - Sandra Braga">Pix - Sandra Braga</option>
                         <option value="Boleto">Boleto</option>
                         <option value="Reembolso">Reembolso Funcionário</option>
                       </select>

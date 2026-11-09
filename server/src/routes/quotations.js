@@ -16,7 +16,8 @@ quotationsRouter.get('/', async (req, res) => {
         p.name as project_name,
         p.code as project_code,
         u.name as created_by_name,
-        (SELECT COUNT(*) FROM purchase_quotation_suppliers pqs WHERE pqs.quotation_id = pq.id) as suppliers_count
+        (SELECT COUNT(*) FROM purchase_quotation_suppliers pqs WHERE pqs.quotation_id = pq.id) as suppliers_count,
+        (SELECT COUNT(DISTINCT COALESCE(pqi.material_id, pqi.id)) FROM purchase_quotation_items pqi WHERE pqi.quotation_id = pq.id) as items_count
       FROM purchase_quotations pq
       LEFT JOIN projects p ON p.id = pq.project_id
       LEFT JOIN users u ON u.id = pq.created_by
@@ -445,6 +446,23 @@ quotationsRouter.get('/:id/export-oc', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('[Export OC Quotation Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/quotations/:id
+ * Remove um mapa comparativo de cotação completo e seus itens/fornecedores
+ */
+quotationsRouter.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.prepare('DELETE FROM purchase_quotation_items WHERE quotation_id = ?').run(id);
+    await db.prepare('DELETE FROM purchase_quotation_suppliers WHERE quotation_id = ?').run(id);
+    await db.prepare('DELETE FROM purchase_quotations WHERE id = ?').run(id);
+
+    res.json({ success: true, message: 'Mapa comparativo excluído com sucesso.' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

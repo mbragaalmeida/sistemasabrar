@@ -644,6 +644,7 @@ projectsRouter.put('/:id', async (req, res) => {
       scope_summary,
       start_date,
       expected_end_date,
+      status,
       notes,
       userId
     } = req.body;
@@ -662,6 +663,7 @@ projectsRouter.put('/:id', async (req, res) => {
         state = ?,
         project_type = COALESCE(?, project_type),
         category = COALESCE(?, category),
+        status = COALESCE(?, status),
         responsible_engineer = COALESCE(?, responsible_engineer),
         responsible_estimator = COALESCE(?, responsible_estimator),
         return_deadline = COALESCE(?, return_deadline),
@@ -681,6 +683,7 @@ projectsRouter.put('/:id', async (req, res) => {
       state !== undefined ? state?.trim() : project.state,
       project_type || project.project_type,
       category !== undefined ? category?.trim() : project.category,
+      status !== undefined ? status?.trim() : project.status,
       responsible_engineer !== undefined ? responsible_engineer?.trim() : project.responsible_engineer,
       responsible_estimator !== undefined ? responsible_estimator?.trim() : project.responsible_estimator,
       return_deadline !== undefined ? return_deadline : project.return_deadline,

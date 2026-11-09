@@ -594,6 +594,8 @@ export const api = {
   getQuotationById: (id: number) => fetchJson<any>(`/quotations/${id}`),
   createQuotation: (data: any) =>
     fetchJson<any>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
+  deleteQuotation: (id: number) =>
+    fetchJson<any>(`/quotations/${id}`, { method: 'DELETE' }),
   addQuotationItem: (quotationId: number, data: any) =>
     fetchJson<any>(`/quotations/${quotationId}/items`, { method: 'POST', body: JSON.stringify(data) }),
   updateQuotationItem: (quotationId: number, itemId: number, data: any) =>

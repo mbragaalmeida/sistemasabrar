@@ -8,6 +8,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   'maintenance': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia', 'compras', 'almoxarifado'],
   'stanque-dutos': ['admin', 'orcamento', 'orcamento_engenharia'],
   'estanque-dutos': ['admin', 'orcamento', 'orcamento_engenharia'],
+  'stanque-budgets': ['admin', 'orcamento', 'orcamento_engenharia'],
   'project-detail': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
   // Item 1: Quero que os engenheiros tenham acesso a aba 'orçamentos aprovados'
   'budgets': ['admin', 'orcamento', 'orcamento_engenharia', 'compras_solicitacoes', 'engenharia'],
@@ -38,13 +39,22 @@ export function isPageAllowed(page: string, role: UserRole, user?: { name?: stri
   const email = String(user?.email || '').toLowerCase();
   const name = String(user?.name || '').toLowerCase();
 
-  // Escopo de Stanque Dutos (Nathalia Souza / comercial@stanquedutos.com)
+  // Escopo de Stanque Dutos (Nathalia Souza / comercial@stanquedutos.com.br)
   if (/stanquedutos/i.test(email) || /nathalia.*souza/i.test(name)) {
-    return ['stanque-dutos', 'estanque-dutos', 'project-detail', 'budgets', 'clients', 'notifications'].includes(page);
+    return [
+      'stanque-dutos',
+      'estanque-dutos',
+      'stanque-budgets',
+      'requests',
+      'solicitar-duto',
+      'solicitar-logistica',
+      'project-detail',
+      'notifications'
+    ].includes(page);
   }
 
   // Acesso à aba Stanque Dutos para Administradores e Setor de Orçamento
-  if (page === 'stanque-dutos' || page === 'estanque-dutos') {
+  if (page === 'stanque-dutos' || page === 'estanque-dutos' || page === 'stanque-budgets') {
     return ['admin', 'orcamento', 'orcamento_engenharia'].includes(role) || /stanquedutos/i.test(email);
   }
 

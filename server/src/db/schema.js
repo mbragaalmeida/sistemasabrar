@@ -15,6 +15,7 @@ export async function initializeDatabase() {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contacts JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS vendors JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'Obra';
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14, 2) DEFAULT 0.00;
 
       CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,

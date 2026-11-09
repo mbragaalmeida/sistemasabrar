@@ -1192,17 +1192,37 @@ export const StockPage: React.FC = () => {
                           </div>
 
                           <div className="bg-white dark:bg-dark-900 p-3 rounded-xl border border-slate-200 dark:border-dark-750 space-y-1.5 max-h-36 overflow-y-auto shadow-xs">
-                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                              Itens que aguardam aprovação:
+                            <div className="flex items-center justify-between text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                              <span>Itens que aguardam aprovação:</span>
+                              <span className="text-[9px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 px-1.5 py-0.5 rounded border border-purple-300 dark:border-purple-800 lowercase">
+                                destaque roxo = fora da base
+                              </span>
                             </div>
-                            {(req.items || []).filter((it: any) => it.is_extra || !it.material_id || it.is_custom).map((it: any) => (
-                              <div key={it.id} className="text-[11px] text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-dark-800 pb-1 last:border-0 last:pb-0">
-                                <span className="truncate">{it.material_name}</span>
-                                <span className="font-bold text-amber-700 dark:text-amber-300 shrink-0">
-                                  {it.quantity_requested} {sanitizeUnit(it.material_unit)}
-                                </span>
-                              </div>
-                            ))}
+                            {(req.items || []).filter((it: any) => it.is_extra || !it.material_id || it.is_custom).map((it: any) => {
+                              const isOutOfBase = Boolean(!it.material_id || it.is_custom || it.custom_name);
+                              return (
+                                <div
+                                  key={it.id}
+                                  className={`text-[11px] flex items-center justify-between gap-2 border-b last:border-0 pb-1 last:pb-0 px-1.5 py-0.5 rounded ${
+                                    isOutOfBase
+                                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 border-purple-200 dark:border-purple-900/60 font-semibold'
+                                      : 'text-slate-800 dark:text-slate-200 border-slate-100 dark:border-dark-800'
+                                  }`}
+                                >
+                                  <span className="truncate flex items-center gap-1.5">
+                                    {isOutOfBase && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-700 shrink-0">
+                                        Fora da Base
+                                      </span>
+                                    )}
+                                    <span>{it.material_name || it.custom_name}</span>
+                                  </span>
+                                  <span className={`font-bold shrink-0 ${isOutOfBase ? 'text-purple-700 dark:text-purple-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                                    {it.quantity_requested} {sanitizeUnit(it.material_unit || it.custom_unit)}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
 
                           {req.notes && (

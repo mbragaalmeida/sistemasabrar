@@ -7,12 +7,20 @@ import { StatusBadge } from '../components/common/StatusBadge';
 
 interface BudgetsPageProps {
   onNavigate: (page: string, id?: number) => void;
+  filterMode?: 'all' | 'obras' | 'stanque-dutos';
 }
 
-export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate }) => {
+export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate, filterMode = 'obras' }) => {
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const isStanqueProj = (p: Project) => {
+    const cat = (p.category || '').toLowerCase();
+    const nm = (p.name || '').toLowerCase();
+    const cl = (p.client || '').toLowerCase();
+    return cat.includes('stanque') || cat.includes('estanque') || nm.includes('stanque') || nm.includes('estanque') || cl.includes('stanque') || cl.includes('estanque');
+  };
 
   useEffect(() => {
     api.getProjects().then(data => {
@@ -22,8 +30,12 @@ export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate }) => {
       // Exibe exclusivamente orçamentos de obras aprovadas ou em execução
       const approvedOnly = data.filter((p: Project) => {
         if (p.code === 'SAB-INTERNO') return false;
-        const isApprovedOrExecuting = (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado');
+        const isApprovedOrExecuting = (p.status === 'Em execução' || p.status === 'Aprovado' || p.budget?.status === 'Aprovado' || p.status === 'Concluído' || p.status === 'Finalizado');
         if (!isApprovedOrExecuting) return false;
+
+        const isStanque = isStanqueProj(p);
+        if (filterMode === 'stanque-dutos' && !isStanque) return false;
+        if (filterMode === 'obras' && isStanque) return false;
 
         // Se for engenheiro, mostra apenas as obras atribuídas a ele
         if (isEngineer && currentUser) {
@@ -44,7 +56,7 @@ export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate }) => {
       console.error(err);
       setLoading(false);
     });
-  }, [currentUser]);
+  }, [currentUser, filterMode]);
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16">
@@ -52,15 +64,23 @@ export const BudgetsPage: React.FC<BudgetsPageProps> = ({ onNavigate }) => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-dark-900 p-4 sm:p-5 rounded-3xl border border-dark-750 shadow-xl">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-sabrar-950/70 border border-sabrar-500/40 flex items-center justify-center text-sabrar-400">
+            <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
+              filterMode === 'stanque-dutos'
+                ? 'bg-sky-950/70 border border-sky-500/40 text-sky-400'
+                : 'bg-sabrar-950/70 border border-sabrar-500/40 text-sabrar-400'
+            }`}>
               <Calculator className="w-5 h-5" />
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Orçamentos Aprovados
+              {filterMode === 'stanque-dutos'
+                ? 'Orçamentos Aprovados - Stanque Dutos'
+                : 'Orçamentos Aprovados'}
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Concentração dos orçamentos aprovados de obras em execução e finalizadas na SABRAR
+            {filterMode === 'stanque-dutos'
+              ? 'Concentração dos orçamentos comerciais aprovados exclusivos da Stanque Dutos'
+              : 'Concentração dos orçamentos aprovados de obras em execução e finalizadas na SABRAR'}
           </p>
         </div>
       </div>

@@ -57,18 +57,19 @@ export class SupplierPdfParser {
     let email = '';
     let contactPerson = '';
 
-    // CNPJ: busca padrão XX.XXX.XXX/XXXX-XX (evitando o CNPJ da própria Sabrar 40.417.156/0001-97)
+    // CNPJ: busca padrão XX.XXX.XXX/XXXX-XX
+    // Exclui CNPJs de clientes / Sabrar (40.417.156 e Stanque Dutos 42.763.452)
     const cnpjMatches = text.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g) || [];
-    const nonSabrarCnpj = cnpjMatches.filter(c => !c.includes('40.417.156'));
-    if (nonSabrarCnpj.length > 0) {
-      cnpj = nonSabrarCnpj[0];
+    const nonBuyerCnpjs = cnpjMatches.filter(c => !c.includes('40.417.156') && !c.includes('42.763.452'));
+    if (nonBuyerCnpjs.length > 0) {
+      cnpj = nonBuyerCnpjs[0];
     } else if (cnpjMatches.length > 0) {
       cnpj = cnpjMatches[0];
     }
 
     // Email do fornecedor
     const emailMatches = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-    const nonSabrarEmail = emailMatches.filter(e => !e.toLowerCase().includes('sabrar.com.br'));
+    const nonSabrarEmail = emailMatches.filter(e => !e.toLowerCase().includes('sabrar.com.br') && !e.toLowerCase().includes('stanquedutos.com'));
     if (nonSabrarEmail.length > 0) {
       email = nonSabrarEmail[0];
     }
@@ -90,6 +91,7 @@ export class SupplierPdfParser {
       if (
         (upper.includes('LTDA') || upper.includes('EIRELI') || upper.includes('S.A.') || upper.includes('S/A') || /\bME\b/.test(upper) || upper.includes('EQUIP') || upper.includes('DISTRIBUIDORA') || upper.includes('COMERCIO') || upper.includes('COMÉRCIO') || upper.includes('REFRIGERACAO') || upper.includes('REFRIGERAÇÃO') || upper.includes('COMPONENTES') || upper.includes('INDUS')) &&
         !upper.includes('SABRAR') &&
+        !upper.includes('STANQUE') &&
         !upper.includes('ORÇAMENTO') &&
         !upper.includes('ORCAMENTO') &&
         !upper.includes('ENDEREÇO') &&
@@ -141,15 +143,20 @@ export class SupplierPdfParser {
       emissionDate = dateMatch[1];
     }
 
-    const payMatch = text.match(/(?:Condição de Pagamento|Forma de Pagamento|Pagamento)\s*[:]?\s*([^\n\r]+)/i) ||
+    const payMatch = text.match(/(?:Condição de Pagamento|Cond\. Pagto|Forma de Pagamento|Pagamento)\s*[:]?\s*([^\n\r]+)/i) ||
                      text.match(/(?:Dinheiro\s*\/\s*Pagamento à vista|Faturado\s*\d+\s*DD|Boleto\s*\d+\s*DD|\d+\s*DDL(?:\s*Boleto)?|À Vista|A Vista|Pix)/i);
     if (payMatch) {
-      paymentTerms = (payMatch[1] || payMatch[0]).trim();
+      paymentTerms = (payMatch[1] || payMatch[0]).split(/(?:Entrega|Vendedor|Emissão)/i)[0].trim();
     }
 
-    const deliveryMatch = text.match(/(?:entrega|prazo de entrega)\s*[:]?\s*([^\n\r]+)/i);
-    if (deliveryMatch) {
-      deliveryTime = deliveryMatch[1].trim();
+    const delivObsMatch = text.match(/prazo de entrega\s*[:]\s*([^\n\r]+)/i);
+    if (delivObsMatch) {
+      deliveryTime = delivObsMatch[1].trim();
+    } else {
+      const deliveryMatch = text.match(/(?:prazo de entrega|entrega)\s*[:\.]*\s*([^\n\r]+)/i);
+      if (deliveryMatch) {
+        deliveryTime = deliveryMatch[1].replace(/^[.:\s]+/, '').trim();
+      }
     }
 
     return {
@@ -202,48 +209,139 @@ export class SupplierPdfParser {
     const l = line.toUpperCase();
     return (
       l.includes('CNPJ:') ||
+      l.includes('C.N.P.J') ||
       l.includes('CPF:') ||
+      l.includes('C.P.F') ||
       l.includes('INSCRIÇÃO') ||
       l.includes('INSC. ESTADUAL') ||
+      l.includes('I.E.:') ||
+      l.includes('I.E.') ||
+      l.includes('C.E.P.') ||
+      l.includes('CEP:') ||
       l.includes('TELEFONE') ||
       l.includes('FONE:') ||
+      l.includes('TEL:') ||
       l.includes('EMAIL:') ||
+      l.includes('E-MAIL:') ||
       l.includes('CONDIÇÃO DE PAGAMENTO') ||
+      l.includes('COND. PAGTO') ||
       l.includes('FORMA DE PAGAMENTO') ||
       l.includes('PROPOSTA COMERCIAL Nº') ||
+      l.includes('ORÇAMENTO Nº') ||
+      l.includes('ORCAMENTO Nº') ||
       l.includes('TOTAL GERAL') ||
       l.includes('SUB TOTAL') ||
+      l.includes('SUB-TOTAL') ||
       l.includes('SUBTOTAL') ||
       l.includes('AGRADECEMOS') ||
       l.includes('DADOS BANCÁRIOS') ||
       l.includes('BANCO:') ||
       l.includes('AGÊNCIA:') ||
       l.includes('VALIDADE DA PROPOSTA') ||
+      l.includes('PREÇOS AJUSTÁVEIS') ||
+      l.includes('PRECOS AJUSTAVEIS') ||
+      l.includes('NOSSOS PREÇOS SÃO') ||
+      l.includes('NOSSOS PRECOS SAO') ||
+      l.includes('OBSERVAÇÕES:') ||
+      l.includes('OBSERVACOES:') ||
+      l.includes('ENDEREÇO:') ||
+      l.includes('ENDERECO:') ||
+      l.includes('CIDADE:') ||
+      l.includes('BAIRRO:') ||
+      l.includes('ESTADO:') ||
+      l.includes('CLIENTE:') ||
+      l.includes('DESTINATÁRIO:') ||
+      l.includes('VENDEDOR:') ||
       /^ITEM\s+CÓDIGO/i.test(l) ||
       /^ITEM\s+DESCRIÇÃO/i.test(l) ||
+      /^CÓDIGO\s+DESCRIÇÃO/i.test(l) ||
+      /^CODIGO\s+DESCRICAO/i.test(l) ||
       /^DESCRIÇÃO\s+DO/i.test(l)
     );
+  }
+
+  /**
+   * Localiza a região exata da tabela de itens (Zone B) entre o cabeçalho e o rodapé/totais
+   */
+  static findTableZones(lines) {
+    let headerIndex = -1;
+    let footerIndex = lines.length;
+
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i].toLowerCase();
+
+      // Identifica linha de cabeçalho da tabela de itens
+      if (headerIndex === -1) {
+        const hasCodeOrItem = l.includes('código') || l.includes('codigo') || l.includes('item') || l.includes('ref');
+        const hasDesc = l.includes('descrição') || l.includes('descricao') || l.includes('produto') || l.includes('material');
+        const hasQty = l.includes('qtde') || l.includes('qtd') || l.includes('quant') || l.includes('unid') || l.includes('un.');
+        const hasPrice = l.includes('unitário') || l.includes('unitario') || l.includes('total') || l.includes('preço') || l.includes('preco') || l.includes('valor');
+
+        if ((hasDesc && (hasPrice || hasQty)) || (hasCodeOrItem && hasDesc)) {
+          headerIndex = i;
+          continue;
+        }
+      }
+
+      // Identifica rodapé / encerramento da tabela
+      if (headerIndex !== -1 && i > headerIndex) {
+        if (
+          l.startsWith('preços ajustáveis') ||
+          l.startsWith('precos ajustaveis') ||
+          l.includes('nossos preços são') ||
+          l.includes('nossos precos sao') ||
+          l.includes('observações') ||
+          l.includes('observacoes') ||
+          l.includes('sub-total') ||
+          l.includes('subtotal') ||
+          l.includes('total geral') ||
+          l.includes('total ipi') ||
+          l.includes('total dos produtos') ||
+          l.includes('dados bancários') ||
+          l.includes('dados bancarios') ||
+          l.includes('condições gerais') ||
+          l.includes('condicoes gerais') ||
+          l.includes('validade da proposta')
+        ) {
+          footerIndex = i;
+          break;
+        }
+      }
+    }
+
+    return { headerIndex, footerIndex };
   }
 
   /**
    * Extração de itens em tabelas de cotação / orçamentos multi-estratégia
    */
   static extractItems(text, lines) {
+    const zones = this.findTableZones(lines);
+    const candidateLines = zones.headerIndex !== -1
+      ? lines.slice(zones.headerIndex + 1, zones.footerIndex)
+      : lines;
+
     // 1. Linhas com delimitadores explícitos (pipes | ou tabs \t)
-    const delimited = this.extractDelimitedRows(lines);
+    const delimited = this.extractDelimitedRows(candidateLines);
     if (delimited.length > 0) return delimited;
 
     // 2. Linhas tabulares tradicionais (com descrição, quantidade, preços)
-    const tableItems = this.extractTableRows(lines);
+    const tableItems = this.extractTableRows(candidateLines);
     if (tableItems.length > 0) return tableItems;
 
     // 3. Blocos multi-linhas (quando cada atributo quebra de linha)
-    const blockItems = this.extractMultiLineBlocks(lines);
+    const blockItems = this.extractMultiLineBlocks(candidateLines);
     if (blockItems.length > 0) return blockItems;
 
     // 4. Glued numbers (Protshop)
-    const glued = this.extractGluedItems(lines);
+    const glued = this.extractGluedItems(candidateLines);
     if (glued.length > 0) return glued;
+
+    // Fallback se com delimitação restrita não achou nada (orçamentos sem cabeçalho padronizado)
+    if (zones.headerIndex !== -1) {
+      const fallbackTable = this.extractTableRows(lines);
+      if (fallbackTable.length > 0) return fallbackTable;
+    }
 
     return [];
   }
@@ -268,7 +366,7 @@ export class SupplierPdfParser {
       for (let cIdx = cells.length - 1; cIdx >= 0; cIdx--) {
         const raw = cells[cIdx];
         const val = this.parseBrNumber(raw);
-        if (val > 0 && /[\d]+[.,]\d{2}/.test(raw)) {
+        if (val > 0 && /[\d]+[.,]\d{2,4}/.test(raw)) {
           if (totalPrice === 0) {
             totalPrice = val;
           } else if (unitPrice === 0) {
@@ -280,7 +378,7 @@ export class SupplierPdfParser {
           unit = raw.toUpperCase();
         } else if (!description && raw.length > 3 && !/^\d+$/.test(raw)) {
           description = raw;
-        } else if (!code && /^[A-Za-z0-9_-]{3,}$/.test(raw)) {
+        } else if (!code && /^[A-Za-z0-9_.\-]{3,}$/.test(raw)) {
           code = raw;
         }
       }
@@ -319,7 +417,7 @@ export class SupplierPdfParser {
       let line = lines[i];
       if (this.isIgnoredLine(line)) continue;
 
-      // Limpa do final da linha colunas extras como IPI (ex: "5%"), Alíquotas ou NCM (ex: "8415.90" ou "7411.10.10")
+      // Limpa do final da linha colunas extras como IPI (ex: "0%", "5%"), Alíquotas ou NCM (ex: "8415.90" ou "7411.10.10")
       let cleanLine = line
         .replace(/\s+\d{1,2}(?:,\d+)?%\s*$/, '') // remove IPI no final
         .replace(/\s+\b\d{4}\.\d{2}(?:\.\d{2})?\b\s*$/, '') // remove NCM no final
@@ -327,8 +425,11 @@ export class SupplierPdfParser {
         .replace(/\s+\d{1,2}(?:,\d+)?%\s*$/, '') // se houver outro percentual
         .trim();
 
-      // Procura os dois últimos números decimais (preço unitário e preço total)
-      const matches = [...cleanLine.matchAll(/(?:R\$\s*)?([\d]{1,3}(?:\.\d{3})*,\d{2}|[\d]+,\d{2}|[\d]+\.\d{2})/g)];
+      // Procura números com 2 a 4 casas decimais (unitário e total)
+      // Aceita tanto formato brasileiro tradicional com vírgula quanto formato internacional com ponto
+      const priceRegex = /(?:R\$\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+)[,.]\d{2,4})/g;
+      const matches = [...cleanLine.matchAll(priceRegex)];
+
       if (matches.length < 2) continue;
 
       const lastMatch = matches[matches.length - 1];
@@ -360,6 +461,7 @@ export class SupplierPdfParser {
           unit = anyUnitMatch[2].toUpperCase();
           leadText = leadText.slice(0, anyUnitMatch.index).trim();
         } else {
+          // Padrão 3: quantidade numérica no final do leadText (ex: "1,000", "15,00" ou "1")
           const qtyOnlyMatch = leadText.match(/([\d]{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:[.,]\d+)?)\s*$/);
           if (qtyOnlyMatch) {
             quantity = this.parseBrNumber(qtyOnlyMatch[1]);
@@ -381,20 +483,20 @@ export class SupplierPdfParser {
 
       // Limpeza de código e descrição
       let cleanDesc = leadText
-        .replace(/^(\d{1,3}[\.\-ºª]?\s+)/, '')
+        .replace(/^(\d{1,3}[\.\-ºª]?\s+)/, '') // remove número sequencial
         .replace(/\b(8415\.\d{2}(?:\.\d{2})?|7411\.\d{2}(?:\.\d{2})?|\d{4}\.\d{2}\.\d{2})\b/g, '')
         .trim();
 
       let code = '';
-      const codeMatch = cleanDesc.match(/^([A-Za-z0-9_-]{3,10})\s+(.+)$/);
-      if (codeMatch && !/^(dumper|damper|grelha|difusor|tubo|bomba|suporte|fita|parafuso|curva|valvula|v[aá]lvula|registro)/i.test(codeMatch[1])) {
+      const codeMatch = cleanDesc.match(/^([A-Za-z0-9_.\-]{3,15})\s+(.+)$/);
+      if (codeMatch && !/^(dumper|damper|grelha|difusor|tubo|bomba|suporte|fita|parafuso|curva|valvula|v[aá]lvula|registro|cabo|fio)/i.test(codeMatch[1])) {
         code = codeMatch[1];
         cleanDesc = codeMatch[2].trim();
       }
 
       if (i > 0 && cleanDesc.length < 20) {
         const prevL = lines[i - 1];
-        if (!this.isIgnoredLine(prevL) && !/[\d]{1,3},\d{2}/.test(prevL) && prevL.length > 5) {
+        if (!this.isIgnoredLine(prevL) && !/[\d]{1,3}[,.]\d{2}/.test(prevL) && prevL.length > 5) {
           cleanDesc = `${prevL} ${cleanDesc}`.trim();
         }
       }

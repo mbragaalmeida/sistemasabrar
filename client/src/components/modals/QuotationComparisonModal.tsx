@@ -111,22 +111,107 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
   const [parsingPdf, setParsingPdf] = useState(false);
   const [pdfSuccessMessage, setPdfSuccessMessage] = useState('');
 
+  // Estado para Múltiplos Mapas Comparativos (Item 1)
+  const [allQuotations, setAllQuotations] = useState<any[]>([]);
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [showCreateQuotationModal, setShowCreateQuotationModal] = useState(false);
+  const [newQuotationTitle, setNewQuotationTitle] = useState('');
+  const [newQuotationProjectId, setNewQuotationProjectId] = useState<string>('');
+  const [newQuotationDeadline, setNewQuotationDeadline] = useState('');
+  const [newQuotationNotes, setNewQuotationNotes] = useState('');
+  const [creatingQuotation, setCreatingQuotation] = useState(false);
+
   useEffect(() => {
     if (isOpen) {
       loadRegisteredSuppliers();
-      if (quotationId) {
-        setActiveQuotationId(quotationId);
-        loadQuotationDetails(quotationId);
-      } else {
-        api.getQuotations().then(list => {
-          if (list && list.length > 0) {
-            setActiveQuotationId(list[0].id);
-            loadQuotationDetails(list[0].id);
-          }
-        }).catch(console.error);
-      }
+      api.getProjects().then(setProjectsList).catch(console.error);
+      loadAllQuotations(quotationId || undefined);
     }
   }, [isOpen, quotationId]);
+
+  const loadAllQuotations = async (targetId?: number) => {
+    try {
+      const list = await api.getQuotations();
+      setAllQuotations(list || []);
+      const nextId = targetId || activeQuotationId || (list && list[0]?.id);
+      if (nextId) {
+        setActiveQuotationId(nextId);
+        await loadQuotationDetails(nextId);
+      }
+    } catch (err) {
+      console.error('Erro ao listar cotações:', err);
+    }
+  };
+
+  const handleSwitchQuotation = (targetId: number) => {
+    setActiveQuotationId(targetId);
+    setShowAddItem(false);
+    setShowAddSupplier(false);
+    setPdfSuccessMessage('');
+    loadQuotationDetails(targetId);
+  };
+
+  const handleCreateQuotation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setCreatingQuotation(true);
+      const storedUser = localStorage.getItem('sabrar_user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+
+      const payload = {
+        title: newQuotationTitle.trim() || undefined,
+        project_id: newQuotationProjectId ? Number(newQuotationProjectId) : null,
+        deadline: newQuotationDeadline || null,
+        notes: newQuotationNotes.trim() || null,
+        userId: currentUser?.id || 1
+      };
+
+      const res = await api.createQuotation(payload);
+      if (res && res.quotationId) {
+        setShowCreateQuotationModal(false);
+        setNewQuotationTitle('');
+        setNewQuotationProjectId('');
+        setNewQuotationDeadline('');
+        setNewQuotationNotes('');
+        await loadAllQuotations(res.quotationId);
+        if (onSuccess) onSuccess();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao criar novo comparativo.');
+    } finally {
+      setCreatingQuotation(false);
+    }
+  };
+
+  const handleDeleteActiveQuotation = async () => {
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+
+    if (!window.confirm(`Deseja realmente excluir este mapa comparativo (${quotation?.quotation_number || 'COT'})? Todos os itens e propostas deste mapa serão removidos.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await api.deleteQuotation(qId);
+      const remainingList = await api.getQuotations();
+      setAllQuotations(remainingList || []);
+      if (remainingList && remainingList.length > 0) {
+        setActiveQuotationId(remainingList[0].id);
+        await loadQuotationDetails(remainingList[0].id);
+      } else {
+        setActiveQuotationId(null);
+        setQuotation(null);
+        setSuppliers([]);
+        setItems([]);
+      }
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir mapa comparativo.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadRegisteredSuppliers = async () => {
     try {
@@ -437,13 +522,19 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
       return;
     }
 
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) {
+      alert('Cotação não identificada.');
+      return;
+    }
+
     try {
       setSubmittingSupplier(true);
       const subtotal = calcNewSubtotal();
       const taxAmount = (subtotal * (Number(newTaxRate) || 0)) / 100;
       const totalAmount = subtotal + taxAmount + (Number(newFreight) || 0);
 
-      await api.addQuotationSupplier(quotationId!, {
+      await api.addQuotationSupplier(qId, {
         supplier_name: newSupplierName,
         cnpj: newCnpj,
         contact_name: newContact,
@@ -464,7 +555,7 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
       setNewContact('');
       setNewPhone('');
       setNewPrices({});
-      await loadQuotationDetails();
+      await loadQuotationDetails(qId);
       if (onSuccess) onSuccess();
     } catch (err: any) {
       alert(err.message || 'Erro ao cadastrar proposta do fornecedor.');
@@ -474,13 +565,16 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
   };
 
   const handleSetWinner = async (supplierId: number, name: string) => {
+    const qId = activeQuotationId || quotationId || (quotation && quotation.id);
+    if (!qId) return;
+
     if (!window.confirm(`Deseja aprovar e homologar a proposta de "${name}" como vencedora deste mapa comparativo?`)) {
       return;
     }
     try {
-      await api.setQuotationWinner(quotationId!, supplierId);
+      await api.setQuotationWinner(qId, supplierId);
       alert('Fornecedor vencedor definido e mapa homologado com sucesso!');
-      await loadQuotationDetails();
+      await loadQuotationDetails(qId);
       if (onSuccess) onSuccess();
     } catch (err: any) {
       alert(err.message || 'Erro ao homologar fornecedor vencedor.');
@@ -514,19 +608,36 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-slate-100 my-auto">
         
         {/* Cabeçalho */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60 rounded-t-2xl">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 rounded-t-2xl">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-xl">
+            <div className="p-2.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-xl shrink-0">
               <FileSpreadsheet className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  Mapa Comparativo de Preços e Fornecedores
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+                  Mapa Comparativo de Preços
                 </h2>
-                <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
-                  {quotation?.quotation_number || 'COT-2026'}
-                </span>
+
+                {/* Seletor de Arquivos de Mapas Comparativos Salvos (Item 1) */}
+                <div className="relative inline-flex items-center">
+                  <select
+                    value={activeQuotationId || ''}
+                    onChange={(e) => handleSwitchQuotation(Number(e.target.value))}
+                    className="bg-white dark:bg-slate-800 border border-blue-400 dark:border-blue-700 text-blue-900 dark:text-blue-200 text-xs font-bold rounded-lg px-2.5 py-1 shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer max-w-[280px] sm:max-w-[340px] truncate"
+                    title="Alternar entre arquivos de mapas comparativos salvos no sistema"
+                  >
+                    {allQuotations.length === 0 && (
+                      <option value="">Nenhum mapa salvo</option>
+                    )}
+                    {allQuotations.map(q => (
+                      <option key={q.id} value={q.id}>
+                        {q.quotation_number} — {q.title || q.project_name || 'Demanda Geral'} ({q.suppliers_count || 0} forn., {q.items_count || 0} itens)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${
                   quotation?.status === 'Aprovada'
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
@@ -534,15 +645,43 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                 }`}>
                   {quotation?.status || 'Em Cotação'}
                 </span>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCreateQuotationModal(true)}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer"
+                  title="Criar um novo arquivo de mapa comparativo do zero para outros itens e fornecedores"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Novo Comparativo</span>
+                </button>
+
+                {activeQuotationId && allQuotations.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteActiveQuotation}
+                    className="p-1 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                    title="Excluir este arquivo comparativo do sistema"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+
+              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-1 flex-wrap">
                 <Building className="w-3.5 h-3.5" />
-                Obra: <span className="font-medium text-slate-700 dark:text-slate-300">{quotation?.project_name || 'Demanda Geral Sabrar'}</span>
+                Obra / Destino: <span className="font-semibold text-slate-700 dark:text-slate-300">{quotation?.project_name || 'Demanda Geral Sabrar'}</span>
                 {quotation?.deadline && (
                   <>
                     <span>•</span>
                     <Calendar className="w-3.5 h-3.5" />
                     Prazo limite: {new Date(quotation.deadline).toLocaleDateString('pt-BR')}
+                  </>
+                )}
+                {quotation?.created_at && (
+                  <>
+                    <span>•</span>
+                    <span>Criado em: {new Date(quotation.created_at).toLocaleDateString('pt-BR')}</span>
                   </>
                 )}
               </p>
@@ -1369,6 +1508,115 @@ export const QuotationComparisonModal: React.FC<QuotationComparisonModalProps> =
                     className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-md shadow-blue-600/30 disabled:opacity-50"
                   >
                     {savingEditItem ? 'Salvando...' : 'Salvar Alterações'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Criar Novo Arquivo de Mapa Comparativo (Item 1) */}
+        {showCreateQuotationModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-6 text-slate-800 dark:text-slate-100 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-xl">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Novo Mapa Comparativo de Preços
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Crie um novo arquivo limpo para comparar itens e fornecedores específicos
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateQuotationModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateQuotation} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Título / Identificador do Comparativo *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newQuotationTitle}
+                    onChange={(e) => setNewQuotationTitle(e.target.value)}
+                    placeholder="Ex: Cotação de Tubos e Conexões, Dutos Stanque Lola, etc."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Obra / Projeto Destino
+                    </label>
+                    <select
+                      value={newQuotationProjectId}
+                      onChange={(e) => setNewQuotationProjectId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                      <option value="">Almoxarifado / Geral Sabrar</option>
+                      {projectsList.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} - {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Prazo Limite para Propostas
+                    </label>
+                    <input
+                      type="date"
+                      value={newQuotationDeadline}
+                      onChange={(e) => setNewQuotationDeadline(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Observações / Condições Gerais (Opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newQuotationNotes}
+                    onChange={(e) => setNewQuotationNotes(e.target.value)}
+                    placeholder="Instruções de entrega, condições de faturamento, marcas homologadas..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateQuotationModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingQuotation}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{creatingQuotation ? 'Criando...' : 'Criar Mapa Comparativo'}</span>
                   </button>
                 </div>
               </form>

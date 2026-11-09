@@ -48,8 +48,12 @@ budgetsRouter.post('/save', async (req, res) => {
       userName = 'Orçamentista',
       totalEquipment: reqTotalEquipment,
       materialsMarginPercent = 0,
-      laborMarginPercent = 0
+      laborMarginPercent = 0,
+      discountAmount = 0,
+      discount_amount = 0
     } = req.body;
+
+    const finalDiscount = Number(discountAmount || discount_amount || 0);
 
     const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
     if (!project) return res.status(404).json({ error: 'Projeto não encontrado' });
@@ -94,9 +98,22 @@ budgetsRouter.post('/save', async (req, res) => {
     let totalTaxes = 0;
     let totalAdditional = 0;
 
+    // Primeiro passo: processa serviços que NÃO são porcentagem
+    const nonPercentServices = [];
+    const percentServices = [];
+
     for (const s of (services || [])) {
       const desc = String(s.description || '').trim();
       if (!desc) continue;
+      if (s.unit === '%' || s.unit === 'pct' || s.unit === 'porcentagem') {
+        percentServices.push(s);
+      } else {
+        nonPercentServices.push(s);
+      }
+    }
+
+    for (const s of nonPercentServices) {
+      const desc = String(s.description || '').trim();
       const qty = Math.max(0.0001, Number(s.quantity) || 1);
       const unitPrice = Number(s.unitPrice !== undefined ? s.unitPrice : (s.unit_price || 0)) || 0;
       const sub = (s.subtotal !== undefined && s.subtotal !== null && Number(s.subtotal) > 0)
@@ -119,13 +136,6 @@ budgetsRouter.post('/save', async (req, res) => {
       else if (s.category === 'IMPOSTOS') totalTaxes += sub;
       else totalAdditional += sub;
     }
-
-    totalLabor = Number(totalLabor.toFixed(2));
-    totalEquipmentServices = Number(totalEquipmentServices.toFixed(2));
-    totalLogistics = Number(totalLogistics.toFixed(2));
-    totalTaxes = Number(totalTaxes.toFixed(2));
-    totalAdditional = Number(totalAdditional.toFixed(2));
-    const totalServices = Number((totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional).toFixed(2));
 
     // Busca orçamento existente
     let budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ? AND (is_hidden IS FALSE OR is_hidden IS NULL)').get(projectId);
@@ -163,7 +173,42 @@ budgetsRouter.post('/save', async (req, res) => {
     }
 
     const finalTotalEquipment = Number(equipmentTotal.toFixed(2));
-    const totalFinal = Number((totalMaterials + totalServices + finalTotalEquipment).toFixed(2));
+
+    // Base global para serviços percentuais (ex: remuneração comercial da Natália / comissão)
+    const baseGlobalForPercent = totalMaterials + totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional + finalTotalEquipment;
+
+    for (const s of percentServices) {
+      const desc = String(s.description || '').trim();
+      const pct = (Number(s.unit_price) > 0 && Number(s.quantity) === 1) ? Number(s.unit_price) : (Number(s.quantity) || Number(s.unit_price) || 0);
+      const sub = Number(((baseGlobalForPercent * pct) / 100).toFixed(2));
+      const uPrice = Number(s.unit_price) > 0 ? Number(s.unit_price) : pct;
+
+      validServices.push({
+        ...s,
+        category: s.category || 'MÃO DE OBRA',
+        description: desc,
+        quantity: Number(s.quantity) || 1,
+        unit: '%',
+        unitPrice: uPrice,
+        subtotal: sub,
+        notes: s.notes || `Calculado em ${pct}% sobre o valor global da obra (R$ ${baseGlobalForPercent.toFixed(2)})`
+      });
+
+      if (s.category === 'MÃO DE OBRA') totalLabor += sub;
+      else if (s.category === 'EQUIPAMENTO') totalEquipmentServices += sub;
+      else if (s.category === 'LOGÍSTICA') totalLogistics += sub;
+      else if (s.category === 'IMPOSTOS') totalTaxes += sub;
+      else totalAdditional += sub;
+    }
+
+    totalLabor = Number(totalLabor.toFixed(2));
+    totalEquipmentServices = Number(totalEquipmentServices.toFixed(2));
+    totalLogistics = Number(totalLogistics.toFixed(2));
+    totalTaxes = Number(totalTaxes.toFixed(2));
+    totalAdditional = Number(totalAdditional.toFixed(2));
+    const totalServices = Number((totalLabor + totalEquipmentServices + totalLogistics + totalTaxes + totalAdditional).toFixed(2));
+
+    const totalFinal = Number(Math.max(0, (totalMaterials + totalServices + finalTotalEquipment) - finalDiscount).toFixed(2));
     let budgetId;
 
     if (!budget) {
@@ -173,15 +218,15 @@ budgetsRouter.post('/save', async (req, res) => {
         INSERT INTO budgets (
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
-          total_additional, total_final, validity_days, commercial_terms,
+          total_additional, total_final, discount_amount, validity_days, commercial_terms,
           materials_margin_percent, labor_margin_percent
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const result = await insertBudget.run(
         projectId, budgetCode, totalMaterials, totalServices,
         totalLabor, finalTotalEquipment, totalLogistics, totalTaxes,
-        totalAdditional, totalFinal, validityDays, commercialTerms,
+        totalAdditional, totalFinal, finalDiscount, validityDays, commercialTerms,
         Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0)
       );
       budgetId = result.lastInsertRowid;
@@ -191,14 +236,14 @@ budgetsRouter.post('/save', async (req, res) => {
         UPDATE budgets SET
           total_materials = ?, total_services = ?, total_labor = ?,
           total_equipment = ?, total_logistics = ?, total_taxes = ?,
-          total_additional = ?, total_final = ?, validity_days = ?,
+          total_additional = ?, total_final = ?, discount_amount = ?, validity_days = ?,
           commercial_terms = ?, materials_margin_percent = ?, labor_margin_percent = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(
         totalMaterials, totalServices, totalLabor,
         finalTotalEquipment, totalLogistics, totalTaxes,
-        totalAdditional, totalFinal, validityDays, commercialTerms,
+        totalAdditional, totalFinal, finalDiscount, validityDays, commercialTerms,
         Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0),
         budgetId
       );
@@ -513,6 +558,41 @@ budgetsRouter.post('/project/:projectId/versions', async (req, res) => {
       notes,
       userId,
       userName
+    );
+
+    // Sincroniza orçamento ativo e projeto com os totais da nova versão
+    if (budgetId) {
+      await db.prepare(`
+        UPDATE budgets SET
+          total_materials = COALESCE(?, total_materials),
+          total_services = COALESCE(?, total_services),
+          total_equipment = COALESCE(?, total_equipment),
+          discount_amount = ?,
+          total_final = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        Number(total_materials) || 0,
+        Number(total_services) || 0,
+        Number(total_equipment) || 0,
+        Number(discount_amount) || 0,
+        Number(total_final) || 0,
+        budgetId
+      );
+    }
+
+    await db.prepare(`
+      UPDATE projects SET
+        total_budget_materials = COALESCE(?, total_budget_materials),
+        total_budget_services = COALESCE(?, total_budget_services),
+        total_budget_final = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      Number(total_materials) || 0,
+      Number(total_services) || 0,
+      Number(total_final) || 0,
+      projectId
     );
 
     // Auditoria
