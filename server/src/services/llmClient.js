@@ -118,8 +118,8 @@ export class BudgetLLMClient {
 
         if (!res.ok) {
           const errText = await res.text();
-          if (res.status === 404 && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
-            console.warn(`[BudgetLLMClient] Modelo ${model} retornou 404, tentando alternativa...`);
+          if ((res.status === 404 || res.status === 503 || res.status === 429) && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
+            console.warn(`[BudgetLLMClient] Modelo ${model} retornou status ${res.status}, tentando alternativa...`);
             continue;
           }
           throw new Error(`Gemini API Error (${res.status}): ${errText}`);
@@ -198,7 +198,8 @@ export class BudgetLLMClient {
       const candidateModels = [
         config.model,
         'gemini-3.8-flash',
-        'gemini-3.7-flash'
+        'gemini-3.7-flash',
+        'gemini-2.5-pro'
       ].filter(Boolean);
       const uniqueModels = [...new Set(candidateModels)];
 
@@ -229,7 +230,7 @@ export class BudgetLLMClient {
               status: res.status,
               error: errMsg
             };
-            if (res.status === 404 && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
+            if ((res.status === 404 || res.status === 503 || res.status === 429) && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
               continue;
             }
             return lastErrResult;
@@ -311,5 +312,34 @@ export class BudgetLLMClient {
       operational: false,
       message: 'Provedor determinístico ativo.'
     };
+  }
+
+  /**
+   * Lista modelos disponíveis na conta Gemini (sem expor a chave)
+   */
+  static async listGeminiModels() {
+    const config = this.getProviderConfig();
+    if (!config.apiKey || config.provider !== 'gemini') {
+      return { ok: false, error: 'Chave Gemini não configurada no ambiente.' };
+    }
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${config.apiKey}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errText = await res.text();
+        return { ok: false, status: res.status, error: errText };
+      }
+      const data = await res.json();
+      const models = (data?.models || []).map(m => ({
+        name: m.name.replace(/^models\//, ''),
+        displayName: m.displayName,
+        description: m.description,
+        supportedMethods: m.supportedGenerationMethods
+      }));
+      return { ok: true, total: models.length, models };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   }
 }

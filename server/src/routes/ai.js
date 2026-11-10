@@ -17,6 +17,16 @@ aiRouter.get('/status', async (req, res) => {
   }
 });
 
+// Lista modelos Gemini disponíveis para a chave configurada
+aiRouter.get('/models', async (req, res) => {
+  try {
+    const models = await BudgetLLMClient.listGeminiModels();
+    res.json(models);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Dispara análise por IA dos documentos técnicos e memorial descritivo
 aiRouter.post('/analyze/:projectId', async (req, res) => {
   try {
