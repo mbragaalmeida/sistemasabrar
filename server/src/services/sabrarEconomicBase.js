@@ -74,27 +74,148 @@ export function normalizeTechString(str) {
 
 export function extractExactGauges(text) {
   if (!text) return [];
-  const normalized = normalizeTechString(text);
-  const compositeFractionMatches = normalized.match(/\b\d+\s+\d+\/\d+["'']?/g) || [];
-  const simpleFractionMatches = normalized.match(/(?<!\d\s+)\b\d+\/\d+["'']?/g) || [];
-  const cvMatches = normalized.match(/\b\d+(?:[.,]\d+)?\s*cv\b/g) || [];
+  const norm = normalizeTechString(text).replace(/pol\b|polegadas?\b/g, '"');
+  const found = new Set();
+  
+  // Composite fractions: 1.1/8", 1 1/8", 1-1/8", 2.1/2", etc.
+  const compRegex = /\b(\d+)[\s.-]+(\d+\/\d+)["'']?/g;
+  let m;
+  while ((m = compRegex.exec(norm)) !== null) {
+    found.add(`${m[1]}.${m[2]}`);
+  }
 
-  // Normalização numérica de milímetros (ex: 2,50mm -> 2.5mm)
-  const mmMatches = [];
-  const rawMm = normalized.matchAll(/\b(\d+(?:[.,]\d+)?)\s*mm\b/g);
-  for (const match of rawMm) {
-    const num = parseFloat(match[1].replace(',', '.'));
-    if (!isNaN(num)) {
-      mmMatches.push(`${num}mm`);
+  // Simple fractions not preceded by whole number: 1/4", 3/8", 5/8", 3/4", 7/8", 1/2"
+  const simpRegex = /(?<!\d[\s.-])\b(\d+\/\d+)["'']?/g;
+  while ((m = simpRegex.exec(norm)) !== null) {
+    found.add(m[1]);
+  }
+
+  // Decimals with quotes or mm: 2.12", 28mm, 15.88mm, 9.52mm
+  const decQuoteRegex = /\b(\d+[.,]\d+)["'']/g;
+  while ((m = decQuoteRegex.exec(norm)) !== null) {
+    found.add(m[1].replace(',', '.'));
+  }
+
+  const mmRegex = /\b(\d+(?:[.,]\d+)?)\s*mm\b/g;
+  while ((m = mmRegex.exec(norm)) !== null) {
+    const val = parseFloat(m[1].replace(',', '.'));
+    if (Math.abs(val - 6.35) < 0.2) found.add('1/4');
+    else if (Math.abs(val - 9.52) < 0.2) found.add('3/8');
+    else if (Math.abs(val - 12.7) < 0.2) found.add('1/2');
+    else if (Math.abs(val - 15.88) < 0.3) found.add('5/8');
+    else if (Math.abs(val - 19.05) < 0.3) found.add('3/4');
+    else if (Math.abs(val - 22.2) < 0.3) found.add('7/8');
+    else if (Math.abs(val - 28.57) < 0.8) found.add('1.1/8');
+    else if (Math.abs(val - 34.9) < 0.8) found.add('1.3/8');
+    else if (Math.abs(val - 41.3) < 0.8) found.add('1.5/8');
+    found.add(`${val}mm`);
+  }
+
+  // Armaflex code matching: M028 / R028 / T028 -> 1.1/8 (28mm), H015 / M015 -> 5/8 (15mm)
+  const armaflexCodeMatch = norm.match(/\b([mrhpt])0?(\d{2,3})\b/);
+  if (armaflexCodeMatch) {
+    const mmNum = parseInt(armaflexCodeMatch[2], 10);
+    if (mmNum === 28) found.add('1.1/8');
+    if (mmNum === 15) found.add('5/8');
+    if (mmNum === 22) found.add('7/8');
+    if (mmNum === 35) found.add('1.3/8');
+    if (mmNum === 42) found.add('1.5/8');
+  }
+
+  return [...found];
+}
+
+export function checkTechnicalCompatibility(searchStr, entryStr, categoryStr = '', synonymsStr = '', queryGauges = null, entryGauges = null) {
+  const searchNorm = normalizeTechString(searchStr);
+  const entryNorm = normalizeTechString(entryStr);
+  const categoryNorm = normalizeTechString(categoryStr);
+  const synonymsNorm = normalizeTechString(synonymsStr);
+  const qGauges = queryGauges || extractExactGauges(searchNorm);
+  const entGauges = entryGauges || extractExactGauges(`${entryNorm} ${synonymsNorm}`);
+  const fullCandidate = `${entryNorm} ${categoryNorm} ${synonymsNorm}`;
+
+  // 1. Difusão de Ar (Difusor, Grelha, Damper, Veneziana, Plenum)
+  const isAirDiffQuery = /\b(difusor|grelha|damper|veneziana|plenum)\b/i.test(searchNorm);
+  if (isAirDiffQuery) {
+    // Válvulas hidráulicas, tubos e fixações nunca podem casar com difusão
+    if (/\b(valvula|esfera|hidraulica|hidraulico|tubo|flange|parafuso|bucha|abracadeira|terminal|garfo)\b/i.test(fullCandidate)) {
+      return false;
+    }
+    const isAirDiffCandidate = /\b(difusor|grelha|damper|veneziana|plenum)\b/i.test(fullCandidate) || categoryNorm.includes('difus');
+    if (!isAirDiffCandidate) {
+      return false;
     }
   }
 
-  return [
-    ...compositeFractionMatches.map(m => m.trim().replace(/["'']/g, '')),
-    ...simpleFractionMatches.map(m => m.trim().replace(/["'']/g, '')),
-    ...mmMatches,
-    ...cvMatches.map(m => m.replace(/\s+/g, ''))
-  ];
+  // 2. Válvulas e Registros Hidráulicos
+  const isValveQuery = /\b(valvula|registro de esfera|registro de gaveta|registro globo)\b/i.test(searchNorm);
+  if (isValveQuery && !isAirDiffQuery) {
+    if (/\b(difusor|grelha|damper)\b/i.test(fullCandidate)) return false;
+  }
+
+  // 3. Tubulação de Cobre
+  const isCopperTubeQuery = /\b(tubo|tubulacao)\b/i.test(searchNorm) && /\b(cobre)\b/i.test(searchNorm);
+  if (isCopperTubeQuery) {
+    if (!categoryNorm.includes('cobre') && !entryNorm.includes('cobre')) return false;
+    if (/\b(aco|carbono|preto|sch\s*40|pvc|galvanizado)\b/i.test(fullCandidate)) return false;
+    if (/\b(curva|luva|te|porca flange|uniao|reducao|sifao)\b/i.test(entryNorm)) return false;
+    if (!/\btubo\b/i.test(entryNorm)) return false;
+  }
+
+  // 4. Conexões de Cobre
+  const isCopperFittingQuery = /\b(curva|luva|te|uniao|reducao)\b/i.test(searchNorm) && /\bcobre\b/i.test(searchNorm);
+  if (isCopperFittingQuery) {
+    if (/\btubo\b/i.test(entryNorm) && !/\b(curva|luva|te|uniao|reducao)\b/i.test(entryNorm)) return false;
+  }
+
+  // 5. Barra Roscada / Tirante vs Alongador
+  const isRodQuery = /\b(barra roscada|tirante)\b/i.test(searchNorm) && !/\b(alongador|prolongador|luva)\b/i.test(searchNorm);
+  if (isRodQuery) {
+    if (/\b(alongador|prolongador|juncao sextavada)\b/i.test(fullCandidate)) return false;
+    if (!/\bbarra roscada\b/i.test(fullCandidate)) return false;
+  }
+
+  // 6. Alongador / Prolongador de Tirante
+  const isExtenderQuery = /\b(alongador|prolongador)\b/i.test(searchNorm);
+  if (isExtenderQuery) {
+    if (!/\b(alongador|prolongador|juncao sextavada)\b/i.test(fullCandidate)) return false;
+  }
+
+  // 7. Isolamento Tubo Armaflex vs Fita / Adesivo
+  const isArmaflexTubeQuery = /\b(armaflex|espuma elastomerica)\b/i.test(searchNorm) && !/\b(fita|cinta|adesivo|cola|manta)\b/i.test(searchNorm);
+  if (isArmaflexTubeQuery) {
+    if (/\b(cinta|fita|adesivo|cola|manta)\b/i.test(fullCandidate)) return false;
+    if (!/\b(espuma elastomerica|armaflex)\b/i.test(fullCandidate)) return false;
+  }
+
+  // 8. Fitas adesivas distintas
+  if (/\bfita tdc\b/i.test(searchNorm) && !/\btdc\b/i.test(fullCandidate)) return false;
+  if (/\bfita aluminio\b/i.test(searchNorm) && !/\baluminio\b/i.test(fullCandidate)) return false;
+  if (/\bfita armaflex\b/i.test(searchNorm) && !/\barmaflex\b/i.test(fullCandidate)) return false;
+
+  // 9. MPU: Painel vs Chapa metálica e Acessórios
+  const isMpuQuery = /\bmpu\b/i.test(searchNorm);
+  if (isMpuQuery) {
+    if (/\b(galvanizad|chapa preta|tdc)\b/i.test(fullCandidate) && !categoryNorm.includes('mpu')) return false;
+    // Se a busca for por PAINEL MPU, rejeita cantos, perfis, cola, fitas, parafusos
+    if (/\bpainel\b/i.test(searchNorm) && /\b(canto|cantoneira|perfil|parafuso|fita|selante|disco|cola|barra de reforco)\b/i.test(entryNorm)) {
+      return false;
+    }
+    // Se a busca NÃO for por painel (ex: busca por perfil ou canto), rejeita painel
+    if (!/\bpainel\b/i.test(searchNorm) && /\bpainel\b/i.test(entryNorm)) {
+      return false;
+    }
+  }
+
+  // 10. Verificação rigorosa de Bitola / Diâmetro
+  if (queryGauges.length > 0) {
+    if (entryGauges.length > 0) {
+      const hasMatch = queryGauges.some(qg => entryGauges.includes(qg));
+      if (!hasMatch) return false;
+    }
+  }
+
+  return true;
 }
 
 export function isNonMaterial(it) {
@@ -146,32 +267,12 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
     const entryNorm = normalizeTechString(entry.item);
     const synonymsNorm = normalizeTechString(entry.synonyms || '');
     const categoryNorm = normalizeTechString(entry.category);
-
-    // Evita falsos positivos grosseiros (ex: Difusores/Dampers/Dutos casando com Parafusos, Terminais ou Abraçadeiras)
-    const isFastenerEntry = /(?:parafuso|arruela|porca|bucha|rebite|abracadeira|terminal|garfo)/i.test(entryNorm) || categoryNorm.includes('fixacao');
-    if (isEquipmentOrDuctOrAirDiffusion && isFastenerEntry) continue;
-
-    // Verificação rigorosa de bitola
     const entryGauges = extractExactGauges(`${entryNorm} ${synonymsNorm}`);
-    let gaugeMismatch = false;
 
-    if (queryGauges.length > 0) {
-      for (const qg of queryGauges) {
-        if (!qg.includes(' ') && qg.includes('/')) {
-          const hasComposite = entryGauges.some(eg => eg.endsWith(qg) && eg !== qg);
-          const hasExact = entryGauges.includes(qg);
-          if (hasComposite && !hasExact) {
-            gaugeMismatch = true;
-            break;
-          }
-        }
-        if (entryGauges.length > 0 && !entryGauges.includes(qg)) {
-          gaugeMismatch = true;
-          break;
-        }
-      }
+    // Validação estrita de compatibilidade técnica e família de materiais
+    if (!checkTechnicalCompatibility(searchNorm, entryNorm, categoryNorm, synonymsNorm, queryGauges, entryGauges)) {
+      continue;
     }
-    if (gaugeMismatch) continue;
 
     // Correspondência por descrição técnica OU sinônimo
     let wordScore = 0;
@@ -191,6 +292,18 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
       (entry.converted_unit && normalizeTechString(entry.converted_unit) === unitNorm)
     )) {
       score += 25;
+    }
+
+    // Bônus de bitola exata
+    if (queryGauges.length > 0 && entryGauges.length > 0 && queryGauges.some(qg => entryGauges.includes(qg))) {
+      score += 40;
+    }
+
+    // Bônus de comprimento (ex: 3MT / 3m)
+    if (searchNorm.includes('3 metro') || searchNorm.includes('3m')) {
+      if (entryNorm.includes('3mt') || entryNorm.includes('3m') || entryNorm.includes('3 metros')) {
+        score += 30;
+      }
     }
 
     // Prioridade para itens da base oficial atualizada 2026

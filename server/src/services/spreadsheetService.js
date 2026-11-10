@@ -5,6 +5,7 @@ const XLSX = require('xlsx');
 import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
 import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
+import { checkTechnicalCompatibility } from './sabrarEconomicBase.js';
 
 function isDiscreteUnit(u) {
   return /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(String(u || ''));
@@ -12,11 +13,14 @@ function isDiscreteUnit(u) {
 
 function roundQuantityForUnit(qty, u) {
   const n = Number(qty);
-  if (isNaN(n) || n <= 0) return 1;
-  if (isDiscreteUnit(u)) {
-    return Math.ceil(n);
+  if (isNaN(n) || n <= 0) return 0;
+  if (n < 1) {
+    return Number(n.toFixed(4));
   }
-  return Number(n.toFixed(2));
+  if (isDiscreteUnit(u) && Number.isInteger(n)) {
+    return Math.round(n);
+  }
+  return Number(n.toFixed(4));
 }
 
 export class SpreadsheetService {
@@ -434,6 +438,7 @@ export class SpreadsheetService {
               if (tokens.length >= 2) {
                 let bestScore = 0;
                 for (const m of catalog) {
+                  if (!checkTechnicalCompatibility(rawDesc, m.name, m.category || '', m.synonyms || '')) continue;
                   const targetStr = normalizeStr(m.name + ' ' + (m.synonyms || ''));
                   let matches = 0;
                   for (const t of tokens) {
@@ -446,6 +451,10 @@ export class SpreadsheetService {
                   }
                 }
               }
+            }
+
+            if (matchedMat && !checkTechnicalCompatibility(rawDesc, matchedMat.name, matchedMat.category || '', matchedMat.synonyms || '')) {
+              matchedMat = null;
             }
 
             const materialId = matchedMat ? matchedMat.id : null;
@@ -536,6 +545,10 @@ export class SpreadsheetService {
 
             if (!matchedMat) {
               matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
+            }
+
+            if (matchedMat && !checkTechnicalCompatibility(rawDesc, matchedMat.name, matchedMat.category || '', matchedMat.synonyms || '')) {
+              matchedMat = null;
             }
 
             const materialId = matchedMat ? matchedMat.id : null;

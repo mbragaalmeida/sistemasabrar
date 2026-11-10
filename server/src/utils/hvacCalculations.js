@@ -74,21 +74,29 @@ export function calculateDuctInsulation(areaSqm) {
  * - Selante / silicone neutro interno para MPU: 1 tubo por 25 m² de duto
  * - Cantos de reforço estrutural MPU: 4 por junta/trecho
  */
-export function calculateMPUDuctPanels(totalAreaSqm, hasExternalDeck = true) {
+export function calculateMPUDuctPanels(totalAreaSqm, options = {}) {
   const area = Number(totalAreaSqm) || 0;
-  const areaWithLoss = Number((area * 1.20).toFixed(2)); // 20% de perda da OP
+  // Fator técnico de perda e corte da SABRAR para MPU: 1.40 (40% de margem de corte, encaixe de perfis e aproveitamento)
+  // ou 1.20 quando já considerado em m² de produção
+  const lossFactor = options.lossFactor || 1.40;
+  const areaWithLoss = Number((area * lossFactor).toFixed(2));
 
-  let internalArea = areaWithLoss;
+  const externalAreaMeasured = Number(options.externalAreaMeasured) || 0;
   let externalArea = 0;
+  let internalArea = areaWithLoss;
 
-  if (hasExternalDeck) {
-    // ~18% dos trechos em patamar técnico/cobertura externa (30mm) e 82% interno (20mm)
-    externalArea = Number((areaWithLoss * 0.18).toFixed(2));
-    internalArea = Number((areaWithLoss * 0.82).toFixed(2));
+  if (externalAreaMeasured > 0) {
+    externalArea = Number((externalAreaMeasured * lossFactor).toFixed(2));
+    internalArea = Math.max(0, Number((areaWithLoss - externalArea).toFixed(2)));
   }
 
   const internalPieces = Math.ceil(internalArea / 2.40);
   const externalPieces = externalArea > 0 ? Math.ceil(externalArea / 2.40) : 0;
+  
+  // Caixas fechadas de 10 painéis (embalagem comercial padrão MPU)
+  const totalPieces = internalPieces + externalPieces;
+  const standardBoxesOf10 = Math.ceil(totalPieces / 10);
+  const commercialPieces = standardBoxesOf10 * 10;
 
   return {
     totalAreaSqm: area,
@@ -96,7 +104,13 @@ export function calculateMPUDuctPanels(totalAreaSqm, hasExternalDeck = true) {
     internalArea,
     externalArea,
     internalPieces,
-    externalPieces
+    externalPieces,
+    totalPieces,
+    standardBoxesOf10,
+    commercialPieces: commercialPieces > 0 ? commercialPieces : totalPieces,
+    notes: externalAreaMeasured === 0 && options.hasExternalDeckNote 
+      ? 'Legenda/notas mencionam espessura 30mm em área externa, porém nenhum traçado físico de duto externo foi cotado. Painéis orçados em 20mm para os trechos internos medidos.'
+      : null
   };
 }
 
@@ -202,16 +216,23 @@ export function calculateHydraulicMeters(linearMeters) {
 }
 
 /**
- * Extrai trechos explícitos de dutos presentes no texto de plantas, memoriais ou anotações CAD
- * Reconhece formatos: "I-120x45", "R-100x70", "duto 60x40", "70 x 40 cm", "seção 100x50", etc.
- * Aplica as diretrizes oficiais de sistemas e isolamento (Passo 2.2, 3.1 e 9 da SABRAR).
+ * Extrai trechos explícitos de dutos presentes no texto de plantas, memoriais ou anotações CAD.
+ * Reconhece formatos: "I-120x45", "R-100x70", "duto 60x40", "seção 100x50", etc.
+ * Aplica as diretrizes oficiais da SABRAR (Passo 3 a 10).
+ * 
+ * REGRA ABSOLUTA DE ENGENHARIA SABRAR:
+ * - Filtra rigorosamente falsos positivos (dimensões de difusores, grelhas, dampers, portas e vãos).
+ * - Elimina comprimento arbitrário padrão de 3.0m quando não cotado em projeto.
+ * - Registra pendência de medição para trechos sem cota linear confirmada.
  */
-export function extractDuctSegmentsFromText(text) {
+export function extractDuctSegmentsFromText(text, options = {}) {
   if (!text) return [];
 
+  const { allowEstimateFallback = false } = options;
   const segments = [];
-  // Procura padrões de dutos com ou sem prefixos de aplicação: I-120x45, R-100x70, duto 60x40, etc.
-  const regex = /(?:(?:duto|dutos|se[çc][aã]o|dimens[aã]o|trecho)\s*)?(?:([IRVAEP]+|EX|AE|AR|RET|INS|PRESS)[-_ ])?(\d{2,4})\s*[xX*×]\s*(\d{2,4})(?:\s*(cm|mm))?(?:[^\n\r\d]{1,25}?(?:comp(?:rimento)?|extens[aã]o|l)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*m)?/gi;
+
+  // Padrão de identificação de trechos de duto (com limite estrito de fronteira de palavra \b)
+  const regex = /(?:(?:duto|dutos|se[çc][aã]o|dimens[aã]o|trecho)\s*)?(?:\b(I|R|V|A|E|P|EX|AE|AR|RET|INS|PRESS)[-_ ])?(\d{2,4})\s*[xX*×]\s*(\d{2,4})(?:\s*(cm|mm))?(?:[^\n\r\d]{1,30}?(?:comp(?:rimento)?|extens[aã]o|l|c)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*m)?/gi;
 
   const isGlobalBlackSteel = /cozinha|gordura|melting|chapa\s*preta|nbr\s*14518/i.test(text);
   const isGlobalPressurization = /pressuriz/i.test(text);
@@ -219,22 +240,36 @@ export function extractDuctSegmentsFromText(text) {
 
   let match;
   while ((match = regex.exec(text)) !== null) {
+    const matchIdx = match.index;
+    const windowStart = Math.max(0, matchIdx - 60);
+    const windowEnd = Math.min(text.length, matchIdx + match[0].length + 60);
+    const surrounding = text.slice(windowStart, windowEnd).toLowerCase();
+
+    // 1. FILTRO DE FALSOS POSITIVOS:
+    // Se no entorno imediato da dimensão houver difusor, grelha, damper, veneziana, porta, janela, esquadria, NÃO é duto!
+    if (/(?:grelha|difusor|difuso|damper|veneziana|plenum|porta|janela|esquadria|alvenaria|vao|tamanho|item\s*\d+|qtd)/i.test(surrounding)) {
+      continue;
+    }
+
     const rawPrefix = (match[1] || '').toUpperCase();
     let dim1 = parseInt(match[2], 10);
     let dim2 = parseInt(match[3], 10);
     const unit = (match[4] || '').toLowerCase();
     const lengthRaw = match[5];
 
-    // Se a unidade for mm ou valores típicos em milímetros (> 200 e múltiplos de 50), converte para cm
+    // Se a unidade for mm ou valores típicos em milímetros (> 150 e múltiplos de 50 sem prefixo), converte para cm
     if (unit === 'mm' || (dim1 > 150 && dim1 % 50 === 0 && dim2 > 150 && dim2 % 50 === 0 && !rawPrefix)) {
       dim1 = Math.round(dim1 / 10);
       dim2 = Math.round(dim2 / 10);
     }
 
-    // Filtra falsos positivos (ex: 250x100 de portas, 600x600 de difusores, etc.)
+    // Filtros de dimensões implausíveis para dutos
     if (dim1 < 10 || dim1 > 400 || dim2 < 10 || dim2 > 400) continue;
+    // Difusor 60x60cm (600x600mm) ou 15x15 pol
+    if (dim1 === 60 && dim2 === 60 && !rawPrefix) continue;
     if (dim1 === 600 && dim2 === 600) continue;
-    if (dim1 === 250 && dim2 === 100 && !rawPrefix) continue; // vão de porta
+    if (dim1 === 250 && dim2 === 100 && !rawPrefix) continue; // vão típico de porta 250x100
+    if (dim1 === 60 && dim2 === 30 && !rawPrefix && /grelha/i.test(text.slice(Math.max(0, matchIdx - 80), matchIdx + 80))) continue; // grelha 600x300
 
     const isSupply = rawPrefix.startsWith('I') || rawPrefix.startsWith('INS');
     const isReturn = rawPrefix.startsWith('R') || rawPrefix.startsWith('RET');
@@ -250,28 +285,31 @@ export function extractDuctSegmentsFromText(text) {
     else if (isOutdoorAir) system = 'Ar Exterior';
     else if (isPressurization) system = 'Pressurização';
 
-    const lengthM = lengthRaw ? parseFloat(lengthRaw.replace(',', '.')) : 3.0; // Padrão 3m por vara/trecho se não informado
-    const widthCm = dim1;  // 1ª medida = largura
-    const heightCm = dim2; // 2ª medida = altura
+    // REGRA: Elimina comprimento padrão de 3.0m no levantamento executivo
+    let lengthM = null;
+    let measurementStatus = 'PENDENTE_MEDICAO';
 
+    if (lengthRaw) {
+      lengthM = parseFloat(lengthRaw.replace(',', '.'));
+      measurementStatus = 'MEDIDO';
+    } else if (allowEstimateFallback) {
+      lengthM = 3.0; // Apenas se explicitamente autorizado pelo chamador para estimativas conceituais
+      measurementStatus = 'ESTIMADO_PRELIMINAR';
+    }
+
+    const widthCm = dim1;
+    const heightCm = dim2;
     const perimeterM = calculateDuctPerimeter(widthCm, heightCm);
-    const areaM2 = calculateDuctArea(perimeterM, lengthM);
+    const areaM2 = lengthM ? calculateDuctArea(perimeterM, lengthM) : null;
     const gauge = determineDuctGauge(widthCm, heightCm, isBlackSteel, isPressurization);
-    const weightKg = calculateDuctKg(areaM2, gauge);
+    const weightKg = areaM2 ? calculateDuctKg(areaM2, gauge) : null;
 
-    // Passo 3.1 & Passo 9:
-    // MPU: Pré-isolado (sem isolamento externo adicional)
-    // Insuflamento metálico: Lã de vidro 38 mm x1,40
-    // Retorno metálico: Sem isolamento
-    // Ar exterior (se condicionadora): x1,40
-    // Exaustão de sanitários: Sem isolamento
-    // Exaustão de cozinha: Lã de rocha x1,40
     let insulationM2 = 0;
-    if (!isMPU) {
+    if (!isMPU && areaM2) {
       if (isSupply || isOutdoorAir) {
         insulationM2 = calculateDuctInsulation(areaM2);
       } else if (isBlackSteel) {
-        insulationM2 = calculateDuctInsulation(areaM2); // Lã de rocha
+        insulationM2 = calculateDuctInsulation(areaM2);
       }
     }
 
@@ -281,6 +319,7 @@ export function extractDuctSegmentsFromText(text) {
       widthCm,
       heightCm,
       lengthM,
+      measurementStatus,
       perimeterM,
       areaM2,
       gauge,
@@ -288,7 +327,8 @@ export function extractDuctSegmentsFromText(text) {
       insulationM2,
       isBlackSteel,
       isPressurization,
-      isMPU
+      isMPU,
+      notes: lengthM ? `Seção ${widthCm}x${heightCm} cm - Comprimento: ${lengthM}m` : `Seção ${widthCm}x${heightCm} cm - Comprimento linear pendente de cota/medição em prancha`
     });
   }
 

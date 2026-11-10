@@ -108,4 +108,6 @@ export const db = {
   }
 };
 
+export default db;
+
 console.log('[Database] Adaptador Supabase PostgreSQL Pool nativo pronto para uso.');
