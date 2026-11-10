@@ -23,8 +23,11 @@ export class BudgetLLMClient {
    * Identifica provedores de IA configurados no ambiente
    */
   static getProviderConfig() {
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
-    const openaiKey = process.env.OPENAI_API_KEY || null;
+    const rawGemini = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+    const geminiKey = typeof rawGemini === 'string' && rawGemini.trim().length > 0 ? rawGemini.trim() : null;
+
+    const rawOpenAI = process.env.OPENAI_API_KEY || '';
+    const openaiKey = typeof rawOpenAI === 'string' && rawOpenAI.trim().length > 0 ? rawOpenAI.trim() : null;
 
     if (geminiKey) {
       return {
@@ -148,5 +151,121 @@ export class BudgetLLMClient {
     if (!rawJson) throw new Error('Resposta vazia da API da OpenAI');
 
     return JSON.parse(rawJson);
+  }
+
+  /**
+   * Testa a conectividade com o provedor de IA sem vazar credenciais
+   */
+  static async testConnection() {
+    const config = this.getProviderConfig();
+    if (!config.apiKey) {
+      return {
+        configured: false,
+        provider: config.provider,
+        model: config.model,
+        operational: false,
+        message: 'Nenhuma chave de API detectada no ambiente (GEMINI_API_KEY ou OPENAI_API_KEY).'
+      };
+    }
+
+    if (config.provider === 'gemini') {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Ping Sabrar' }] }],
+            generationConfig: { maxOutputTokens: 5 }
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          let parsed;
+          try { parsed = JSON.parse(errText); } catch (_) {}
+          return {
+            configured: true,
+            provider: 'gemini',
+            model: config.model,
+            operational: false,
+            status: res.status,
+            error: parsed?.error?.message || errText
+          };
+        }
+
+        return {
+          configured: true,
+          provider: 'gemini',
+          model: config.model,
+          operational: true,
+          message: 'Gemini API conectada e respondendo com sucesso!'
+        };
+      } catch (err) {
+        return {
+          configured: true,
+          provider: 'gemini',
+          model: config.model,
+          operational: false,
+          error: err.message
+        };
+      }
+    }
+
+    if (config.provider === 'openai') {
+      try {
+        const url = 'https://api.openai.com/v1/chat/completions';
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`
+          },
+          body: JSON.stringify({
+            model: config.model,
+            messages: [{ role: 'user', content: 'Ping Sabrar' }],
+            max_tokens: 5
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          let parsed;
+          try { parsed = JSON.parse(errText); } catch (_) {}
+          return {
+            configured: true,
+            provider: 'openai',
+            model: config.model,
+            operational: false,
+            status: res.status,
+            error: parsed?.error?.message || errText
+          };
+        }
+
+        return {
+          configured: true,
+          provider: 'openai',
+          model: config.model,
+          operational: true,
+          message: 'OpenAI API conectada e respondendo com sucesso!'
+        };
+      } catch (err) {
+        return {
+          configured: true,
+          provider: 'openai',
+          model: config.model,
+          operational: false,
+          error: err.message
+        };
+      }
+    }
+
+    return {
+      configured: false,
+      provider: config.provider,
+      model: config.model,
+      operational: false,
+      message: 'Provedor determinístico ativo.'
+    };
   }
 }

@@ -1,10 +1,21 @@
 import express from 'express';
 import { AIAnalysisService } from '../services/aiService.js';
 import { LearningService } from '../services/learningService.js';
+import { BudgetLLMClient } from '../services/llmClient.js';
 import { db } from '../db/connection.js';
 import { SABRAR_ECONOMIC_BASE_ITEMS } from '../services/sabrarEconomicBase.js';
 
 export const aiRouter = express.Router();
+
+// Diagnóstico de conectividade e status do Agente de IA (sem expor credenciais)
+aiRouter.get('/status', async (req, res) => {
+  try {
+    const status = await BudgetLLMClient.testConnection();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Dispara análise por IA dos documentos técnicos e memorial descritivo
 aiRouter.post('/analyze/:projectId', async (req, res) => {
