@@ -31,31 +31,41 @@ aiRouter.get('/models', async (req, res) => {
 aiRouter.post('/analyze/:projectId', async (req, res) => {
   try {
     const projectId = req.params.projectId;
-    const { customText, userId } = req.body;
+    const { customText, userId, dryRun, options = {} } = req.body || {};
+    const existingBudget = await db.prepare('SELECT id, status FROM budgets WHERE project_id = ?').get(projectId);
+    const isApprovedBudget = existingBudget && existingBudget.status === 'Aprovado';
+    const isDryRun = Boolean(dryRun || options.dryRun);
 
-    // Atualiza status do projeto para 'Em análise pela IA'
-    await db.prepare("UPDATE projects SET status = 'Em análise pela IA', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+    // Atualiza status do projeto apenas se não for dryRun e o orçamento não estiver aprovado
+    if (!isDryRun && !isApprovedBudget) {
+      await db.prepare("UPDATE projects SET status = 'Em análise pela IA', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+    }
 
     // Executa o serviço de análise estruturado (Seção 44 e 28)
-    const analysisResult = await AIAnalysisService.analyzeProjectDocuments(projectId, customText);
+    const analysisResult = await AIAnalysisService.analyzeProjectDocuments(projectId, customText, {
+      ...options,
+      dryRun: isDryRun
+    });
 
-    // Auditoria
-    await db.prepare(`
-      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
-      VALUES (?, 'ANALISE_IA', 'PROJETO', ?, ?, ?)
-    `).run(
-      userId || 1, projectId, projectId,
-      `IA analisou documentos e identificou ${analysisResult.materials.length} materiais com sugestão inicial de R$ ${Number(analysisResult.totalEstimatedMaterialsCost).toFixed(2)}`
-    );
+    if (!isDryRun) {
+      // Auditoria
+      await db.prepare(`
+        INSERT INTO audit_logs (user_id, action, entity_type, entity_id, project_id, details)
+        VALUES (?, 'ANALISE_IA', 'PROJETO', ?, ?, ?)
+      `).run(
+        userId || 1, projectId, projectId,
+        `IA analisou documentos e identificou ${analysisResult.materials.length} materiais com subtotal precificado de R$ ${Number(analysisResult.totalEstimatedMaterialsCost).toFixed(2)}`
+      );
 
-    // Dispara notificação para o Setor de Orçamento (Seção 35)
-    await db.prepare(`
-      INSERT INTO notifications (role_target, title, message, type, link)
-      VALUES ('Setor de orçamento', 'IA Finalizou Análise Técnica', ?, 'info', ?)
-    `).run(
-      `A IA gerou a sugestão inicial de materiais para o projeto ${analysisResult.projectName}. Aguardando revisão humana.`,
-      `/projetos/${projectId}`
-    );
+      // Dispara notificação para o Setor de Orçamento (Seção 35)
+      await db.prepare(`
+        INSERT INTO notifications (role_target, title, message, type, link)
+        VALUES ('Setor de orçamento', 'IA Finalizou Análise Técnica', ?, 'info', ?)
+      `).run(
+        `A IA gerou a sugestão inicial de materiais para o projeto ${analysisResult.projectName}. Aguardando revisão humana.`,
+        `/projetos/${projectId}`
+      );
+    }
 
     res.json(analysisResult);
   } catch (err) {

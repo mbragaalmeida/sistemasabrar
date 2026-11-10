@@ -75,65 +75,108 @@ export function calculateDuctInsulation(areaSqm) {
  * - Cantos de reforço estrutural MPU: 4 por junta/trecho
  */
 export function calculateMPUDuctPanels(totalAreaSqm, options = {}) {
-  const area = Number(totalAreaSqm) || 0;
-  // Fator técnico de perda e corte da SABRAR para MPU: 1.40 (40% de margem de corte, encaixe de perfis e aproveitamento)
-  // ou 1.20 quando já considerado em m² de produção
-  const lossFactor = options.lossFactor || 1.40;
-  const areaWithLoss = Number((area * lossFactor).toFixed(2));
+  const opts = typeof options === 'boolean' ? { hasExternalDeckNote: options } : (options || {});
+  const area = Math.max(0, Number(totalAreaSqm) || 0);
+  const lossFactor = Number(opts.lossFactor) || 1.40;
+  const packagingMode = opts.packagingMode || 'CAIXA_FECHADA_10'; // 'CAIXA_FECHADA_10' | 'AVULSO'
+  const panelAreaSqm = 2.40; // Painel padrão 2,00m x 1,20m = 2,40 m²
+  const boxSize = 10; // Caixa fechada padrão do fornecedor com 10 painéis
 
-  const externalAreaMeasured = Number(options.externalAreaMeasured) || 0;
+  const areaWithLoss = Number((area * lossFactor).toFixed(2));
+  const lossAreaSqm = Number((areaWithLoss - area).toFixed(2));
+
+  const externalAreaMeasured = Math.max(0, Number(opts.externalAreaMeasured) || 0);
   let externalArea = 0;
   let internalArea = areaWithLoss;
+  let internalNetArea = area;
+  let externalNetArea = 0;
 
   if (externalAreaMeasured > 0) {
-    externalArea = Number((externalAreaMeasured * lossFactor).toFixed(2));
+    externalNetArea = Math.min(area, externalAreaMeasured);
+    internalNetArea = Math.max(0, Number((area - externalNetArea).toFixed(2)));
+    externalArea = Number((externalNetArea * lossFactor).toFixed(2));
     internalArea = Math.max(0, Number((areaWithLoss - externalArea).toFixed(2)));
   }
 
-  const internalPieces = Math.ceil(internalArea / 2.40);
-  const externalPieces = externalArea > 0 ? Math.ceil(externalArea / 2.40) : 0;
-  
-  // Caixas fechadas de 10 painéis (embalagem comercial padrão MPU)
-  const totalPieces = internalPieces + externalPieces;
-  const standardBoxesOf10 = Math.ceil(totalPieces / 10);
-  const commercialPieces = standardBoxesOf10 * 10;
+  const internalRequiredPieces = internalArea > 0 ? Math.ceil(internalArea / panelAreaSqm) : 0;
+  const externalRequiredPieces = externalArea > 0 ? Math.ceil(externalArea / panelAreaSqm) : 0;
+  const requiredPieces = internalRequiredPieces + externalRequiredPieces;
+
+  const internalBoxesOf10 = internalRequiredPieces > 0 ? Math.ceil(internalRequiredPieces / boxSize) : 0;
+  const externalBoxesOf10 = externalRequiredPieces > 0 ? Math.ceil(externalRequiredPieces / boxSize) : 0;
+  const standardBoxesOf10 = internalBoxesOf10 + externalBoxesOf10;
+
+  const internalCommercialPieces = packagingMode === 'AVULSO' ? internalRequiredPieces : (internalBoxesOf10 * boxSize);
+  const externalCommercialPieces = packagingMode === 'AVULSO' ? externalRequiredPieces : (externalBoxesOf10 * boxSize);
+  const commercialPieces = internalCommercialPieces + externalCommercialPieces;
+
+  const pendingExternalLocation = Boolean(externalAreaMeasured === 0 && opts.hasExternalDeckNote);
 
   return {
-    totalAreaSqm: area,
+    netAreaSqm: Number(area.toFixed(2)),
+    totalAreaSqm: Number(area.toFixed(2)),
+    lossFactor,
+    lossAreaSqm,
     totalAreaWithLoss: areaWithLoss,
+    internalNetAreaSqm: internalNetArea,
+    externalNetAreaSqm: externalNetArea,
     internalArea,
     externalArea,
-    internalPieces,
-    externalPieces,
-    totalPieces,
+    panelAreaSqm,
+    internalRequiredPieces,
+    externalRequiredPieces,
+    requiredPieces,
+    packagingMode,
+    boxSize,
+    internalBoxesOf10,
+    externalBoxesOf10,
     standardBoxesOf10,
-    commercialPieces: commercialPieces > 0 ? commercialPieces : totalPieces,
-    notes: externalAreaMeasured === 0 && options.hasExternalDeckNote 
-      ? 'Legenda/notas mencionam espessura 30mm em área externa, porém nenhum traçado físico de duto externo foi cotado. Painéis orçados em 20mm para os trechos internos medidos.'
+    internalCommercialPieces,
+    externalCommercialPieces,
+    commercialPieces,
+    internalPieces: internalRequiredPieces,
+    externalPieces: externalRequiredPieces,
+    totalPieces: requiredPieces,
+    pendingExternalLocation,
+    notes: pendingExternalLocation
+      ? 'Legenda/notas mencionam espessura 30mm em área externa/patamar técnico, porém os trechos externos não possuem delimitação/cota separada em planta.'
       : null
   };
 }
 
 export function calculateMPUSupplies(totalAreaSqm, totalPerimeterM, totalLengthM = 0) {
-  const areaWithLoss = (Number(totalAreaSqm) || 0) * 1.20;
+  const rawArea = Number(totalAreaSqm) || 0;
   const perimeter = Number(totalPerimeterM) || 0;
+
+  if (rawArea <= 0 && perimeter <= 0) {
+    return {
+      totalProfileMeters: 0,
+      profileBars3m: 0,
+      colaLatas: 0,
+      fitaAluminioRolos: 0,
+      selanteTubos: 0,
+      cantosReforco: 0
+    };
+  }
+
+  const areaWithLoss = rawArea * 1.20;
 
   // Perfil de conexão alumínio: juntas a cada 1,20m + 15% de margem
   const totalProfileMeters = Number(((perimeter / 1.20) * 1.15).toFixed(1));
   const profileBars3m = Math.ceil(totalProfileMeters / 3);
 
   // Cola adesiva para MPU: 1L a cada 20 m²
-  const colaLatas = Math.max(2, Math.ceil(areaWithLoss / 20));
+  const colaLatas = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 20)) : 0;
 
   // Fita de alumínio 50mmx50m: 1 rolo a cada 40 m²
-  const fitaAluminioRolos = Math.max(2, Math.ceil(areaWithLoss / 40));
+  const fitaAluminioRolos = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 40)) : 0;
 
   // Selante para dutos MPU: 1 tubo a cada 25 m²
-  const selanteTubos = Math.max(2, Math.ceil(areaWithLoss / 25));
+  const selanteTubos = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 25)) : 0;
 
   // Cantoneiras de reforço para MPU (4 cantos por junta)
   const numJoints = Math.ceil(perimeter / 1.20);
-  const cantosReforco = Math.max(8, numJoints * 4);
+  const cantosReforco = numJoints > 0 ? numJoints * 4 : 0;
 
   return {
     totalProfileMeters,
@@ -228,7 +271,7 @@ export function calculateHydraulicMeters(linearMeters) {
 export function extractDuctSegmentsFromText(text, options = {}) {
   if (!text) return [];
 
-  const { allowEstimateFallback = false } = options;
+  const { allowEstimateFallback = false, sourceFile = null, sourcePage = null } = options;
   const segments = [];
 
   // Padrão de identificação de trechos de duto (com limite estrito de fronteira de palavra \b)
@@ -237,6 +280,30 @@ export function extractDuctSegmentsFromText(text, options = {}) {
   const isGlobalBlackSteel = /cozinha|gordura|melting|chapa\s*preta|nbr\s*14518/i.test(text);
   const isGlobalPressurization = /pressuriz/i.test(text);
   const isGlobalMPU = /mpu|pain[eé]is?\s+de\s+alum[ií]nio\s+pr[eé]-?isolado|espuma\s+r[ií]gida\s+de\s+poliuretano/i.test(text);
+
+  // Rastreia marcadores de documento/página no texto concatenado
+  const docMarkers = [...text.matchAll(/\[Documento:\s*([^\]|]+?)(?:\s*\|\s*[^\]]*)?\]/gi)];
+  const pageMarkers = [...text.matchAll(/\[P[áa]gina:\s*(\d+)\]/gi)];
+
+  const findDocAt = (idx) => {
+    if (sourceFile) return sourceFile;
+    let current = 'Documento do Projeto';
+    for (const dm of docMarkers) {
+      if (dm.index <= idx) current = dm[1].trim();
+      else break;
+    }
+    return current;
+  };
+
+  const findPageAt = (idx) => {
+    if (sourcePage) return sourcePage;
+    let current = 1;
+    for (const pm of pageMarkers) {
+      if (pm.index <= idx) current = parseInt(pm[1], 10);
+      else break;
+    }
+    return current;
+  };
 
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -313,6 +380,9 @@ export function extractDuctSegmentsFromText(text, options = {}) {
       }
     }
 
+    const detectedDoc = findDocAt(matchIdx);
+    const detectedPage = findPageAt(matchIdx);
+
     segments.push({
       prefix: rawPrefix || (system === 'Retorno' ? 'R' : 'I'),
       system,
@@ -328,7 +398,12 @@ export function extractDuctSegmentsFromText(text, options = {}) {
       isBlackSteel,
       isPressurization,
       isMPU,
-      notes: lengthM ? `Seção ${widthCm}x${heightCm} cm - Comprimento: ${lengthM}m` : `Seção ${widthCm}x${heightCm} cm - Comprimento linear pendente de cota/medição em prancha`
+      sourceFile: detectedDoc,
+      sourcePage: detectedPage,
+      evidence: match[0].trim(),
+      notes: lengthM
+        ? `Seção ${widthCm}x${heightCm} cm - Comprimento: ${lengthM}m [${detectedDoc}, p.${detectedPage}]`
+        : `Seção ${widthCm}x${heightCm} cm - Comprimento linear pendente de cota/medição em prancha [${detectedDoc}, p.${detectedPage}]`
     });
   }
 

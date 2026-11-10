@@ -72,67 +72,154 @@ export function normalizeTechString(str) {
     .trim();
 }
 
-export function extractExactGauges(text) {
-  if (!text) return [];
+export function extractTechnicalAttributes(text) {
+  const result = {
+    wallThicknesses: [],
+    nominalDiameters: [],
+    rectDimensions: [],
+    thicknessMm: [],
+    sheetGauges: [],
+    copperTemper: null
+  };
+  if (!text) return result;
+
   const norm = normalizeTechString(text).replace(/pol\b|polegadas?\b/g, '"');
-  const found = new Set();
-  
-  // Composite fractions: 1.1/8", 1 1/8", 1-1/8", 2.1/2", etc.
-  const compRegex = /\b(\d+)[\s.-]+(\d+\/\d+)["'']?/g;
+  const wallSet = new Set();
+  const diamSet = new Set();
+  const rectSet = new Set();
+  const thickSet = new Set();
+  const gaugeSet = new Set();
+
+  // 1. Espessuras de parede explícitas: e=1/16", e= 1/32", esp=1/16, parede 1/16, ou entre parênteses (1/32"), (1/16"), (3/64")
+  const explicitWallRegex = /(?:e\s*=|esp(?:essura)?\s*[:=]?|parede\s*(?:de)?\s*)\s*(\d+\/\d+|\d+(?:[.,]\d+)?\s*mm)/gi;
   let m;
-  while ((m = compRegex.exec(norm)) !== null) {
-    found.add(`${m[1]}.${m[2]}`);
+  while ((m = explicitWallRegex.exec(norm)) !== null) {
+    const rawW = m[1].replace(/\s+/g, '').replace(',', '.');
+    if (rawW === '0.79mm' || rawW === '0.8mm') wallSet.add('1/32');
+    else if (rawW === '1.58mm' || rawW === '1.59mm' || rawW === '1.6mm') wallSet.add('1/16');
+    else if (rawW === '1.19mm' || rawW === '1.2mm') wallSet.add('3/64');
+    else wallSet.add(rawW);
   }
 
-  // Simple fractions not preceded by whole number: 1/4", 3/8", 5/8", 3/4", 7/8", 1/2"
+  const parenWallRegex = /\(\s*(1\/32|1\/16|3\/64)\s*["'']?\s*\)/g;
+  while ((m = parenWallRegex.exec(norm)) !== null) {
+    wallSet.add(m[1]);
+  }
+
+  // Em tubos de cobre, frações 1/32, 1/16 e 3/64 são sempre espessuras de parede (diâmetros comerciais começam em 1/4")
+  const copperWallFractions = new Set(['1/32', '1/16', '3/64']);
+  const simpWallRegex = /\b(1\/32|1\/16|3\/64)\b/g;
+  while ((m = simpWallRegex.exec(norm)) !== null) {
+    wallSet.add(m[1]);
+  }
+
+  // 2. Dimensões retangulares 2D (ex: 600x300mm, 600x600, 15"x15", 300x450mm, 38x38)
+  // Ignora padrões elétricos como 3x18 awg ou 4x2.5mm² e painéis 2,0x1,2m
+  const rectRegex = /\b(\d{2,4})\s*["'”xX*×]\s*(\d{2,4})\s*(mm|cm|["'”])?(?!\s*(?:awg|mm2|mm²))/gi;
+  while ((m = rectRegex.exec(norm)) !== null) {
+    const d1 = parseInt(m[1], 10);
+    const d2 = parseInt(m[2], 10);
+    if (d1 >= 10 && d2 >= 10) {
+      rectSet.add(`${d1}x${d2}`);
+    }
+  }
+
+  // 3. Bitolas de chapa (#16, #18, #20, #22, #24, #26)
+  const sheetGaugeRegex = /(?:#\s*(16|18|20|22|24|26)\b|\b(?:chapa|bitola)\s*#?\s*(16|18|20|22|24|26)\b)/gi;
+  while ((m = sheetGaugeRegex.exec(norm)) !== null) {
+    gaugeSet.add(`#${m[1] || m[2]}`);
+  }
+
+  // 4. Diâmetros nominais compostos: 1.1/8", 1 1/8", 1-1/8", 2.1/2", etc.
+  const compRegex = /\b(\d+)[\s.-]+(\d+\/\d+)["'']?/g;
+  while ((m = compRegex.exec(norm)) !== null) {
+    diamSet.add(`${m[1]}.${m[2]}`);
+  }
+
+  // 5. Diâmetros nominais simples em fração (excluindo espessuras 1/32, 1/16, 3/64): 1/4", 3/8", 1/2", 5/8", 3/4", 7/8"
   const simpRegex = /(?<!\d[\s.-])\b(\d+\/\d+)["'']?/g;
   while ((m = simpRegex.exec(norm)) !== null) {
-    found.add(m[1]);
+    if (!copperWallFractions.has(m[1])) {
+      diamSet.add(m[1]);
+    }
   }
 
-  // Decimals with quotes or mm: 2.12", 28mm, 15.88mm, 9.52mm
-  const decQuoteRegex = /\b(\d+[.,]\d+)["'']/g;
-  while ((m = decQuoteRegex.exec(norm)) !== null) {
-    found.add(m[1].replace(',', '.'));
+  // Diâmetro inteiro em polegadas para cobre/hidráulica (ex: "- 1" -", "tubo 1\"", "2\"")
+  const wholeInchRegex = /(?:-\s*|\btubo[^0-9]{1,20}?)\b([1234])\s*["''](?!\s*[xX×])/g;
+  while ((m = wholeInchRegex.exec(norm)) !== null) {
+    diamSet.add(`${m[1]}"`);
   }
 
+  // 6. Milímetros (separa diâmetros equivalentes de cobre vs espessuras de painel/isolamento)
   const mmRegex = /\b(\d+(?:[.,]\d+)?)\s*mm\b/g;
   while ((m = mmRegex.exec(norm)) !== null) {
     const val = parseFloat(m[1].replace(',', '.'));
-    if (Math.abs(val - 6.35) < 0.2) found.add('1/4');
-    else if (Math.abs(val - 9.52) < 0.2) found.add('3/8');
-    else if (Math.abs(val - 12.7) < 0.2) found.add('1/2');
-    else if (Math.abs(val - 15.88) < 0.3) found.add('5/8');
-    else if (Math.abs(val - 19.05) < 0.3) found.add('3/4');
-    else if (Math.abs(val - 22.2) < 0.3) found.add('7/8');
-    else if (Math.abs(val - 28.57) < 0.8) found.add('1.1/8');
-    else if (Math.abs(val - 34.9) < 0.8) found.add('1.3/8');
-    else if (Math.abs(val - 41.3) < 0.8) found.add('1.5/8');
-    found.add(`${val}mm`);
+    const beforeMm = norm.slice(Math.max(0, m.index - 15), m.index);
+    if (/(?:e\s*=|esp|parede)/i.test(beforeMm)) continue;
+
+    if (Math.abs(val - 6.35) < 0.2) diamSet.add('1/4');
+    else if (Math.abs(val - 9.52) < 0.2) diamSet.add('3/8');
+    else if (Math.abs(val - 12.7) < 0.2) diamSet.add('1/2');
+    else if (Math.abs(val - 15.88) < 0.3) diamSet.add('5/8');
+    else if (Math.abs(val - 19.05) < 0.3) diamSet.add('3/4');
+    else if (Math.abs(val - 22.2) < 0.3) diamSet.add('7/8');
+    else if (Math.abs(val - 25.4) < 0.3) diamSet.add('1"');
+    else if (Math.abs(val - 28.57) < 0.8) diamSet.add('1.1/8');
+    else if (Math.abs(val - 31.75) < 0.5) diamSet.add('1.1/4');
+    else if (Math.abs(val - 34.9) < 0.8) diamSet.add('1.3/8');
+    else if (Math.abs(val - 38.1) < 0.5) diamSet.add('1.1/2');
+    else if (Math.abs(val - 41.3) < 0.8) diamSet.add('1.5/8');
+    else if ([9, 10, 13, 19, 20, 25, 30, 32, 38, 50].includes(val)) {
+      thickSet.add(`${val}mm`);
+    }
   }
 
-  // Armaflex code matching: M028 / R028 / T028 -> 1.1/8 (28mm), H015 / M015 -> 5/8 (15mm)
+  // 7. Código Armaflex: M028 / R028 / T028 -> 1.1/8 (28mm), H015 / M015 -> 5/8 (15mm)
   const armaflexCodeMatch = norm.match(/\b([mrhpt])0?(\d{2,3})\b/);
   if (armaflexCodeMatch) {
     const mmNum = parseInt(armaflexCodeMatch[2], 10);
-    if (mmNum === 28) found.add('1.1/8');
-    if (mmNum === 15) found.add('5/8');
-    if (mmNum === 22) found.add('7/8');
-    if (mmNum === 35) found.add('1.3/8');
-    if (mmNum === 42) found.add('1.5/8');
+    if (mmNum === 28) diamSet.add('1.1/8');
+    else if (mmNum === 15) diamSet.add('5/8');
+    else if (mmNum === 22) diamSet.add('7/8');
+    else if (mmNum === 18 || mmNum === 19) diamSet.add('3/4');
+    else if (mmNum === 10 || mmNum === 9) diamSet.add('3/8');
+    else if (mmNum === 6) diamSet.add('1/4');
+    else if (mmNum === 35) diamSet.add('1.3/8');
+    else if (mmNum === 42) diamSet.add('1.5/8');
   }
 
-  return [...found];
+  // 8. Têmpera do tubo de cobre (rígido vs flexível)
+  const hasRigido = /\brigid[oa]\b/i.test(norm);
+  const hasFlexivel = /\bflex[ií]vel\b/i.test(norm);
+  if (hasRigido && hasFlexivel) result.copperTemper = 'AMBOS';
+  else if (hasRigido) result.copperTemper = 'RIGIDO';
+  else if (hasFlexivel) result.copperTemper = 'FLEXIVEL';
+
+  result.wallThicknesses = [...wallSet];
+  result.nominalDiameters = [...diamSet];
+  result.rectDimensions = [...rectSet];
+  result.thicknessMm = [...thickSet];
+  result.sheetGauges = [...gaugeSet];
+  return result;
+}
+
+export function extractExactGauges(text) {
+  if (!text) return [];
+  const attrs = extractTechnicalAttributes(text);
+  return [...new Set([...attrs.nominalDiameters, ...attrs.wallThicknesses, ...attrs.thicknessMm, ...attrs.rectDimensions])];
 }
 
 export function checkTechnicalCompatibility(searchStr, entryStr, categoryStr = '', synonymsStr = '', queryGauges = null, entryGauges = null) {
-  const searchNorm = normalizeTechString(searchStr);
-  const entryNorm = normalizeTechString(entryStr);
-  const categoryNorm = normalizeTechString(categoryStr);
-  const synonymsNorm = normalizeTechString(synonymsStr);
-  const qGauges = queryGauges || extractExactGauges(searchNorm);
-  const entGauges = entryGauges || extractExactGauges(`${entryNorm} ${synonymsNorm}`);
+  const searchNorm = normalizeTechString(searchStr || '');
+  const entryNorm = normalizeTechString(entryStr || '');
+  const categoryNorm = normalizeTechString(categoryStr || '');
+  const synonymsNorm = normalizeTechString(synonymsStr || '');
+  const qGauges = Array.isArray(queryGauges) ? queryGauges : extractExactGauges(searchNorm);
+  const entGauges = Array.isArray(entryGauges) ? entryGauges : extractExactGauges(`${entryNorm} ${synonymsNorm}`);
   const fullCandidate = `${entryNorm} ${categoryNorm} ${synonymsNorm}`;
+
+  const qAttrs = extractTechnicalAttributes(searchNorm);
+  const entAttrs = extractTechnicalAttributes(`${entryNorm} ${synonymsNorm}`);
 
   // 1. Difusão de Ar (Difusor, Grelha, Damper, Veneziana, Plenum)
   const isAirDiffQuery = /\b(difusor|grelha|damper|veneziana|plenum)\b/i.test(searchNorm);
@@ -145,6 +232,10 @@ export function checkTechnicalCompatibility(searchStr, entryStr, categoryStr = '
     if (!isAirDiffCandidate) {
       return false;
     }
+    // Subtipo de difusão deve coincidir (difusor != grelha != damper)
+    if (/\bdifusor\b/i.test(searchNorm) && !/\bdifusor\b/i.test(fullCandidate)) return false;
+    if (/\bgrelha\b/i.test(searchNorm) && !/\bgrelha\b/i.test(fullCandidate)) return false;
+    if (/\bdamper\b/i.test(searchNorm) && !/\bdamper\b/i.test(fullCandidate)) return false;
   }
 
   // 2. Válvulas e Registros Hidráulicos
@@ -153,13 +244,35 @@ export function checkTechnicalCompatibility(searchStr, entryStr, categoryStr = '
     if (/\b(difusor|grelha|damper)\b/i.test(fullCandidate)) return false;
   }
 
-  // 3. Tubulação de Cobre
-  const isCopperTubeQuery = /\b(tubo|tubulacao)\b/i.test(searchNorm) && /\b(cobre)\b/i.test(searchNorm);
+  // 3. Tubulação de Cobre — Exige todos os atributos técnicos obrigatórios (diâmetro nominal, espessura de parede e têmpera)
+  const isCopperTubeQuery = !/\b(cambota|abracadeira|suporte|isolamento|armaflex|armafix)\b/i.test(searchNorm) && (
+    (/\b(tubo|tubulacao)\b/i.test(searchNorm) && /\b(cobre)\b/i.test(searchNorm)) ||
+    (/\bcobre\b/i.test(searchNorm) && (qAttrs.wallThicknesses.length > 0 || /\b(rigid[oa]|flex[ií]vel)\b/i.test(searchNorm)))
+  );
   if (isCopperTubeQuery) {
     if (!categoryNorm.includes('cobre') && !entryNorm.includes('cobre')) return false;
-    if (/\b(aco|carbono|preto|sch\s*40|pvc|galvanizado)\b/i.test(fullCandidate)) return false;
-    if (/\b(curva|luva|te|porca flange|uniao|reducao|sifao)\b/i.test(entryNorm)) return false;
+    if (categoryNorm && !/(?:cobre|climatiz|frigor|tubulac)/i.test(categoryNorm)) return false;
+    if (/\b(cambota|abracadeira|suporte|aco|carbono|preto|sch\s*40|pvc|galvanizado|curva|luva|te|porca flange|uniao|reducao|sifao|fita|vareta|solda)\b/i.test(fullCandidate)) return false;
     if (!/\btubo\b/i.test(entryNorm)) return false;
+
+    // 3a. Espessura de parede obrigatória (ex: 1/16" NUNCA pode vincular a 1/32" nem a item sem espessura)
+    if (qAttrs.wallThicknesses.length > 0) {
+      if (entAttrs.wallThicknesses.length === 0) return false;
+      const wallMatch = qAttrs.wallThicknesses.every(w => entAttrs.wallThicknesses.includes(w));
+      if (!wallMatch) return false;
+    }
+
+    // 3b. Diâmetro nominal obrigatório (ex: 1.1/8" NUNCA pode vincular a 3/4" apenas por compartilhar parede 1/16")
+    if (qAttrs.nominalDiameters.length > 0) {
+      if (entAttrs.nominalDiameters.length === 0) return false;
+      const diamMatch = qAttrs.nominalDiameters.every(d => entAttrs.nominalDiameters.includes(d));
+      if (!diamMatch) return false;
+    }
+
+    // 3c. Têmpera (rígido vs flexível) quando especificada exclusivamente
+    if (qAttrs.copperTemper && qAttrs.copperTemper !== 'AMBOS' && entAttrs.copperTemper && entAttrs.copperTemper !== 'AMBOS') {
+      if (qAttrs.copperTemper !== entAttrs.copperTemper) return false;
+    }
   }
 
   // 4. Conexões de Cobre
@@ -198,21 +311,50 @@ export function checkTechnicalCompatibility(searchStr, entryStr, categoryStr = '
   if (isMpuQuery) {
     if (/\b(galvanizad|chapa preta|tdc)\b/i.test(fullCandidate) && !categoryNorm.includes('mpu')) return false;
     // Se a busca for por PAINEL MPU, rejeita cantos, perfis, cola, fitas, parafusos
-    if (/\bpainel\b/i.test(searchNorm) && /\b(canto|cantoneira|perfil|parafuso|fita|selante|disco|cola|barra de reforco)\b/i.test(entryNorm)) {
+    const isAccessoryMpuQuery = /\b(canto|cantoneira|perfil|parafuso|fita|selante|disco|cola|barra de reforco)\b/i.test(searchNorm);
+    const isAccessoryMpuEntry = /\b(canto|cantoneira|perfil|parafuso|fita|selante|disco|cola|barra de reforco)\b/i.test(entryNorm);
+    if (!isAccessoryMpuQuery && /\bpainel\b/i.test(searchNorm) && isAccessoryMpuEntry) {
       return false;
     }
-    // Se a busca NÃO for por painel (ex: busca por perfil ou canto), rejeita painel
-    if (!/\bpainel\b/i.test(searchNorm) && /\bpainel\b/i.test(entryNorm)) {
+    // Se a busca for por acessório MPU (perfil, canto, cola, fita, selante), rejeita painel
+    if (isAccessoryMpuQuery && !isAccessoryMpuEntry && /\bpainel\b/i.test(entryNorm)) {
+      return false;
+    }
+    // Espessura do painel MPU (20mm vs 30mm) deve coincidir
+    if (qAttrs.thicknessMm.length > 0 && entAttrs.thicknessMm.length > 0) {
+      const thickMatch = qAttrs.thicknessMm.every(t => entAttrs.thicknessMm.includes(t));
+      if (!thickMatch) return false;
+    }
+  }
+
+  // 10. Verificação rigorosa de todos os atributos dimensionais obrigatórios (sem usar variáveis nulas)
+  if (qAttrs.wallThicknesses.length > 0 && entAttrs.wallThicknesses.length > 0) {
+    if (!qAttrs.wallThicknesses.every(w => entAttrs.wallThicknesses.includes(w))) {
       return false;
     }
   }
 
-  // 10. Verificação rigorosa de Bitola / Diâmetro
-  if (queryGauges.length > 0) {
-    if (entryGauges.length > 0) {
-      const hasMatch = queryGauges.some(qg => entryGauges.includes(qg));
-      if (!hasMatch) return false;
+  if (qAttrs.nominalDiameters.length > 0 && entAttrs.nominalDiameters.length > 0) {
+    if (!qAttrs.nominalDiameters.every(d => entAttrs.nominalDiameters.includes(d))) {
+      return false;
     }
+  }
+
+  if (qAttrs.rectDimensions.length > 0 && entAttrs.rectDimensions.length > 0) {
+    if (!qAttrs.rectDimensions.every(r => entAttrs.rectDimensions.includes(r))) {
+      return false;
+    }
+  }
+
+  if (qAttrs.sheetGauges.length > 0 && entAttrs.sheetGauges.length > 0) {
+    if (!qAttrs.sheetGauges.every(g => entAttrs.sheetGauges.includes(g))) {
+      return false;
+    }
+  }
+
+  if (qGauges.length > 0 && entGauges.length > 0) {
+    const hasMatch = qGauges.some(qg => entGauges.includes(qg));
+    if (!hasMatch) return false;
   }
 
   return true;
@@ -248,17 +390,18 @@ export function isNonMaterial(it) {
  * @returns {Object} Resultado da busca com preço, unidade, contexto e status
  */
 export function findSabrarEconomicPrice(itemName, options = {}) {
-  const { context = '', unit = '', spec = '' } = options;
+  const { context = '', unit = '', spec = '', markupPercent = 0 } = options;
   const searchNorm = normalizeTechString(`${itemName} ${spec}`);
   const unitNorm = normalizeTechString(unit);
   const queryGauges = extractExactGauges(searchNorm);
+  const qAttrs = extractTechnicalAttributes(searchNorm);
 
   const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua', 'tamanho', 'dimensao', 'medida', 'fabricante', 'ref', 'modelo']);
   const searchWords = searchNorm.split(' ').filter(w => w.length > 2 && !STOP_WORDS.has(w));
 
-  const isEquipmentOrDuctOrAirDiffusion = /(?:damper|difusor|grelha|veneziana|duto|coifa|exaustor|ventilador|evaporadora|condensadora|splitao|fancoil|chiller)/i.test(searchNorm);
-
   const candidates = [];
+  let rejectedByWallThickness = null;
+  let rejectedByDiameter = null;
 
   for (const entry of SABRAR_ECONOMIC_BASE_ITEMS) {
     if (isNonMaterial(entry)) continue;
@@ -268,6 +411,20 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
     const synonymsNorm = normalizeTechString(entry.synonyms || '');
     const categoryNorm = normalizeTechString(entry.category);
     const entryGauges = extractExactGauges(`${entryNorm} ${synonymsNorm}`);
+    const entAttrs = extractTechnicalAttributes(`${entryNorm} ${synonymsNorm}`);
+
+    // Registra motivo específico de rejeição técnica para diagnóstico
+    if (qAttrs.nominalDiameters.length > 0 && entAttrs.nominalDiameters.some(d => qAttrs.nominalDiameters.includes(d))) {
+      if (qAttrs.wallThicknesses.length > 0 && entAttrs.wallThicknesses.length > 0 && !qAttrs.wallThicknesses.every(w => entAttrs.wallThicknesses.includes(w))) {
+        rejectedByWallThickness = {
+          requestedWall: qAttrs.wallThicknesses.join(', '),
+          availableWall: entAttrs.wallThicknesses.join(', '),
+          diameter: qAttrs.nominalDiameters.join(', '),
+          candidateCode: entry.code,
+          candidateName: entry.item
+        };
+      }
+    }
 
     // Validação estrita de compatibilidade técnica e família de materiais
     if (!checkTechnicalCompatibility(searchNorm, entryNorm, categoryNorm, synonymsNorm, queryGauges, entryGauges)) {
@@ -332,10 +489,15 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
       }
     }
 
+    const mPct = Number(markupPercent) || 0;
+    const commercialPrice = Number((finalPrice * (1 + mPct / 100)).toFixed(2));
+
     return {
       matched: true,
       priceStatus: best.validation_status === 'VALIDAR' ? 'PENDENTE_VALIDACAO' : 'OFICIAL_BASE_SABRAR',
       price: finalPrice,
+      commercialPrice,
+      markupPercent: mPct,
       unit: finalUnit,
       baseUnit: best.unit,
       basePrice: best.price,
@@ -348,17 +510,32 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
       linearWeightUnit: best.linear_weight_unit,
       validationStatus: best.validation_status,
       pendingNotes: best.pending_notes,
-      supplier: best.supplier
+      supplier: best.supplier || 'SABRAR / Base Central',
+      costSource: best.context || 'Base Oficial 28/09/2026',
+      referenceDate: '2026-09-28',
+      failureReason: null
     };
+  }
+
+  let failureReason = `Material não localizado na Base Central SABRAR com todos os atributos técnicos exigidos (${itemName}).`;
+  if (rejectedByWallThickness) {
+    failureReason = `Incompatibilidade de atributo técnico obrigatório: bitola ${rejectedByWallThickness.diameter}" localizada (${rejectedByWallThickness.candidateCode}), porém com espessura de parede ${rejectedByWallThickness.availableWall}" divergente da solicitada (${rejectedByWallThickness.requestedWall}").`;
+  } else if (/\b(difusor|grelha|damper|veneziana)\b/i.test(searchNorm)) {
+    failureReason = `Elemento de difusão de ar sob medida (${itemName}) sem preço tabelado na Base Central SABRAR; requer cotação específica com fabricante (Tropical/Polar/Trox).`;
   }
 
   return {
     matched: false,
     priceStatus: 'PREÇO_NAO_LOCALIZADO',
     price: null,
+    commercialPrice: null,
+    markupPercent: Number(markupPercent) || 0,
     unit: unit || 'un',
     matchedItem: null,
     category: null,
-    supplier: null
+    supplier: null,
+    costSource: null,
+    referenceDate: null,
+    failureReason
   };
 }

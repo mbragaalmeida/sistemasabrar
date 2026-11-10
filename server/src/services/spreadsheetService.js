@@ -403,13 +403,19 @@ export class SpreadsheetService {
             const lowerRaw = rawDesc.trim().toLowerCase();
             let matchedMat = null;
 
-            // Prioridade 1: Alias memorizado de projetos anteriores (Item 2)
+            // Prioridade 1: Alias memorizado de projetos anteriores (validado contra compatibilidade técnica)
             if (aliasMap.has(lowerRaw)) {
               const matchedId = aliasMap.get(lowerRaw);
-              matchedMat = catalog.find(m => m.id === matchedId);
+              const cand = catalog.find(m => m.id === matchedId);
+              if (cand && checkTechnicalCompatibility(rawDesc, cand.name, cand.category || '', cand.synonyms || '')) {
+                matchedMat = cand;
+              }
             } else if (aliasMap.has(normName)) {
               const matchedId = aliasMap.get(normName);
-              matchedMat = catalog.find(m => m.id === matchedId);
+              const cand = catalog.find(m => m.id === matchedId);
+              if (cand && checkTechnicalCompatibility(rawDesc, cand.name, cand.category || '', cand.synonyms || '')) {
+                matchedMat = cand;
+              }
             }
 
             // Prioridade 2: Código oficial (se houver na planilha)
@@ -423,10 +429,11 @@ export class SpreadsheetService {
               matchedMat = catalog.find(m => normalizeStr(m.name) === normName);
             }
 
-            // Prioridade 4: Sinônimos cadastrados no banco
+            // Prioridade 4: Sinônimos cadastrados no banco (validados tecnicamente)
             if (!matchedMat) {
               matchedMat = catalog.find(m => {
                 if (!m.synonyms) return false;
+                if (!checkTechnicalCompatibility(rawDesc, m.name, m.category || '', m.synonyms || '')) return false;
                 const syns = m.synonyms.split(/[,;\n/]+/).map(s => normalizeStr(s));
                 return syns.some(s => s && s === normName);
               });

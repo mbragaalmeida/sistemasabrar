@@ -427,17 +427,17 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
       } else if (f.mimetype === 'application/pdf' || f.originalname.toLowerCase().endsWith('.pdf')) {
         try {
           const buffer = fs.readFileSync(f.path);
-          const pdfText = await extractTextFromPdfBuffer(buffer);
+          const pdfText = await extractTextFromPdfBuffer(buffer, f.originalname);
           if (pdfText && pdfText.trim()) {
-            contentSummary = pdfText.slice(0, 100000);
-            console.log(`[PDF Parser] Extraídos ${contentSummary.length} caracteres de ${f.originalname}`);
+            contentSummary = pdfText.slice(0, 1000000);
+            console.log(`[PDF Parser] Extraídos ${contentSummary.length} caracteres estruturados por página de ${f.originalname}`);
           }
         } catch (pdfErr) {
           console.warn(`[PDF Parser Error] ${f.originalname}:`, pdfErr.message);
         }
       } else if (f.originalname.toLowerCase().endsWith('.xlsx') || f.originalname.toLowerCase().endsWith('.xls') || f.originalname.toLowerCase().endsWith('.ods')) {
         try {
-          contentSummary = SpreadsheetService.extractTextFromSpreadsheet(f.path).slice(0, 100000);
+          contentSummary = SpreadsheetService.extractTextFromSpreadsheet(f.path).slice(0, 1000000);
           console.log(`[Spreadsheet Parser] Extraídos ${contentSummary.length} caracteres de planilha ${f.originalname}`);
         } catch (sErr) {
           console.warn(`[Spreadsheet Parser Error] ${f.originalname}:`, sErr.message);
