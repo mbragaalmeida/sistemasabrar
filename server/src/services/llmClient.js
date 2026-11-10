@@ -33,7 +33,7 @@ export class BudgetLLMClient {
       return {
         provider: 'gemini',
         apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || 'gemini-3.8-flash'
+        model: process.env.GEMINI_MODEL || 'gemini-flash-latest'
       };
     }
 
@@ -85,9 +85,11 @@ export class BudgetLLMClient {
   static async callGemini(config, fullPrompt) {
     const candidateModels = [
       config.model,
-      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash-lite',
       'gemini-3.7-flash',
-      'gemini-2.5-flash'
+      'gemini-3.5-flash',
+      'gemini-2.5-pro'
     ].filter(Boolean);
     const uniqueModels = [...new Set(candidateModels)];
 
@@ -182,7 +184,7 @@ export class BudgetLLMClient {
   /**
    * Testa a conectividade com o provedor de IA sem vazar credenciais
    */
-  static async testConnection() {
+  static async testConnection(targetModel = null) {
     const config = this.getProviderConfig();
     if (!config.apiKey) {
       return {
@@ -195,13 +197,17 @@ export class BudgetLLMClient {
     }
 
     if (config.provider === 'gemini') {
-      const candidateModels = [
-        config.model,
-        'gemini-3.8-flash',
-        'gemini-3.7-flash',
-        'gemini-2.5-pro'
-      ].filter(Boolean);
-      const uniqueModels = [...new Set(candidateModels)];
+      const candidateModels = targetModel
+        ? [targetModel]
+        : [
+            config.model,
+            'gemini-flash-latest',
+            'gemini-2.5-flash-lite',
+            'gemini-3.7-flash',
+            'gemini-3.5-flash',
+            'gemini-2.5-pro'
+          ];
+      const uniqueModels = [...new Set(candidateModels.filter(Boolean))];
 
       let lastErrResult = null;
 

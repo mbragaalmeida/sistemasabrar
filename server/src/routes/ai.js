@@ -10,7 +10,7 @@ export const aiRouter = express.Router();
 // Diagnóstico de conectividade e status do Agente de IA (sem expor credenciais)
 aiRouter.get('/status', async (req, res) => {
   try {
-    const status = await BudgetLLMClient.testConnection();
+    const status = await BudgetLLMClient.testConnection(req.query.model);
     res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });
