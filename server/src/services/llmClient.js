@@ -126,7 +126,7 @@ export class BudgetLLMClient {
       return {
         provider: 'gemini',
         apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || 'gemini-flash-latest'
+        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash'
       };
     }
 
@@ -452,11 +452,10 @@ export class BudgetLLMClient {
   static async callGemini(config, fullPrompt, pdfAttachments = []) {
     const candidateModels = [
       config.model,
-      'gemini-flash-latest',
-      'gemini-2.5-flash-lite',
-      'gemini-3.7-flash',
-      'gemini-3.5-flash',
-      'gemini-2.5-pro'
+      'gemini-1.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-pro',
+      'gemini-2.0-flash-lite'
     ].filter(Boolean);
     const uniqueModels = [...new Set(candidateModels)];
 
@@ -496,7 +495,8 @@ export class BudgetLLMClient {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(28000)
         });
 
         if (!res.ok) {
@@ -515,7 +515,9 @@ export class BudgetLLMClient {
         return JSON.parse(rawJson);
       } catch (err) {
         lastError = err;
-        if (err.message?.includes('404') && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
+        const isRetryable = err.name === 'TimeoutError' || err.message?.includes('404') || err.message?.includes('503') || err.message?.includes('429');
+        if (isRetryable && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
+          console.warn(`[BudgetLLMClient] Falha com modelo ${model} (${err.message}), tentando alternativa...`);
           continue;
         }
         throw err;
@@ -582,11 +584,10 @@ export class BudgetLLMClient {
         ? [targetModel]
         : [
             config.model,
-            'gemini-flash-latest',
-            'gemini-2.5-flash-lite',
-            'gemini-3.7-flash',
-            'gemini-3.5-flash',
-            'gemini-2.5-pro'
+            'gemini-1.5-flash',
+            'gemini-2.0-flash',
+            'gemini-1.5-pro',
+            'gemini-2.0-flash-lite'
           ];
       const uniqueModels = [...new Set(candidateModels.filter(Boolean))];
 
@@ -601,7 +602,8 @@ export class BudgetLLMClient {
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: 'Ping Sabrar' }] }],
               generationConfig: { maxOutputTokens: 5 }
-            })
+            }),
+            signal: AbortSignal.timeout(10000)
           });
 
           if (!res.ok) {
@@ -718,12 +720,14 @@ export class BudgetLLMClient {
         return { ok: false, status: res.status, error: errText };
       }
       const data = await res.json();
-      const models = (data?.models || []).map(m => ({
-        name: m.name.replace(/^models\//, ''),
-        displayName: m.displayName,
-        description: m.description,
-        supportedMethods: m.supportedGenerationMethods
-      }));
+      const models = (data?.models || [])
+        .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => ({
+          name: m.name.replace(/^models\//, ''),
+          displayName: m.displayName,
+          description: m.description,
+          supportedMethods: m.supportedGenerationMethods
+        }));
       return { ok: true, total: models.length, models };
     } catch (err) {
       return { ok: false, error: err.message };

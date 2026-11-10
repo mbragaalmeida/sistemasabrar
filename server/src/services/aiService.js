@@ -64,7 +64,7 @@ export class AIAnalysisService {
       let structuredDoc = null;
       if (f.file_data && Buffer.isBuffer(f.file_data) && f.file_data.length > 0 && fileName.toLowerCase().endsWith('.pdf')) {
         structuredDoc = await extractStructuredPdfData(f.file_data, fileName);
-        if (f.file_data.length <= 12 * 1024 * 1024) {
+        if (f.file_data.length <= 4 * 1024 * 1024 && pdfAttachments.length < 2) {
           pdfAttachments.push({
             fileName,
             mimeType: f.mime_type || 'application/pdf',

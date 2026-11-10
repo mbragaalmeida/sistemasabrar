@@ -135,7 +135,6 @@ export const api = {
       try {
         const formData = new FormData();
         formData.append('files', f);
-        if (autoAnalyze) formData.append('autoAnalyze', 'true');
         const res = await fetch(`${API_BASE}/projects/${projectId}/upload`, {
           method: 'POST',
           body: formData
