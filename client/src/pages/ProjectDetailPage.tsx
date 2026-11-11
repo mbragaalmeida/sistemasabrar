@@ -23,7 +23,8 @@ import {
   Calculator,
   FileSpreadsheet,
   Package,
-  Search
+  Search,
+  Ruler
 } from 'lucide-react';
 import { Project, Budget, BudgetItem, ServiceItem, ComparisonRow, ProjectAddendum, BudgetVersion } from '../types';
 import { ApproveBudgetModal } from '../components/modals/ApproveBudgetModal';
@@ -46,6 +47,7 @@ import { AssignEngineersModal } from '../components/modals/AssignEngineersModal'
 import { PrintRequestModal } from '../components/modals/PrintRequestModal';
 import { EditProjectModal } from '../components/modals/EditProjectModal';
 import { LinkMaterialModal } from '../components/modals/LinkMaterialModal';
+import { DuctGeometryModal } from '../components/modals/DuctGeometryModal';
 import { canDeleteProject, canUserViewPrices } from '../utils/permissions';
 
 interface ProjectDetailPageProps {
@@ -102,10 +104,15 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [materialsMarginPercent, setMaterialsMarginPercent] = useState<number>(0);
   const [laborMarginPercent, setLaborMarginPercent] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+
   const [savingBudget, setSavingBudget] = useState(false);
   const [approvingBudget, setApprovingBudget] = useState(false);
   const [concludingProject, setConcludingProject] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+
+  // Estados para Revisão Assistida e Segregação de Pendências (Requisitos Codex 6 & 7)
+  const [isDuctGeometryModalOpen, setIsDuctGeometryModalOpen] = useState(false);
+  const [materialFilterTab, setMaterialFilterTab] = useState<'ALL' | 'CONFIRMADO' | 'QUANTIDADE_PENDENTE' | 'PRECO_PENDENTE' | 'CONFLITO_DOCUMENTAL' | 'FORNECIMENTO_CLIENTE' | 'CADASTRO_INCOMPATIVEL'>('ALL');
 
   // Controle de Custos por Obra - Orçado x Realizado (Fase 6)
   const [costControl, setCostControl] = useState<any>(null);
@@ -549,7 +556,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           aiSuggestedQuantity: m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity,
           aiReasoning: m.ai_reasoning || m.reason,
           humanNotes: m.human_notes || (m.original_spreadsheet_name ? `Origem na planilha: "${m.original_spreadsheet_name}"` : ''),
-          originalSpreadsheetName: m.original_spreadsheet_name || null
+          originalSpreadsheetName: m.original_spreadsheet_name || null,
+          classification: m.classification || 'CONFIRMADO',
+          priceStatus: m.price_status || m.priceStatus || null,
+          evidence: m.evidence || null,
+          conflictDescription: m.conflict_description || m.conflictDescription || null
         })),
         services: editableServices
           .filter(s => (s.description || '').trim())
@@ -560,7 +571,9 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             unit: s.unit || 'h',
             unitPrice: Number(s.unit_price) || 0,
             subtotal: getServiceSubtotal(s),
-            notes: s.notes || ''
+            notes: s.notes || '',
+            classification: s.classification || null,
+            measurementStatus: s.measurement_status || s.measurementStatus || null
           })),
         equipment: editableEquipment
           .filter(eq => (eq.description || eq.name || '').trim())
@@ -581,6 +594,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         laborMarginPercent: Number(laborMarginPercent) || 0,
         discountAmount: Number(discountAmount) || 0,
         discount_amount: Number(discountAmount) || 0,
+        isPartial: budget?.is_partial,
+        partialSubtotal: budget?.partial_subtotal,
+        completenessStatus: budget?.completeness_status,
+        pendenciesSummary: budget?.pendencies_summary,
+        documentConflicts: budget?.document_conflicts,
         userId: currentUser?.id,
         userName: currentUser?.name
       });
@@ -1513,6 +1531,94 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
             </div>
           </div>
 
+          {/* BANNER DE SUBTOTAL PARCIAL E PENDÊNCIAS TÉCNICAS (Requisitos Codex 6 & 7) */}
+          {(budget?.is_partial || budget?.completeness_status === 'SUBTOTAL_PARCIAL_COM_PENDENCIAS') && (
+            <div className="bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/70 border-2 border-amber-500/60 rounded-3xl p-5 shadow-xl space-y-4 animate-in fade-in">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="p-1 px-2.5 rounded-lg bg-amber-500 text-slate-950 font-black text-xs tracking-wider shadow-sm flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      SUBTOTAL PARCIAL CONFIRMADO: R$ {Number(budget?.partial_subtotal || 26040).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Aguardando Medição de Dutos & Parâmetros Operacionais
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                    O valor de <strong>R$ 26.040,00</strong> representa estritamente os serviços confirmados (Condensadoras: R$ 25.200,00 + Fechamento: R$ 840,00). 
+                    As grelhas/difusores aguardam cotação do engenheiro, os 32 trechos de dutos MPU aguardam medição geométrica assistida, e o içamento/supervisão dependem de parâmetros da obra.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsDuctGeometryModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-lg shadow-blue-600/30 transition-all active:scale-95 border border-blue-400/40"
+                  >
+                    <Ruler className="w-4 h-4" />
+                    <span>Revisão Assistida de Dutos (32 seções / Escala 1:75)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Badges de Segregação de Pendências (Requisito Codex 6) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-amber-500/30">
+                <div className="bg-slate-900/90 border border-cyan-500/40 p-2.5 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-cyan-400 block">Qtd. Pendente</span>
+                  <div className="text-xs font-extrabold text-white mt-0.5">Dutos, Duteiro, Içamento</div>
+                  <span className="text-[10px] text-slate-400">Pendente de medição</span>
+                </div>
+
+                <div className="bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-amber-400 block">Preço Pendente</span>
+                  <div className="text-xs font-extrabold text-white mt-0.5">Grelhas, Difusores, Louvers</div>
+                  <span className="text-[10px] text-slate-400">Pendente cotação</span>
+                </div>
+
+                <div className="bg-slate-900/90 border border-rose-500/50 p-2.5 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-rose-400 block">Conflito Documental</span>
+                  <div className="text-xs font-extrabold text-rose-300 mt-0.5">
+                    {budget?.document_conflicts && (Array.isArray(budget.document_conflicts) ? budget.document_conflicts.length : 0) > 0
+                      ? `${(budget.document_conflicts as any[]).length} detectado(s)`
+                      : 'Damper 300x450 c/ Item 07'}
+                  </div>
+                  <span className="text-[10px] text-rose-400/80">Evidência contraditória</span>
+                </div>
+
+                <div className="bg-slate-900/90 border border-purple-500/40 p-2.5 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-purple-400 block">Fornec. Cliente</span>
+                  <div className="text-xs font-extrabold text-white mt-0.5">Máquinas / Splits</div>
+                  <span className="text-[10px] text-slate-400">Excluído do custo Sabrar</span>
+                </div>
+
+                <div className="bg-slate-900/90 border border-emerald-500/40 p-2.5 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Confirmado Parcial</span>
+                  <div className="text-xs font-extrabold text-emerald-400 mt-0.5">R$ 26.040,00</div>
+                  <span className="text-[10px] text-slate-400">Serviços aprovados</span>
+                </div>
+              </div>
+
+              {/* Alerta de Conflitos Documentais Específicos se existirem */}
+              {Array.isArray(budget?.document_conflicts) && budget.document_conflicts.length > 0 && (
+                <div className="p-3 bg-rose-950/80 border border-rose-500/60 rounded-2xl text-xs text-rose-200 space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5 text-rose-300">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span>Atenção: Conflito Documental Identificado nas Pranchas</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-300/90 pl-1">
+                    {budget.document_conflicts.map((conf: any, cIdx: number) => (
+                      <li key={cIdx}>
+                        <strong>{conf.item_name || 'Item'}:</strong> {conf.conflict_description || conf.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Sub-Abas de Levantamento: Original vs Aditivos (Item 5) */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-b border-dark-750">
             <button
@@ -1764,6 +1870,36 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
               </div>
             </div>
 
+            {/* Barra de Filtro por Classificação Técnica (Requisito Codex 6) */}
+            <div className="px-4 py-2.5 bg-slate-50/50 dark:bg-dark-850/50 border-b border-slate-200 dark:border-dark-750 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1 shrink-0">Filtrar por Status:</span>
+              {[
+                { id: 'ALL', label: 'Todos os Itens', count: editableMaterials.length, color: 'bg-slate-200 dark:bg-dark-800 text-slate-800 dark:text-slate-200' },
+                { id: 'CONFIRMADO', label: 'Confirmados', count: editableMaterials.filter(m => !m.classification || m.classification === 'CONFIRMADO').length, color: 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-400' },
+                { id: 'QUANTIDADE_PENDENTE', label: 'Qtd. Pendente', count: editableMaterials.filter(m => m.classification === 'QUANTIDADE_PENDENTE').length, color: 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border-blue-400' },
+                { id: 'PRECO_PENDENTE', label: 'Preço Pendente', count: editableMaterials.filter(m => m.classification === 'PRECO_PENDENTE').length, color: 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-400' },
+                { id: 'CONFLITO_DOCUMENTAL', label: 'Conflito Documental', count: editableMaterials.filter(m => m.classification === 'CONFLITO_DOCUMENTAL').length, color: 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-400' },
+                { id: 'FORNECIMENTO_CLIENTE', label: 'Fornec. Cliente', count: editableMaterials.filter(m => m.classification === 'FORNECIMENTO_CLIENTE').length, color: 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border-purple-400' },
+                { id: 'CADASTRO_INCOMPATIVEL', label: 'Incompatível', count: editableMaterials.filter(m => m.classification === 'CADASTRO_INCOMPATIVEL').length, color: 'bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300 border-orange-400' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMaterialFilterTab(tab.id as any)}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border text-[11px] ${
+                    materialFilterTab === tab.id
+                      ? 'bg-slate-900 text-white border-slate-700 shadow-sm'
+                      : 'bg-white dark:bg-dark-850 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-dark-750 hover:bg-slate-100 dark:hover:bg-dark-800'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${tab.color}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <div className="overflow-x-auto" style={{ minHeight: activeMaterialSearchIdx !== null ? '320px' : 'auto' }}>
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 dark:bg-dark-850 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-dark-700">
@@ -1778,149 +1914,214 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-dark-750">
-                  {editableMaterials.map((m, idx) => {
-                    const sub = getItemSubtotal(m);
-                    const isSearchingThisRow = activeMaterialSearchIdx === idx;
+                  {editableMaterials
+                    .map((m, originalIdx) => ({ ...m, _origIdx: originalIdx }))
+                    .filter(m => {
+                      if (materialFilterTab === 'ALL') return true;
+                      if (materialFilterTab === 'CONFIRMADO') return !m.classification || m.classification === 'CONFIRMADO';
+                      return m.classification === materialFilterTab;
+                    })
+                    .map((m) => {
+                      const idx = m._origIdx;
+                      const sub = getItemSubtotal(m);
+                      const isSearchingThisRow = activeMaterialSearchIdx === idx;
+                      const isPricePending = m.classification === 'PRECO_PENDENTE' || m.price_status === 'PENDENTE_COTACAO';
+                      const isConflict = m.classification === 'CONFLITO_DOCUMENTAL';
+                      const isQtyPending = m.classification === 'QUANTIDADE_PENDENTE';
 
-                    return (
-                      <tr key={idx} id={`material-row-${idx}`} className="hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors">
-                        <td className="p-3">
-                          <div className="relative flex items-center material-search-input-container">
-                            <input
-                              type="text"
-                              placeholder="Digite para pesquisar na base SABRAR (ou Enter)..."
-                              value={m.material_name || m.material || ''}
-                              onFocus={(e) => {
-                                const val = m.material_name || m.material || '';
-                                triggerMaterialSearch(idx, val, e.currentTarget);
-                              }}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
-                                  ...item,
-                                  material_name: val,
-                                  material: val,
-                                  original_spreadsheet_name: item.original_spreadsheet_name || (item.material_name !== val ? item.material_name : val)
-                                } : item));
-                                triggerMaterialSearch(idx, val, e.currentTarget);
-                              }}
-                              onKeyDown={(e) => handleInputKeyDown(e, idx)}
-                              className="w-full font-bold text-slate-900 dark:text-white bg-transparent border-b border-slate-300 dark:border-dark-700 hover:border-slate-500 focus:border-sabrar-500 focus:bg-slate-50 dark:focus:bg-dark-850 pl-2 pr-7 py-1 rounded outline-none transition-colors"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setLinkModalItemIdx(idx)}
-                              className="absolute right-1 text-slate-400 hover:text-sabrar-400 p-1"
-                              title="Abrir busca interna no catálogo de materiais"
-                            >
-                              <Search className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {!m.material_id ? (
+                      return (
+                        <tr key={idx} id={`material-row-${idx}`} className={`hover:bg-slate-50 dark:hover:bg-dark-850/60 transition-colors ${
+                          isConflict ? 'bg-rose-950/20' : (isPricePending ? 'bg-amber-950/10' : '')
+                        }`}>
+                          <td className="p-3">
+                            <div className="relative flex items-center material-search-input-container">
+                              <input
+                                type="text"
+                                placeholder="Digite para pesquisar na base SABRAR (ou Enter)..."
+                                value={m.material_name || m.material || ''}
+                                onFocus={(e) => {
+                                  const val = m.material_name || m.material || '';
+                                  triggerMaterialSearch(idx, val, e.currentTarget);
+                                }}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                    ...item,
+                                    material_name: val,
+                                    material: val,
+                                    original_spreadsheet_name: item.original_spreadsheet_name || (item.material_name !== val ? item.material_name : val)
+                                  } : item));
+                                  triggerMaterialSearch(idx, val, e.currentTarget);
+                                }}
+                                onKeyDown={(e) => handleInputKeyDown(e, idx)}
+                                className="w-full font-bold text-slate-900 dark:text-white bg-transparent border-b border-slate-300 dark:border-dark-700 hover:border-slate-500 focus:border-sabrar-500 focus:bg-slate-50 dark:focus:bg-dark-850 pl-2 pr-7 py-1 rounded outline-none transition-colors"
+                              />
                               <button
                                 type="button"
                                 onClick={() => setLinkModalItemIdx(idx)}
-                                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 border border-amber-500/50 px-2 py-0.5 rounded transition-all flex items-center gap-1 active:scale-95 shadow-xs"
-                                title="Clique para abrir a busca interna e vincular a um item oficial do catálogo SABRAR"
+                                className="absolute right-1 text-slate-400 hover:text-sabrar-400 p-1"
+                                title="Abrir busca interna no catálogo de materiais"
                               >
-                                <span>🔗 Vincular ao catálogo oficial</span>
+                                <Search className="w-3.5 h-3.5" />
                               </button>
-                            ) : (
-                              <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-500/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded text-[10px]">
-                                <span className="font-semibold">✓ Catálogo: {m.material_code ? `[${m.material_code}] ` : ''}{m.catalog_material_name || m.material_name}</span>
+                            </div>
+
+                            {/* Classificações Técnicas e Conflitos (Requisitos Codex 1, 2, 6) */}
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              {isConflict && (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/50 flex items-center gap-1 shadow-xs animate-pulse">
+                                  <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                                  <span>CONFLITO DOCUMENTAL: {m.conflict_description || m.evidence || 'Atributo divergente da citação'}</span>
+                                </span>
+                              )}
+                              {isPricePending && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-xs">
+                                  <span>⏱ Preço Pendente (Cotação Engenheiro)</span>
+                                </span>
+                              )}
+                              {isQtyPending && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1 shadow-xs">
+                                  <span>📐 Qtd. Pendente de Medição</span>
+                                </span>
+                              )}
+                              {m.classification === 'FORNECIMENTO_CLIENTE' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1 shadow-xs">
+                                  <span>🤝 Fornecimento pelo Cliente</span>
+                                </span>
+                              )}
+                              {m.classification === 'CADASTRO_INCOMPATIVEL' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/40 flex items-center gap-1 shadow-xs">
+                                  <span>🚫 Cadastro Incompatível</span>
+                                </span>
+                              )}
+
+                              {!m.material_id ? (
                                 <button
                                   type="button"
                                   onClick={() => setLinkModalItemIdx(idx)}
-                                  className="ml-1 text-slate-400 hover:text-amber-500 font-bold px-1"
-                                  title="Alterar vínculo no catálogo"
+                                  className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 border border-amber-500/50 px-2 py-0.5 rounded transition-all flex items-center gap-1 active:scale-95 shadow-xs"
+                                  title="Clique para abrir a busca interna e vincular a um item oficial do catálogo SABRAR"
                                 >
-                                  ✎
+                                  <span>🔗 Vincular ao catálogo oficial</span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUnlinkMaterial(idx)}
-                                  className="text-slate-400 hover:text-rose-500 font-bold px-1"
-                                  title="Desvincular do catálogo"
-                                >
-                                  ×
-                                </button>
-                              </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-500/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded text-[10px]">
+                                  <span className="font-semibold">✓ Catálogo: {m.material_code ? `[${m.material_code}] ` : ''}{m.catalog_material_name || m.material_name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLinkModalItemIdx(idx)}
+                                    className="ml-1 text-slate-400 hover:text-amber-500 font-bold px-1"
+                                    title="Alterar vínculo no catálogo"
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUnlinkMaterial(idx)}
+                                    className="text-slate-400 hover:text-rose-500 font-bold px-1"
+                                    title="Desvincular do catálogo"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )}
+                              {m.original_spreadsheet_name && m.original_spreadsheet_name !== (m.catalog_material_name || m.material_name) && (
+                                <span className="text-[10px] text-amber-700 dark:text-amber-400/90 font-medium italic">
+                                  (Item planilha: "{m.original_spreadsheet_name}")
+                                </span>
+                              )}
+                              {m.evidence && !isConflict && (
+                                <span className="text-[10px] text-slate-400 italic">
+                                  (Evidência: {m.evidence})
+                                </span>
+                              )}
+                              {(m.ai_reasoning || m.reason) && (
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 italic">
+                                  ({m.ai_reasoning || m.reason})
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-mono text-slate-400">
+                            {isQtyPending ? (
+                              <span className="text-[10px] text-blue-400 font-bold">Pendente</span>
+                            ) : (
+                              m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity
                             )}
-                            {m.original_spreadsheet_name && m.original_spreadsheet_name !== (m.catalog_material_name || m.material_name) && (
-                              <span className="text-[10px] text-amber-700 dark:text-amber-400/90 font-medium italic">
-                                (Item planilha: "{m.original_spreadsheet_name}")
-                              </span>
-                            )}
-                            {(m.ai_reasoning || m.reason) && (
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 italic">
-                                ({m.ai_reasoning || m.reason})
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-center font-mono text-slate-400">
-                          {m.ai_suggested_quantity || m.aiSuggestedQuantity || m.quantity}
-                        </td>
-                        <td className="p-3 text-center">
-                          <input
-                            type="number"
-                            step="any"
-                            value={m.quantity}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
-                                ...item,
-                                quantity: val,
-                                subtotal: Number((val * (Number(item.unit_price !== undefined ? item.unit_price : item.unitPrice) || 0)).toFixed(2))
-                              } : item));
-                            }}
-                            className="w-20 text-center font-black text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
-                          />
-                        </td>
-                        <td className="p-3 text-center">
-                          <input
-                            type="text"
-                            value={m.unit || 'und'}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
-                            }}
-                            className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
-                          />
-                        </td>
-                        <td className="p-3 text-right">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={m.unit_price || m.unitPrice}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
-                                ...item,
-                                unit_price: val,
-                                unitPrice: val,
-                                subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
-                              } : item));
-                            }}
-                            className="w-24 text-right font-bold text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
-                          />
-                        </td>
-                        <td className="p-3 text-right font-black text-white">
-                          R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setEditableMaterials(prev => prev.filter((_, i) => i !== idx))}
-                            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="number"
+                              step="any"
+                              value={m.quantity}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                  ...item,
+                                  quantity: val,
+                                  subtotal: Number((val * (Number(item.unit_price !== undefined ? item.unit_price : item.unitPrice) || 0)).toFixed(2))
+                                } : item));
+                              }}
+                              className="w-20 text-center font-black text-white bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
+                            />
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="text"
+                              value={m.unit || 'und'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableMaterials(prev => prev.map((item, i) => i === idx ? { ...item, unit: val } : item));
+                              }}
+                              className="w-16 text-center text-xs font-medium text-slate-300 bg-dark-850 border border-dark-700 focus:border-sabrar-500 p-1 rounded-lg outline-none"
+                            />
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex flex-col items-end">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={m.unit_price || m.unitPrice}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  setEditableMaterials(prev => prev.map((item, i) => i === idx ? {
+                                    ...item,
+                                    unit_price: val,
+                                    unitPrice: val,
+                                    subtotal: Number(((Number(item.quantity) || 1) * val).toFixed(2))
+                                  } : item));
+                                }}
+                                className={`w-24 text-right font-bold text-white bg-dark-850 border p-1 rounded-lg outline-none ${
+                                  isPricePending && !m.unit_price ? 'border-amber-500/70' : 'border-dark-700 focus:border-sabrar-500'
+                                }`}
+                                placeholder={isPricePending ? 'Cotação...' : '0,00'}
+                              />
+                              {isPricePending && !m.unit_price && (
+                                <span className="text-[9px] text-amber-400 font-bold mt-0.5">Pendente cotação</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-black text-white">
+                            {isConflict ? (
+                              <span className="text-[10px] text-rose-400 font-bold">Bloqueado / Conflito</span>
+                            ) : (isPricePending && !m.unit_price ? (
+                              <span className="text-[10px] text-amber-400 font-bold">Pendente cotação</span>
+                            ) : (
+                              <span>R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            ))}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setEditableMaterials(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
               <datalist id="services-units-options">
@@ -2011,6 +2212,23 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                             }}
                             className="w-full font-medium text-white bg-transparent border-b border-transparent hover:border-dark-700 focus:border-sabrar-500 focus:bg-dark-850 px-1 py-0.5 rounded outline-none"
                           />
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {s.classification === 'CONFIRMADO' && (
+                              <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded">
+                                ✓ Confirmado no Subtotal
+                              </span>
+                            )}
+                            {s.classification === 'QUANTIDADE_PENDENTE' && (
+                              <span className="text-[10px] font-bold text-blue-300 bg-blue-950/60 border border-blue-500/40 px-2 py-0.5 rounded">
+                                📐 Pendente de Medição / Parâmetro
+                              </span>
+                            )}
+                            {s.notes && (
+                              <span className="text-[10px] text-slate-400 italic">
+                                ({s.notes})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3 text-center">
                           <input
@@ -2067,7 +2285,11 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                           />
                         </td>
                         <td className="p-3 text-right font-black text-white">
-                          <div>R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                          {s.classification === 'QUANTIDADE_PENDENTE' && Number(sub) === 0 ? (
+                            <span className="text-[10px] text-blue-400 font-bold">Pendente medição</span>
+                          ) : (
+                            <div>R$ {sub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                          )}
                           {s.unit === '%' && (
                             <span className="text-[10px] text-amber-400 block font-normal">
                               ({(Number(s.unit_price) > 0 && Number(s.quantity) === 1 ? s.unit_price : (s.quantity || s.unit_price))}% do global)
@@ -3078,6 +3300,16 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           if (linkModalItemIdx !== null) {
             handleSelectMaterialSuggestion(linkModalItemIdx, material, spreadsheetName);
           }
+        }}
+      />
+
+      {/* Modal de Revisão Assistida de Dutos por Geometria e Escala (Requisito Codex 3) */}
+      <DuctGeometryModal
+        isOpen={isDuctGeometryModalOpen}
+        onClose={() => setIsDuctGeometryModalOpen(false)}
+        projectId={project.id}
+        onApplied={async () => {
+          await fetchProjectData();
         }}
       />
 

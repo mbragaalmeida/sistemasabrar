@@ -16,6 +16,16 @@ export async function initializeDatabase() {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS vendors JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'Obra';
       ALTER TABLE budgets ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14, 2) DEFAULT 0.00;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS is_partial BOOLEAN DEFAULT FALSE;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS partial_subtotal NUMERIC(14, 2) DEFAULT 0.00;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS pendencies_summary JSONB DEFAULT '{}'::jsonb;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS document_conflicts JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS completeness_status VARCHAR(50);
+
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS classification VARCHAR(50);
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS price_status VARCHAR(50);
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS evidence TEXT;
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS conflict_description TEXT;
 
       CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
@@ -100,6 +110,19 @@ export async function initializeDatabase() {
         description TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS classification VARCHAR(50);
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS price_status VARCHAR(50);
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS evidence TEXT;
+      ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS conflict_description TEXT;
+
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS is_partial BOOLEAN DEFAULT FALSE;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS partial_subtotal NUMERIC(14, 2);
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS pendencies_summary JSONB;
+      ALTER TABLE budgets ADD COLUMN IF NOT EXISTS document_conflicts JSONB;
+
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS classification VARCHAR(50);
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS measurement_status VARCHAR(50);
     `);
     console.log('[Database] Esquema de tabelas e colunas sincronizado com sucesso.');
   } catch (err) {

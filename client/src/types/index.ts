@@ -284,6 +284,11 @@ export interface Budget {
   items?: BudgetItem[];
   services?: ServiceItem[];
   equipment?: BudgetEquipmentItem[];
+  is_partial?: boolean;
+  partial_subtotal?: number;
+  completeness_status?: string;
+  pendencies_summary?: any;
+  document_conflicts?: any;
 }
 
 export interface BudgetEquipmentItem {
@@ -313,6 +318,10 @@ export interface BudgetItem {
   ai_suggested_quantity?: number;
   ai_reasoning?: string;
   human_notes?: string;
+  classification?: 'CONFIRMADO' | 'QUANTIDADE_PENDENTE' | 'PRECO_PENDENTE' | 'CONFLITO_DOCUMENTAL' | 'CADASTRO_INCOMPATIVEL' | 'FORNECIMENTO_CLIENTE' | string;
+  price_status?: 'PRECIFICADO_CATALOGO' | 'PRECO_PENDENTE' | 'PENDENTE_COTACAO' | 'NAO_APLICAVEL' | string;
+  evidence?: string;
+  conflict_description?: string;
 }
 
 export interface ServiceItem {
@@ -325,6 +334,8 @@ export interface ServiceItem {
   unit_price: number;
   subtotal: number;
   notes?: string;
+  classification?: string;
+  measurement_status?: string;
 }
 
 export interface ComparisonRow {

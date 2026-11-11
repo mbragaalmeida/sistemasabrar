@@ -34,6 +34,30 @@ ductsRouter.get('/project/:projectId', async (req, res) => {
   }
 });
 
+// Medição geométrica trecho a trecho por escala e cruzamento de vistas (Codex Regra 3)
+ductsRouter.get('/geometry/:projectId', async (req, res) => {
+  try {
+    const projectId = Number(req.params.projectId);
+    const result = await DuctAnalysisService.measureDuctsByGeometryAndScale(projectId);
+    res.json(result);
+  } catch (err) {
+    console.error('[Ducts Geometry Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aplica a medição geométrica assistida de dutos ao orçamento do projeto (Codex Regra 3)
+ductsRouter.post('/apply-geometry/:projectId', async (req, res) => {
+  try {
+    const projectId = Number(req.params.projectId);
+    const result = await DuctAnalysisService.applyGeometryMeasurement(projectId, req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[Ducts Apply Geometry Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Lista o histórico de análises de dutos de todos os projetos
 ductsRouter.get('/', async (req, res) => {
   try {

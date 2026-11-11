@@ -1,12 +1,13 @@
 import { db } from '../db/connection.js';
 import { LearningService } from './learningService.js';
 import { SABRAR_BUDGET_AGENT_SYSTEM_PROMPT, buildAgentContextPrompt } from '../prompts/budgetAgentPrompt.js';
-import { convertMaterialUnits } from '../utils/unitConversion.js';
+import { convertMaterialUnits, normalizeUnit, areUnitsCompatible } from '../utils/unitConversion.js';
 import {
   findSabrarEconomicPrice,
   SABRAR_MATERIALS_2026,
   checkTechnicalCompatibility,
-  extractTechnicalAttributes
+  extractTechnicalAttributes,
+  searchLiveMaterialBase
 } from './sabrarEconomicBase.js';
 import { generateUniqueBudgetCode } from '../utils/codeGenerator.js';
 import { BudgetLLMClient } from './llmClient.js';
@@ -1091,127 +1092,14 @@ export class AIAnalysisService {
 
   /**
    * Encontra material correspondente na Base Central SABRAR (materials) sem poluir a base oficial,
-   * exigindo compatibilidade técnica estrita de todos os atributos obrigatórios (bitola, parede, modelo, dimensão).
+   * priorizando a base viva (banco de dados PostgreSQL, aliases, sinônimos e atributos técnicos)
+   * antes de qualquer JSON ou fallback (Codex Regras 4 e 5).
    */
   static async findOrCreateMaterial(itemDef, systemContext = '', options = {}) {
-    const commercialMarkupPercent = Number(options.commercialMarkupPercent || 0);
-    const applyMarkup = (basePrice) => {
-      if (basePrice === null || basePrice === undefined || Number(basePrice) <= 0) return null;
-      return Number((Number(basePrice) * (1 + commercialMarkupPercent / 100)).toFixed(2));
-    };
-
-    // 1. Tenta buscar por código oficial na base se informado (ex: SAB-0378, SAB-0011, etc.)
-    if (itemDef.code) {
-      const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
-      if (byCode && checkTechnicalCompatibility(itemDef.name, byCode.name, byCode.category || '', '', null, null)) {
-        const baseCost = byCode.reference_price > 0 ? Number(byCode.reference_price) : null;
-        return {
-          ...byCode,
-          base_cost: baseCost,
-          commercial_markup_percent: commercialMarkupPercent,
-          reference_price: applyMarkup(baseCost),
-          supplier: byCode.supplier || 'Catálogo Oficial SABRAR',
-          reference_date: '2026-01',
-          price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
-          failure_reason: baseCost ? null : 'Material localizado por código porém sem preço de referência cadastrado.',
-          price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'
-        };
-      }
-    }
-
-    // 2. Tenta buscar por nome exato ou via alias na base oficial (validando compatibilidade técnica obrigatória)
-    const byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(itemDef.name.toLowerCase());
-    if (byName && checkTechnicalCompatibility(itemDef.name, byName.name, byName.category || '', '', null, null)) {
-      const baseCost = byName.reference_price > 0 ? Number(byName.reference_price) : null;
-      return {
-        ...byName,
-        base_cost: baseCost,
-        commercial_markup_percent: commercialMarkupPercent,
-        reference_price: applyMarkup(baseCost),
-        supplier: byName.supplier || 'Catálogo Oficial SABRAR',
-        reference_date: '2026-01',
-        price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
-        failure_reason: baseCost ? null : 'Material localizado por nome exato porém sem preço de referência cadastrado.',
-        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'
-      };
-    }
-
-    const byAlias = await db.prepare(`
-      SELECT m.* FROM material_aliases ma
-      JOIN materials m ON m.id = ma.material_id
-      WHERE LOWER(ma.alias_name) = ?
-    `).get(itemDef.name.toLowerCase());
-    if (byAlias && checkTechnicalCompatibility(itemDef.name, byAlias.name, byAlias.category || '', '', null, null)) {
-      const baseCost = byAlias.reference_price > 0 ? Number(byAlias.reference_price) : null;
-      return {
-        ...byAlias,
-        base_cost: baseCost,
-        commercial_markup_percent: commercialMarkupPercent,
-        reference_price: applyMarkup(baseCost),
-        supplier: byAlias.supplier || 'Catálogo Oficial SABRAR',
-        reference_date: '2026-01',
-        price_source: baseCost ? 'CATALOGO_ALIAS_SABRAR' : null,
-        failure_reason: baseCost ? null : 'Alias localizado porém material base não possui preço cadastrado.',
-        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'
-      };
-    }
-
-    // 3. Consulta a Base Econômica Oficial Sabrar para precificação e regras
-    const economic = findSabrarEconomicPrice(itemDef.name, {
-      context: systemContext,
-      unit: itemDef.unit,
-      spec: itemDef.spec,
-      commercialMarkupPercent
+    return await searchLiveMaterialBase(db, itemDef, {
+      ...options,
+      systemContext
     });
-
-    const reqUnitLower = (itemDef.unit || '').toLowerCase();
-    const econUnitLower = (economic.unit || '').toLowerCase();
-    const isUnitConflict = reqUnitLower && econUnitLower && reqUnitLower !== econUnitLower &&
-      !(reqUnitLower.startsWith('m') && econUnitLower.startsWith('m')) &&
-      !(['un', 'und', 'unid', 'pç', 'pc'].includes(reqUnitLower) && ['un', 'und', 'unid', 'pç', 'pc'].includes(econUnitLower));
-
-    const isFastenerClash = (
-      itemDef.name.toLowerCase().includes('duto') ||
-      itemDef.name.toLowerCase().includes('chapa') ||
-      itemDef.name.toLowerCase().includes('damper') ||
-      itemDef.name.toLowerCase().includes('difusor') ||
-      itemDef.name.toLowerCase().includes('grelha') ||
-      itemDef.name.toLowerCase().includes('painel')
-    ) && economic.matchedItem && (
-      economic.matchedItem.toLowerCase().includes('parafuso') ||
-      economic.matchedItem.toLowerCase().includes('bucha') ||
-      economic.matchedItem.toLowerCase().includes('abraçadeira') ||
-      economic.matchedItem.toLowerCase().includes('terminal')
-    );
-
-    const isGenuineMatch = Boolean(economic.matched && !isUnitConflict && !isFastenerClash);
-
-    // Regra Absoluta de Preço: NUNCA usar defaultPrice arbitrário no código quando não houver correspondência
-    const baseCost = isGenuineMatch ? economic.price : null;
-    const officialPrice = isGenuineMatch ? (economic.commercialPrice || applyMarkup(economic.price)) : null;
-    const officialUnit = isGenuineMatch ? economic.unit : (itemDef.unit || 'un');
-    const officialCategory = isGenuineMatch ? economic.category : (itemDef.category || 'Climatização');
-    const failureReason = isGenuineMatch
-      ? null
-      : (economic.failureReason || (isUnitConflict ? `Conflito de unidade (${itemDef.unit} vs ${economic.unit}).` : 'Item sem correspondência técnica compatível na Base Central SABRAR 2026.'));
-
-    return {
-      id: isGenuineMatch ? economic.id : null,
-      code: isGenuineMatch ? economic.code : null,
-      name: itemDef.name,
-      category: officialCategory,
-      unit: officialUnit,
-      base_cost: baseCost,
-      commercial_markup_percent: commercialMarkupPercent,
-      reference_price: officialPrice,
-      supplier: isGenuineMatch ? (economic.supplier || 'Catálogo Oficial SABRAR 2026') : null,
-      reference_date: isGenuineMatch ? (economic.referenceDate || '2026-01') : null,
-      price_source: isGenuineMatch ? (economic.priceSource || 'BASE_ECONOMICA_SABRAR_2026') : null,
-      is_genuine_match: isGenuineMatch,
-      matched_item: isGenuineMatch ? economic.matchedItem : null,
-      failure_reason: failureReason,
-      price_status: isGenuineMatch ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'
-    };
   }
 
   /**
@@ -1545,15 +1433,21 @@ export class AIAnalysisService {
         const cadDiffusionItems = (cadData.cadItems || []).filter(item => item.category === 'Difusão de Ar');
         for (const cItem of cadDiffusionItems) {
           requiredItems.push({
+            itemNum: cItem.itemNum || null,
             name: cItem.name,
             category: 'Difusão de Ar',
-            unit: cItem.unit || 'und',
+            unit: normalizeUnit(cItem.unit || 'und'),
             quantity: cItem.quantity,
+            dimensions: cItem.dimensions || null,
+            brand: cItem.brand || null,
             defaultPrice: null,
             measurementStatus: cItem.measurementStatus || 'DOCUMENTADO',
             sourceFiles: documentsAnalyzed,
             keywords: cItem.keywords,
-            reason: cItem.reason
+            reason: cItem.reason,
+            evidence: cItem.reason,
+            classification: 'PRECO_PENDENTE',
+            price_status: 'PENDENTE_COTACAO'
           });
         }
 
@@ -1981,7 +1875,25 @@ export class AIAnalysisService {
         }
 
         // 4. INTEGRAÇÃO DIRETA DOS MATERIAIS EXTRAÍDOS E VALIDADOS DO MODELO DE IA (LLM)
+        // Implementa validação estrita de evidência documental e deduplicação técnica (Codex Regras 1 e 2)
         if (llmData && Array.isArray(llmData.materials) && llmData.materials.length > 0) {
+          const getMaterialFamily = (name = '') => {
+            const n = String(name).toLowerCase();
+            if (/\bgrelha\b/i.test(n)) return 'grelha';
+            if (/\bdifusor\b/i.test(n)) return 'difusor';
+            if (/\bdamper\b/i.test(n)) return 'damper';
+            if (/\bveneziana\b/i.test(n)) return 'veneziana';
+            if (/\bplenum\b/i.test(n)) return 'plenum';
+            if (/\bcobre|tubula[çc][aã]o\s+de\s+cobre|tubo\s+de\s+cobre\b/i.test(n)) return 'cobre';
+            if (/\bmpu|painel\s+mpu\b/i.test(n)) return 'mpu';
+            if (/\barmaflex|isolamento\b/i.test(n)) return 'isolamento';
+            if (/\bcabo\b/i.test(n)) return 'cabo';
+            if (/\bchumbador\b/i.test(n)) return 'chumbador';
+            if (/\bperfilado\b/i.test(n)) return 'perfilado';
+            if (/\btirante\b/i.test(n)) return 'tirante';
+            return 'outro';
+          };
+
           for (const llmMat of llmData.materials) {
             // Rejeita estimativas por área para dutos/cobre quando a geometria do documento está pendente
             const isDuctOrPipeItem = /\bmpu\b|painel\s+mpu|tubula[çc][aã]o\s+de\s+cobre|tubo\s+de\s+cobre/i.test(llmMat.name);
@@ -1989,32 +1901,108 @@ export class AIAnalysisService {
               /estimad|0[.,]35|por\s+[aá]rea/i.test(llmMat.evidence || '') &&
               validatedGeometry.ductMeasurementStatus === 'PENDENTE_MEDICAO';
 
-            const effectiveQty = isUnverifiedAreaEstimate ? 0 : llmMat.quantity;
-            const effectiveStatus = isUnverifiedAreaEstimate ? 'PENDENTE_MEDICAO' : llmMat.measurementStatus;
+            const effectiveQty = isUnverifiedAreaEstimate ? 0 : Number(llmMat.quantity || 0);
+            const effectiveStatus = isUnverifiedAreaEstimate ? 'PENDENTE_MEDICAO' : (llmMat.measurementStatus || 'DOCUMENTADO');
+            const normLlmUnit = normalizeUnit(llmMat.unit);
 
-            const existingIdx = requiredItems.findIndex(r =>
-              r.name.toLowerCase() === llmMat.name.toLowerCase() ||
-              (r.name.toLowerCase().includes(llmMat.name.toLowerCase().slice(0, 18)) && r.unit.toLowerCase() === llmMat.unit.toLowerCase())
-            );
+            const llmAttrs = extractTechnicalAttributes(llmMat.name);
+            const llmFamily = getMaterialFamily(llmMat.name);
+            const evidenceText = String(llmMat.evidence || '');
+            const evAttrs = extractTechnicalAttributes(evidenceText);
+            const itemNumMatch = evidenceText.match(/ITEM\s*0?(\d+)/i);
+            const citedItemNum = itemNumMatch ? String(parseInt(itemNumMatch[1], 10)).padStart(2, '0') : null;
+
+            // 1. Validação estrita de atributos contra a linha documental citada (Codex Regra 2)
+            let hasAttributeConflict = false;
+            let conflictDescription = null;
+
+            if (llmAttrs.rectDimensions.length > 0 && evAttrs.rectDimensions.length > 0) {
+              const normLlmDim = llmAttrs.rectDimensions[0];
+              const normEvDim = evAttrs.rectDimensions[0];
+              if (normLlmDim !== normEvDim) {
+                hasAttributeConflict = true;
+                conflictDescription = `Conflito de interpretação: Item extraído como "${llmMat.name}" (${normLlmDim}) mas a evidência documental citada (${evidenceText}) refere-se à dimensão ${normEvDim} (Item ${citedItemNum || 'documental'}).`;
+              }
+            }
+
+            if (hasAttributeConflict) {
+              documentConflicts.push({
+                item_name: llmMat.name,
+                cited_evidence: evidenceText,
+                extracted_dimension: llmAttrs.rectDimensions.join(', '),
+                evidence_dimension: evAttrs.rectDimensions.join(', '),
+                conflict_type: 'CONFLITO_DOCUMENTAL',
+                description: conflictDescription,
+                recommended_action: 'Preservado item documental original; verificação humana recomendada.'
+              });
+
+              // Localiza o item documental citado e marca com conflito sem substituir silenciosamente
+              const citedItem = requiredItems.find(r =>
+                (citedItemNum && r.itemNum === citedItemNum) ||
+                (r.dimensions && evAttrs.rectDimensions.includes(r.dimensions))
+              );
+              if (citedItem) {
+                citedItem.classification = 'CONFLITO_DOCUMENTAL';
+                citedItem.conflict_description = conflictDescription;
+                citedItem.evidence = `${citedItem.reason || ''} | [CONFLITO DETECTADO]: ${conflictDescription}`;
+              }
+              // Não adiciona a linha com atributo falso
+              continue;
+            }
+
+            // 2. Relaciona à mesma ocorrência documental antes de consolidar quantidades (Codex Regra 1)
+            // Não deduplica apenas por prefixo do nome ou SKU!
+            const existingIdx = requiredItems.findIndex(r => {
+              // Unidades devem ser compatíveis
+              if (!areUnitsCompatible(r.unit, llmMat.unit)) return false;
+
+              // Mesma família técnica
+              const rFamily = getMaterialFamily(r.name);
+              if (rFamily !== 'outro' && rFamily !== llmFamily) return false;
+
+              // Caso A: mesmo código ou número de item documental
+              if (citedItemNum && r.itemNum && r.itemNum === citedItemNum) return true;
+
+              // Caso B: mesmas dimensões retangulares explícitas (ex: 600x300, 15x15)
+              const rDims = r.dimensions ? [r.dimensions] : extractTechnicalAttributes(r.name).rectDimensions;
+              if (rDims.length > 0 && llmAttrs.rectDimensions.length > 0) {
+                return rDims.some(d => llmAttrs.rectDimensions.includes(d));
+              }
+
+              // Caso C: mesmos diâmetros nominais
+              const rDiams = extractTechnicalAttributes(r.name).nominalDiameters;
+              if (rDiams.length > 0 && llmAttrs.nominalDiameters.length > 0) {
+                return rDiams.some(d => llmAttrs.nominalDiameters.includes(d));
+              }
+
+              // Caso D: nome idêntico
+              return r.name.toLowerCase() === llmMat.name.toLowerCase();
+            });
 
             if (existingIdx !== -1) {
-              // Se o LLM trouxe uma quantidade explícita documentada/medida válida, atualiza o item
-              if (effectiveQty > 0 && effectiveStatus !== 'PENDENTE_MEDICAO') {
-                requiredItems[existingIdx].quantity = effectiveQty;
-                requiredItems[existingIdx].measurementStatus = effectiveStatus;
-                requiredItems[existingIdx].reason = `Extraído pela IA (${llmMat.sourceFile} pág. ${llmMat.sourcePage}): ${llmMat.evidence}`;
+              // Ocorrência documental já existe: consolida dados sem duplicar linha
+              const existing = requiredItems[existingIdx];
+              if (effectiveQty > 0 && (!existing.quantity || existing.quantity === 0)) {
+                existing.quantity = effectiveQty;
+                existing.measurementStatus = effectiveStatus;
+              }
+              if (llmMat.evidence && !existing.evidence?.includes(llmMat.evidence)) {
+                existing.evidence = `${existing.evidence || existing.reason || ''} | Extraído IA: ${llmMat.evidence}`;
               }
             } else {
               requiredItems.push({
                 name: llmMat.name,
                 category: llmMat.category || 'Materiais Extraídos (IA)',
-                unit: llmMat.unit || 'un',
+                unit: normLlmUnit,
                 quantity: effectiveQty,
                 defaultPrice: null,
                 measurementStatus: effectiveStatus,
                 sourceFiles: [llmMat.sourceFile || 'Documento do Projeto'],
                 keywords: [llmMat.name.toLowerCase()],
-                reason: `Extraído pela IA (${llmMat.sourceFile} pág. ${llmMat.sourcePage}): ${llmMat.evidence}`
+                reason: `Extraído pela IA (${llmMat.sourceFile} pág. ${llmMat.sourcePage}): ${llmMat.evidence}`,
+                evidence: llmMat.evidence || null,
+                classification: effectiveQty <= 0 ? 'QUANTIDADE_PENDENTE' : 'PRECO_PENDENTE',
+                price_status: 'PENDENTE_COTACAO'
               });
             }
           }
@@ -2197,6 +2185,9 @@ export class AIAnalysisService {
         is_pending_quote: !hasValidPrice,
         is_pending_measurement: isPendingMeasurement,
         price_status: hasValidPrice ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+        classification: itemDef.classification || (itemDef.conflict_description ? 'CONFLITO_DOCUMENTAL' : (isPendingMeasurement ? 'QUANTIDADE_PENDENTE' : (!hasValidPrice ? 'PRECO_PENDENTE' : 'CONFIRMADO'))),
+        conflict_description: itemDef.conflict_description || null,
+        evidence: itemDef.evidence || itemDef.reason || null,
         technical_calculation: itemDef.technicalCalculation || null,
         reason: itemDef.reason
       });
@@ -2285,6 +2276,7 @@ export class AIAnalysisService {
             unit: 'Unid.',
             unitPrice: 8400.00,
             measurementStatus: 'DOCUMENTADO',
+            classification: 'CONFIRMADO',
             notes: `Instalação mecânica especializada de ${numCondensers} sistema(s) conforme Quadro/Lista de Material CAD`
           });
         }
@@ -2323,6 +2315,7 @@ export class AIAnalysisService {
             unit: 'm²',
             unitPrice: 140.00,
             measurementStatus: isDuctMeasured ? 'MEDIDO' : 'PENDENTE_MEDICAO',
+            classification: isDuctMeasured ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
             notes: isDuctMeasured
               ? `Fabricação e montagem de dutos sobre a mesma geometria validada dos materiais (${validatedGeometry.ductNetAreaSqm} m² líquidos × 1,40 = ${laborDuctAreaSqm} m²)`
               : 'PENDENTE DE MEDIÇÃO: Aguardando medição linear dos trechos de dutos na prancha.'
@@ -2336,6 +2329,7 @@ export class AIAnalysisService {
               unit: 'unid',
               unitPrice: 280.00,
               measurementStatus: 'DOCUMENTADO',
+              classification: 'CONFIRMADO',
               notes: `Interligação de caixas plenum, grelhas e difusores (${numCondensers} sistemas)`
             });
           }
@@ -2375,6 +2369,7 @@ export class AIAnalysisService {
             unit: 'diária',
             unitPrice: 9520.00,
             measurementStatus: hasLifting ? 'PARAMETRIZADO' : 'PENDENTE_DEFINICAO_ESCOPO',
+            classification: hasLifting ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
             notes: hasLifting
               ? `Içamento parametrizado (${explicitLiftingDays} diária(s))`
               : 'PENDENTE DE DEFINIÇÃO DE ESCOPO: Informar número de diárias de içamento para patamar técnico.'
@@ -2406,6 +2401,7 @@ export class AIAnalysisService {
             unit: 'mês',
             unitPrice: 16802.22,
             measurementStatus: hasSup ? 'PARAMETRIZADO' : 'PENDENTE_DEFINICAO_ESCOPO',
+            classification: hasSup ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
             notes: hasSup
               ? `Supervisão técnica parametrizada (${explicitSupervisorMonths} mês)`
               : 'PENDENTE DE DEFINIÇÃO DE ESCOPO: Informar fração de mês conforme cronograma.'
@@ -2500,7 +2496,44 @@ export class AIAnalysisService {
       overall_completeness_percent: overallCompletenessPercent
     };
 
-    const hasPendencies = unpricedItems.length > 0 || unmeasuredItems.length > 0 || pendingItems.length > 0;
+    // Subtotais parciais confirmados e pendências explícitas (Codex Regras 6 e 7)
+    const confirmedServicesSubtotal = Number(
+      defaultServices
+        .filter(s => s.classification === 'CONFIRMADO' || s.measurementStatus === 'DOCUMENTADO')
+        .reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unitPrice || 0)), 0)
+        .toFixed(2)
+    );
+
+    const confirmedMaterialsSubtotal = Number(
+      budgetMaterials
+        .filter(m => m.classification === 'CONFIRMADO' && m.price_status === 'PRECIFICADO_CATALOGO')
+        .reduce((acc, m) => acc + Number(m.subtotal || 0), 0)
+        .toFixed(2)
+    );
+
+    const hasAnyPendingItems = budgetMaterials.some(m => m.classification === 'QUANTIDADE_PENDENTE' || m.classification === 'PRECO_PENDENTE') ||
+      defaultServices.some(s => s.classification === 'QUANTIDADE_PENDENTE' || s.measurementStatus === 'PENDENTE_MEDICAO' || s.measurementStatus === 'PENDENTE_DEFINICAO_ESCOPO');
+
+    const isPartialBudget = hasAnyPendingItems;
+
+    const confirmedPartialSubtotal = isPartialBudget
+      ? confirmedServicesSubtotal
+      : Number((confirmedServicesSubtotal + confirmedMaterialsSubtotal).toFixed(2));
+
+    const budgetPartialSubtotal = isPartialBudget ? confirmedServicesSubtotal : totalFinalCost;
+    const completenessStatus = isPartialBudget ? 'SUBTOTAL_PARCIAL_COM_PENDENCIAS' : 'ORCAMENTO_COMPLETO';
+
+    const pendenciesSummary = {
+      quantidade_pendente_count: budgetMaterials.filter(m => m.classification === 'QUANTIDADE_PENDENTE').length + defaultServices.filter(s => s.classification === 'QUANTIDADE_PENDENTE').length,
+      preco_pendente_count: budgetMaterials.filter(m => m.classification === 'PRECO_PENDENTE').length,
+      conflito_documental_count: documentConflicts.length,
+      fornecimento_cliente_count: defaultEquipment.length,
+      confirmed_services_subtotal: confirmedServicesSubtotal,
+      confirmed_materials_subtotal: confirmedMaterialsSubtotal,
+      partial_subtotal: budgetPartialSubtotal
+    };
+
+    const hasPendencies = isPartialBudget || unpricedItems.length > 0 || unmeasuredItems.length > 0 || pendingItems.length > 0;
     const budgetCompletenessStatus = hasPendencies
       ? 'SUBTOTAL_PARCIAL_COM_PENDENCIAS'
       : 'ORCAMENTO_COMPLETO';
@@ -2512,6 +2545,10 @@ export class AIAnalysisService {
       services_subtotal: totalServicesCost,
       equipment_subtotal: totalEquipmentCost,
       priced_grand_subtotal: totalFinalCost,
+      is_partial: isPartialBudget,
+      partial_subtotal: budgetPartialSubtotal,
+      pendencies_summary: pendenciesSummary,
+      document_conflicts: documentConflicts,
       completeness_status: budgetCompletenessStatus,
       unpriced_items: unpricedItems,
       unmeasured_items: unmeasuredItems,
@@ -2611,8 +2648,9 @@ export class AIAnalysisService {
           INSERT INTO budgets (
             project_id, code, status, total_materials, total_services,
             total_labor, total_equipment, total_logistics, total_taxes,
-            total_additional, total_final, validity_days, commercial_terms
-          ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?)
+            total_additional, total_final, validity_days, commercial_terms,
+            is_partial, partial_subtotal, pendencies_summary, document_conflicts, completeness_status
+          ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, 0, 0, 0, ?, 15, ?, ?, ?, ?, ?, ?)
         `).run(
           projectId,
           budgetCode,
@@ -2621,7 +2659,12 @@ export class AIAnalysisService {
           totalServicesCost,
           totalEquipmentCost,
           totalFinalCost,
-          'Condições de pagamento: 30% sinal na assinatura, 40% na entrega dos materiais no canteiro, 30% no comissionamento e entrega da obra. Validade: 15 dias.'
+          'Condições de pagamento: 30% sinal na assinatura, 40% na entrega dos materiais no canteiro, 30% no comissionamento e entrega da obra. Validade: 15 dias.',
+          isPartialBudget,
+          budgetPartialSubtotal,
+          JSON.stringify(pendenciesSummary),
+          JSON.stringify(documentConflicts),
+          completenessStatus
         );
         budgetId = resBudget.lastInsertRowid;
       } else {
@@ -2687,15 +2730,50 @@ export class AIAnalysisService {
           await db.prepare(`
             UPDATE budgets SET
               total_materials = ?, total_services = ?, total_labor = ?, total_equipment = ?, total_final = ?,
-              status = 'Em revisão', updated_at = CURRENT_TIMESTAMP
+              status = 'Em revisão', updated_at = CURRENT_TIMESTAMP,
+              is_partial = ?, partial_subtotal = ?, pendencies_summary = ?, document_conflicts = ?, completeness_status = ?
             WHERE id = ?
-          `).run(materialsTotal, totalServicesCost, totalServicesCost, totalEquipmentCost, totalFinalCost, budgetId);
+          `).run(
+            materialsTotal,
+            totalServicesCost,
+            totalServicesCost,
+            totalEquipmentCost,
+            totalFinalCost,
+            isPartialBudget,
+            budgetPartialSubtotal,
+            JSON.stringify(pendenciesSummary),
+            JSON.stringify(documentConflicts),
+            completenessStatus,
+            budgetId
+          );
 
           await db.prepare('DELETE FROM budget_items WHERE budget_id = ?').run(budgetId);
           await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
 
+          const getMatFamily = (n = '') => {
+            const str = String(n).toLowerCase();
+            if (/\bgrelha\b/i.test(str)) return 'grelha';
+            if (/\bdifusor\b/i.test(str)) return 'difusor';
+            if (/\bdamper\b/i.test(str)) return 'damper';
+            return 'outro';
+          };
+
           for (const hItem of humanEditedItems) {
-            if (!budgetMaterials.some(m => m.material_name === hItem.material_name)) {
+            const hFamily = getMatFamily(hItem.material_name);
+            const hAttrs = extractTechnicalAttributes(hItem.material_name);
+            const alreadyInBudget = budgetMaterials.some(m => {
+              if (m.material_name.toLowerCase() === hItem.material_name.toLowerCase()) return true;
+              const mFamily = getMatFamily(m.material_name);
+              if (mFamily !== 'outro' && mFamily === hFamily) {
+                const mAttrs = extractTechnicalAttributes(m.material_name);
+                if (mAttrs.rectDimensions.length > 0 && hAttrs.rectDimensions.length > 0) {
+                  return mAttrs.rectDimensions.some(d => hAttrs.rectDimensions.includes(d));
+                }
+              }
+              return false;
+            });
+
+            if (!alreadyInBudget) {
               budgetMaterials.push({
                 material_id: hItem.material_id,
                 material_code: null,
@@ -2704,7 +2782,9 @@ export class AIAnalysisService {
                 unit: hItem.unit,
                 unit_price: hItem.unit_price,
                 subtotal: hItem.subtotal,
-                human_notes: hItem.human_notes
+                human_notes: hItem.human_notes,
+                classification: hItem.classification || 'CONFIRMADO',
+                price_status: hItem.price_status || (hItem.unit_price > 0 ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO')
               });
             }
           }
@@ -2715,8 +2795,9 @@ export class AIAnalysisService {
         const insertBudgetItem = db.prepare(`
           INSERT INTO budget_items (
             budget_id, material_id, material_name, quantity, unit,
-            unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes,
+            classification, price_status, evidence, conflict_description
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const m of budgetMaterials) {
@@ -2742,13 +2823,19 @@ export class AIAnalysisService {
             cleanSubtotal,
             cleanQty,
             auditMeta?.calculation_summary || 'Sugestão da IA SABRAR',
-            noteText
+            noteText,
+            m.classification || (m.is_pending_measurement ? 'QUANTIDADE_PENDENTE' : (m.is_pending_quote ? 'PRECO_PENDENTE' : 'CONFIRMADO')),
+            m.price_status || (m.unit_price > 0 ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'),
+            m.evidence || m.reason || null,
+            m.conflict_description || null
           );
         }
 
         const insertService = db.prepare(`
-          INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO services (
+            budget_id, category, description, quantity, unit, unit_price, subtotal, notes,
+            classification, measurement_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const s of defaultServices) {
@@ -2760,7 +2847,9 @@ export class AIAnalysisService {
             s.unit,
             s.unitPrice,
             Number(((s.quantity || 0) * (s.unitPrice || 0)).toFixed(2)),
-            s.notes
+            s.notes,
+            s.classification || (s.measurementStatus === 'DOCUMENTADO' ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE'),
+            s.measurementStatus || 'DOCUMENTADO'
           );
         }
 

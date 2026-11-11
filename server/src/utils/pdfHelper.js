@@ -235,7 +235,7 @@ function reconstructPageLayoutFromItems(items = [], pageRotate = 0, pageView = n
 
   return {
     coordItemsCount: validItems.length,
-    coordItemsSample: validItems.slice(0, 250),
+    coordItemsSample: validItems,
     reconstructedLines,
     structuredCadTables
   };

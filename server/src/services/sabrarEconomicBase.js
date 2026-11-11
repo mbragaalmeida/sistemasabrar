@@ -115,7 +115,7 @@ export function extractTechnicalAttributes(text) {
 
   // 2. Dimensões retangulares 2D (ex: 600x300mm, 600x600, 15"x15", 300x450mm, 38x38)
   // Ignora padrões elétricos como 3x18 awg ou 4x2.5mm² e painéis 2,0x1,2m
-  const rectRegex = /\b(\d{2,4})\s*["'”xX*×]\s*(\d{2,4})\s*(mm|cm|["'”])?(?!\s*(?:awg|mm2|mm²))/gi;
+  const rectRegex = /\b(\d{2,4})\s*["'”]?\s*[xX*×]\s*(\d{2,4})\s*(mm|cm|["'”])?(?!\s*(?:awg|mm2|mm²))/gi;
   while ((m = rectRegex.exec(norm)) !== null) {
     const d1 = parseInt(m[1], 10);
     const d2 = parseInt(m[2], 10);
@@ -539,3 +539,206 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
     failureReason
   };
 }
+
+/**
+ * Pesquisa candidatos na base viva de materiais (banco de dados PostgreSQL/Supabase),
+ * utilizando código, aliases, sinônimos e atributos técnicos rigorosos (Regra 4 e 5 Codex).
+ * Rejeita famílias incompatíveis antes de comparar preços e preserva pendências para o engenheiro.
+ */
+export async function searchLiveMaterialBase(db, itemDef, options = {}) {
+  const commercialMarkupPercent = Number(options.commercialMarkupPercent || 0);
+  const applyMarkup = (basePrice) => {
+    if (basePrice === null || basePrice === undefined || Number(basePrice) <= 0) return null;
+    return Number((Number(basePrice) * (1 + commercialMarkupPercent / 100)).toFixed(2));
+  };
+
+  const rawName = String(itemDef.name || itemDef.material || '').trim();
+  const searchNorm = normalizeTechString(rawName);
+  const qGauges = extractExactGauges(searchNorm);
+
+  // 1. Busca prioritária por código oficial se fornecido (ex: SAB-0315, SAB-1153)
+  if (itemDef.code) {
+    const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
+    if (byCode && checkTechnicalCompatibility(rawName, byCode.name, byCode.category || '', byCode.synonyms || '', qGauges, null)) {
+      const baseCost = Number(byCode.reference_price) > 0 ? Number(byCode.reference_price) : null;
+      return {
+        ...byCode,
+        id: byCode.id,
+        code: byCode.code,
+        name: byCode.name,
+        category: byCode.category,
+        unit: byCode.unit,
+        base_cost: baseCost,
+        commercial_markup_percent: commercialMarkupPercent,
+        reference_price: applyMarkup(baseCost),
+        supplier: byCode.supplier || 'Catálogo Oficial SABRAR',
+        reference_date: '2026-01',
+        price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
+        is_genuine_match: true,
+        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+        failure_reason: baseCost ? null : 'Material localizado por código porém sem preço de referência cadastrado.'
+      };
+    }
+  }
+
+  // 2. Busca por nome exato na base viva
+  const byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(rawName.toLowerCase());
+  if (byName && checkTechnicalCompatibility(rawName, byName.name, byName.category || '', byName.synonyms || '', qGauges, null)) {
+    const baseCost = Number(byName.reference_price) > 0 ? Number(byName.reference_price) : null;
+    return {
+      ...byName,
+      id: byName.id,
+      code: byName.code,
+      name: byName.name,
+      category: byName.category,
+      unit: byName.unit,
+      base_cost: baseCost,
+      commercial_markup_percent: commercialMarkupPercent,
+      reference_price: applyMarkup(baseCost),
+      supplier: byName.supplier || 'Catálogo Oficial SABRAR',
+      reference_date: '2026-01',
+      price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
+      is_genuine_match: true,
+      price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+      failure_reason: baseCost ? null : 'Material localizado por nome exato porém sem preço de referência cadastrado.'
+    };
+  }
+
+  // 3. Busca por alias cadastrado
+  const byAlias = await db.prepare(`
+    SELECT m.* FROM material_aliases ma
+    JOIN materials m ON m.id = ma.material_id
+    WHERE LOWER(ma.alias_name) = ?
+  `).get(rawName.toLowerCase());
+  if (byAlias && checkTechnicalCompatibility(rawName, byAlias.name, byAlias.category || '', byAlias.synonyms || '', qGauges, null)) {
+    const baseCost = Number(byAlias.reference_price) > 0 ? Number(byAlias.reference_price) : null;
+    return {
+      ...byAlias,
+      id: byAlias.id,
+      code: byAlias.code,
+      name: byAlias.name,
+      category: byAlias.category,
+      unit: byAlias.unit,
+      base_cost: baseCost,
+      commercial_markup_percent: commercialMarkupPercent,
+      reference_price: applyMarkup(baseCost),
+      supplier: byAlias.supplier || 'Catálogo Oficial SABRAR',
+      reference_date: '2026-01',
+      price_source: baseCost ? 'CATALOGO_ALIAS_SABRAR' : null,
+      is_genuine_match: true,
+      price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+      failure_reason: baseCost ? null : 'Alias localizado porém material base não possui preço cadastrado.'
+    };
+  }
+
+  // 4. Busca multi-termo na base viva (materials)
+  const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua', 'tamanho', 'dimensao', 'medida', 'fabricante', 'ref', 'modelo', 'de', 'da', 'do', 'em']);
+  const words = searchNorm.split(' ').filter(w => w.length > 2 && !STOP_WORDS.has(w));
+  if (words.length > 0) {
+    const firstWord = words[0];
+    const dbCandidates = await db.prepare(`
+      SELECT m.* FROM materials m
+      WHERE unaccent(m.name) ILIKE unaccent(?) 
+         OR unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?)
+      LIMIT 80
+    `).all(`%${firstWord}%`, `%${firstWord}%`);
+
+    let bestCandidate = null;
+    let bestScore = -1;
+
+    for (const cand of dbCandidates) {
+      if (!cand.name) continue;
+      // Rejeita famílias incompatíveis antes de comparar preços (Regra 4)
+      if (!checkTechnicalCompatibility(rawName, cand.name, cand.category || '', cand.synonyms || '', qGauges, null)) {
+        continue;
+      }
+
+      const candNorm = normalizeTechString(cand.name);
+      const candSyn = normalizeTechString(cand.synonyms || '');
+      let score = 0;
+      for (const w of words) {
+        if (candNorm.includes(w)) score += 25;
+        else if (candSyn.includes(w)) score += 30;
+      }
+
+      const entGauges = extractExactGauges(`${candNorm} ${candSyn}`);
+      if (qGauges.length > 0 && entGauges.length > 0 && qGauges.some(qg => entGauges.includes(qg))) {
+        score += 40;
+      }
+
+      if (score > bestScore && score >= 45) {
+        bestScore = score;
+        bestCandidate = cand;
+      }
+    }
+
+    if (bestCandidate) {
+      const baseCost = Number(bestCandidate.reference_price) > 0 ? Number(bestCandidate.reference_price) : null;
+      return {
+        ...bestCandidate,
+        id: bestCandidate.id,
+        code: bestCandidate.code,
+        name: bestCandidate.name,
+        category: bestCandidate.category,
+        unit: bestCandidate.unit,
+        base_cost: baseCost,
+        commercial_markup_percent: commercialMarkupPercent,
+        reference_price: applyMarkup(baseCost),
+        supplier: bestCandidate.supplier || 'Catálogo Oficial SABRAR',
+        reference_date: '2026-01',
+        price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
+        is_genuine_match: true,
+        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+        failure_reason: baseCost ? null : 'Material compatível localizado na base viva porém sem preço cadastrado.'
+      };
+    }
+  }
+
+  // 5. Fallback para a Base Econômica JSON oficial (somente se não encontrou na base viva)
+  const economic = findSabrarEconomicPrice(rawName, {
+    context: options.systemContext || '',
+    unit: itemDef.unit,
+    spec: itemDef.spec,
+    commercialMarkupPercent
+  });
+
+  if (economic.matched) {
+    const baseCost = economic.price;
+    return {
+      id: economic.id || null,
+      code: economic.code || null,
+      name: itemDef.name,
+      category: economic.category || itemDef.category || 'Climatização',
+      unit: economic.unit || itemDef.unit || 'und',
+      base_cost: baseCost,
+      commercial_markup_percent: commercialMarkupPercent,
+      reference_price: economic.commercialPrice || applyMarkup(baseCost),
+      supplier: economic.supplier || 'Catálogo Oficial SABRAR 2026',
+      reference_date: '2026-09-28',
+      price_source: 'BASE_ECONOMICA_SABRAR_2026',
+      is_genuine_match: true,
+      price_status: 'PRECIFICADO_CATALOGO',
+      failure_reason: null
+    };
+  }
+
+  // 6. Não encontrou correspondência segura ou preço: preserva descrição, quantidade e marca preço pendente (Regra 5)
+  return {
+    id: null,
+    code: null,
+    name: itemDef.name,
+    category: itemDef.category || 'Climatização',
+    unit: itemDef.unit || 'und',
+    base_cost: null,
+    commercial_markup_percent: commercialMarkupPercent,
+    reference_price: null,
+    supplier: null,
+    reference_date: null,
+    price_source: null,
+    is_genuine_match: false,
+    price_status: 'PENDENTE_COTACAO',
+    classification: 'PRECO_PENDENTE',
+    failure_reason: economic.failureReason || 'Item documental sem correspondência cadastrada na base viva SABRAR. Preço pendente para o engenheiro.'
+  };
+}
+

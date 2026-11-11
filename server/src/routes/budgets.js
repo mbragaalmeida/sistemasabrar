@@ -219,15 +219,21 @@ budgetsRouter.post('/save', async (req, res) => {
           project_id, code, status, total_materials, total_services,
           total_labor, total_equipment, total_logistics, total_taxes,
           total_additional, total_final, discount_amount, validity_days, commercial_terms,
-          materials_margin_percent, labor_margin_percent
-        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          materials_margin_percent, labor_margin_percent,
+          is_partial, partial_subtotal, pendencies_summary, document_conflicts, completeness_status
+        ) VALUES (?, ?, 'Em revisão', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const result = await insertBudget.run(
         projectId, budgetCode, totalMaterials, totalServices,
         totalLabor, finalTotalEquipment, totalLogistics, totalTaxes,
         totalAdditional, totalFinal, finalDiscount, validityDays, commercialTerms,
-        Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0)
+        Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0),
+        req.body.is_partial || req.body.isPartial || false,
+        req.body.partial_subtotal || req.body.partialSubtotal || null,
+        req.body.pendencies_summary ? JSON.stringify(req.body.pendencies_summary) : null,
+        req.body.document_conflicts ? JSON.stringify(req.body.document_conflicts) : null,
+        req.body.completeness_status || req.body.completenessStatus || null
       );
       budgetId = result.lastInsertRowid;
     } else {
@@ -238,6 +244,11 @@ budgetsRouter.post('/save', async (req, res) => {
           total_equipment = ?, total_logistics = ?, total_taxes = ?,
           total_additional = ?, total_final = ?, discount_amount = ?, validity_days = ?,
           commercial_terms = ?, materials_margin_percent = ?, labor_margin_percent = ?,
+          is_partial = COALESCE(?, is_partial),
+          partial_subtotal = COALESCE(?, partial_subtotal),
+          pendencies_summary = COALESCE(?, pendencies_summary),
+          document_conflicts = COALESCE(?, document_conflicts),
+          completeness_status = COALESCE(?, completeness_status),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(
@@ -245,6 +256,11 @@ budgetsRouter.post('/save', async (req, res) => {
         finalTotalEquipment, totalLogistics, totalTaxes,
         totalAdditional, totalFinal, finalDiscount, validityDays, commercialTerms,
         Number(materialsMarginPercent || 0), Number(laborMarginPercent || 0),
+        req.body.is_partial ?? req.body.isPartial ?? null,
+        req.body.partial_subtotal ?? req.body.partialSubtotal ?? null,
+        req.body.pendencies_summary ? JSON.stringify(req.body.pendencies_summary) : null,
+        req.body.document_conflicts ? JSON.stringify(req.body.document_conflicts) : null,
+        req.body.completeness_status ?? req.body.completenessStatus ?? null,
         budgetId
       );
     }
@@ -297,8 +313,8 @@ budgetsRouter.post('/save', async (req, res) => {
       INSERT INTO budget_items (
         budget_id, material_id, material_name, quantity, unit,
         unit_price, subtotal, ai_suggested_quantity, ai_reasoning, human_notes,
-        original_spreadsheet_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        original_spreadsheet_name, classification, price_status, evidence, conflict_description
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of validMaterials) {
@@ -313,7 +329,11 @@ budgetsRouter.post('/save', async (req, res) => {
         m.aiSuggestedQuantity || m.quantity,
         m.aiReasoning || null,
         m.humanNotes || null,
-        m.originalSpreadsheetName || null
+        m.originalSpreadsheetName || null,
+        m.classification || null,
+        m.price_status || m.priceStatus || null,
+        m.evidence || null,
+        m.conflict_description || m.conflictDescription || null
       );
 
       // Se o usuário alterou a quantidade sugerida pela IA, registra no log de auditoria (Seção 27 e 37)
@@ -341,14 +361,15 @@ budgetsRouter.post('/save', async (req, res) => {
     // Salva serviços complementares
     await db.prepare('DELETE FROM services WHERE budget_id = ?').run(budgetId);
     const insertService = db.prepare(`
-      INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO services (budget_id, category, description, quantity, unit, unit_price, subtotal, notes, classification, measurement_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const s of validServices) {
       await insertService.run(
         budgetId, s.category || 'MÃO DE OBRA', s.description,
-        s.quantity, s.unit || 'vb', s.unitPrice, s.subtotal, s.notes || null
+        s.quantity, s.unit || 'vb', s.unitPrice, s.subtotal, s.notes || null,
+        s.classification || null, s.measurement_status || s.measurementStatus || null
       );
     }
 

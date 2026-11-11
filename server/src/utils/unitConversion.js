@@ -70,22 +70,31 @@ export const REFRIGERANT_CYLINDER_KG = {
 };
 
 /**
- * Normaliza strings de unidade para comparação (maiúsculo, sem pontuações)
+ * Normaliza unidades de medida para forma canônica uniforme (maiúsculo)
  */
-export function normalizeUnit(unit) {
-  if (!unit) return 'UN';
-  const u = String(unit).trim().toUpperCase();
-  if (['KG', 'QUILO', 'KGS', 'KILO', 'KILOGRAMA'].includes(u)) return 'KG';
-  if (['M', 'METRO', 'METROS', 'MT', 'MTS'].includes(u)) return 'M';
-  if (['M2', 'M²', 'METRO QUADRADO', 'METROS QUADRADOS'].includes(u)) return 'M²';
-  if (['UN', 'UND', 'UNIDADE', 'UNIDADES', 'PC', 'PÇA', 'PECA', 'PECAS'].includes(u)) return 'UN';
-  if (['BARRA', 'BAR', 'BARRAS'].includes(u)) return 'BARRA';
-  if (['ROLO', 'ROLOS', 'RL'].includes(u)) return 'ROLO';
-  if (['CX', 'CAIXA', 'CAIXAS'].includes(u)) return 'CX';
-  if (['L', 'LT', 'LITRO', 'LITROS'].includes(u)) return 'L';
-  if (['LATA', 'LATAS'].includes(u)) return 'LATA';
-  if (['SACO', 'SACOS', 'SC'].includes(u)) return 'SACO';
-  if (['BALDE', 'BALDES', 'BD'].includes(u)) return 'BALDE';
+export function normalizeUnit(rawUnit) {
+  if (!rawUnit) return 'UN';
+  const u = String(rawUnit).trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/^(?:UN|UND|UNID|UNIDADE|UNIDADES|PC|PÇ|PÇA|PECA|PEÇA|PECAS|PEÇAS)$/i.test(u)) return 'UN';
+  if (/^(?:M|METRO|METROS|MT|MTS)$/i.test(u)) return 'M';
+  if (/^(?:M2|M²|METRO QUADRADO|METROS QUADRADOS)$/i.test(u)) return 'M²';
+  if (/^(?:KG|QUILO|QUILOS|KILO|KILOS|KILOGRAMA|KILOGRAMAS|QUILOGRAMA|QUILOGRAMAS|KGS)$/i.test(u)) return 'KG';
+  if (/^(?:CJ|CONJ|CONJUNTO|CONJUNTOS)$/i.test(u)) return 'CJ';
+  if (/^(?:CX|CAIXA|CAIXAS)$/i.test(u)) return 'CX';
+  if (/^(?:BARRA|BARRAS|BR|BAR)$/i.test(u)) return 'BARRA';
+  if (/^(?:ROLO|ROLOS|RL)$/i.test(u)) return 'ROLO';
+  if (/^(?:L|LT|LITRO|LITROS)$/i.test(u)) return 'L';
+  if (/^(?:LATA|LATAS)$/i.test(u)) return 'LATA';
+  if (/^(?:TUBO|TUBOS|TB)$/i.test(u)) return 'TUBO';
+  if (/^(?:BALDE|BALDES|BD)$/i.test(u)) return 'BALDE';
+  if (/^(?:SACO|SACOS|SC)$/i.test(u)) return 'SACO';
+  if (/^(?:PAR|PARES)$/i.test(u)) return 'PAR';
+  if (/^(?:JOGO|JOGOS)$/i.test(u)) return 'JOGO';
+  if (/^(?:DIARIA|DIARIAS)$/i.test(u)) return 'DIARIA';
+  if (/^(?:MES|MESES)$/i.test(u)) return 'MES';
+  if (/^(?:H|HORA|HORAS|HR|HRS)$/i.test(u)) return 'H';
+  if (/^(?:%|PCT|PORCENTO|PORCENTAGEM)$/i.test(u)) return '%';
+  if (/^(?:VB|VERBA)$/i.test(u)) return 'VB';
   if (u.includes('BOTIJA') || u.includes('CILINDRO') || u.includes('BUJAO')) return 'BOTIJA';
   return u;
 }
@@ -373,3 +382,12 @@ export function convertMaterialUnits(materialName, fromUnit, toUnit, quantity = 
     isConverted: false
   };
 }
+
+
+/**
+ * Compara se duas unidades são tecnicamente compatíveis / equivalentes
+ */
+export function areUnitsCompatible(u1, u2) {
+  return normalizeUnit(u1) === normalizeUnit(u2);
+}
+

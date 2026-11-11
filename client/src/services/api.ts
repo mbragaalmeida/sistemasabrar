@@ -590,6 +590,10 @@ export const api = {
     fetchJson<any>('/ducts/analyze', { method: 'POST', body: JSON.stringify({ projectId, customText }) }),
   getDuctAnalysis: (projectId: number) =>
     fetchJson<any>(`/ducts/project/${projectId}`),
+  getDuctGeometry: (projectId: number) =>
+    fetchJson<any>(`/ducts/geometry/${projectId}`),
+  applyDuctGeometry: (projectId: number, data?: any) =>
+    fetchJson<any>(`/ducts/apply-geometry/${projectId}`, { method: 'POST', body: JSON.stringify(data || {}) }),
   getAllDuctAnalyses: () =>
     fetchJson<any[]>('/ducts'),
 
