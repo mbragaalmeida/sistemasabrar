@@ -174,7 +174,19 @@ export const api = {
       } catch (err: any) {
         if (isPdf || isCad) {
           const extractedText = isPdf ? await extractTextFromPDF(f).catch(() => '') : await extractTextFromCad(f).catch(() => '');
-          if (extractedText && extractedText.trim()) {
+          let fileDataBase64: string | undefined;
+          if (f.size <= 3 * 1024 * 1024) {
+            try {
+              const buf = await f.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              let binary = '';
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              fileDataBase64 = btoa(binary);
+            } catch (_) {}
+          }
+          if ((extractedText && extractedText.trim()) || fileDataBase64) {
             const resFile = await fetchJson<any>(`/projects/${projectId}/files`, {
               method: 'POST',
               body: JSON.stringify({
@@ -182,7 +194,8 @@ export const api = {
                 original_name: f.name,
                 file_size: f.size,
                 mime_type: f.type || 'application/octet-stream',
-                content_summary: extractedText
+                content_summary: extractedText,
+                file_data_base64: fileDataBase64
               })
             });
             results.push(resFile);

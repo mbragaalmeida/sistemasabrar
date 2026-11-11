@@ -490,11 +490,17 @@ projectsRouter.post('/:id/upload', upload.array('files', 15), async (req, res) =
     }
 
     let aiResult = null;
+    let aiWarning = null;
     if (autoAnalyze === 'true' || autoAnalyze === true) {
-      aiResult = await AIAnalysisService.analyzeProjectDocuments(projectId);
+      try {
+        aiResult = await AIAnalysisService.analyzeProjectDocuments(projectId);
+      } catch (aiErr) {
+        console.warn('[Upload Route AI Analysis Warning]', aiErr.message);
+        aiWarning = aiErr.message;
+      }
     }
 
-    res.json({ success: true, uploadedCount: inserted.length, files: inserted, aiResult });
+    res.json({ success: true, uploadedCount: inserted.length, files: inserted, aiResult, aiWarning });
   } catch (err) {
     console.error('[Upload Route Error]', err);
     res.status(500).json({ error: err.message });
@@ -710,40 +716,74 @@ projectsRouter.put('/:id', async (req, res) => {
   }
 });
 
-// Adiciona arquivo ou memorial ao projeto (suporta payloads JSON com texto extraído de arquivos grandes)
+// Adiciona arquivo ou memorial ao projeto (suporta payloads JSON com texto extraído e/ou binário base64 preservado)
 projectsRouter.post('/:id/files', async (req, res) => {
   try {
-    const { type, original_name, file_size, mime_type, content_summary, userId, autoAnalyze } = req.body;
+    const { type, original_name, file_size, mime_type, content_summary, file_data_base64, userId, autoAnalyze } = req.body;
     const projectId = req.params.id;
+    const targetName = original_name || 'Documento_Tecnico.pdf';
 
-    // Remove registro prévio se existir para evitar duplicidade
+    // Preserva binário já salvo anteriormente caso este request seja apenas atualização de metadado/resumo
+    const existingRow = await db.prepare(`
+      SELECT file_data, content_summary FROM project_files
+      WHERE project_id = ? AND original_name = ? AND file_data IS NOT NULL
+      ORDER BY id DESC LIMIT 1
+    `).get(projectId, targetName);
+
+    let fileBuffer = existingRow?.file_data || null;
+    if (file_data_base64 && typeof file_data_base64 === 'string') {
+      try {
+        fileBuffer = Buffer.from(file_data_base64, 'base64');
+      } catch (_) {}
+    }
+
+    let finalSummary = content_summary || '';
+    if (fileBuffer && targetName.toLowerCase().endsWith('.pdf')) {
+      try {
+        const structuredText = await extractTextFromPdfBuffer(fileBuffer, targetName);
+        if (structuredText && structuredText.trim()) {
+          finalSummary = structuredText.slice(0, 1000000);
+        }
+      } catch (_) {}
+    } else if (existingRow?.content_summary && existingRow.content_summary.includes('[TABELA_CAD_ESTRUTURADA')) {
+      finalSummary = existingRow.content_summary;
+    }
+
+    // Remove registro prévio se existir para evitar duplicidade, mantendo o fileBuffer preservado
     await db.prepare(`
       DELETE FROM project_files
       WHERE project_id = ? AND original_name = ?
-    `).run(projectId, original_name || 'Documento_Tecnico.pdf');
+    `).run(projectId, targetName);
 
     const insert = db.prepare(`
-      INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO project_files (project_id, type, original_name, file_path, file_size, mime_type, content_summary, uploaded_by, file_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = await insert.run(
       projectId,
       type || 'PROJETO_TECNICO',
-      original_name || 'Documento_Tecnico.pdf',
-      `/uploads/${original_name || 'doc.pdf'}`,
-      file_size || (content_summary || '').length,
+      targetName,
+      `/uploads/${targetName}`,
+      file_size || (fileBuffer ? fileBuffer.length : finalSummary.length),
       mime_type || 'application/pdf',
-      content_summary || '',
-      userId || 1
+      finalSummary,
+      userId || 1,
+      fileBuffer
     );
 
     let aiResult = null;
+    let aiWarning = null;
     if (autoAnalyze === 'true' || autoAnalyze === true) {
-      aiResult = await AIAnalysisService.analyzeProjectDocuments(projectId);
+      try {
+        aiResult = await AIAnalysisService.analyzeProjectDocuments(projectId);
+      } catch (aiErr) {
+        console.warn('[Files Route AI Analysis Warning]', aiErr.message);
+        aiWarning = aiErr.message;
+      }
     }
 
-    res.status(201).json({ id: result.lastInsertRowid, original_name, type, aiResult });
+    res.status(201).json({ id: result.lastInsertRowid, original_name: targetName, type, aiResult, aiWarning });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

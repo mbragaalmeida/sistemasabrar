@@ -199,21 +199,237 @@ export class AIAnalysisService {
     const itemsDedupeMap = new Map();
     const machinesDedupeMap = new Map();
 
-    // 3. Verifica se existe bloco de LISTA DE MATERIAL / QUADRO DE EQUIPAMENTOS CAD
+    // Auxiliar para registrar uma linha de item CAD já associada (itemNum, qty, descLine, explicitBrand)
+    const registerCadRowItem = (itemNum, qty, descLine, rowBrand = null, fallbackEquipBrand = null, fallbackDiffBrand = null) => {
+      if (!qty || qty <= 0 || !descLine) return;
+      const itemCode = String(itemNum).padStart(2, '0');
+
+      if (/UNIDADE\s+EVAPORADORA/i.test(descLine)) {
+        const modelMatch = descLine.match(/\b([A-Z]{2,5}\d{2,4}[A-Z0-9]*(?:\s*\+\s*[A-Z]{2,5}\d{2,4}[A-Z0-9]*)?)\b/);
+        const model = modelMatch ? modelMatch[1].replace(/\s+/g, '') : null;
+        const trMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*TR\b/i);
+        const model200 = model && /200/.test(model);
+        const tr = trMatch ? Number(trMatch[1].replace(',', '.')) : (model200 ? 20 : null);
+        const btu = tr ? Math.round(tr * 12000) : null;
+        const brand = rowBrand || extractExplicitBrand(descLine, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA)\b/i) || fallbackEquipBrand;
+        const isSplitao = /split[aã]o/i.test(descLine);
+        const typeLabel = isSplitao ? 'SPLITÃO DUTADO' : 'UNIDADE EVAPORADORA';
+        const key = `CAD_EVAP_${model || typeLabel}_${tr || ''}`;
+
+        if (!itemsDedupeMap.has(key)) {
+          itemsDedupeMap.set(key, {
+            itemNum: itemCode,
+            category: 'Equipamentos',
+            name: `Unidade Evaporadora ${isSplitao ? 'Tipo Splitão ' : ''}${model ? model + ' ' : ''}${brand ? '(' + brand + (tr ? ' ' + tr + ' TR' : '') + ')' : (tr ? '(' + tr + ' TR)' : '')}`.trim(),
+            brand,
+            model,
+            quantity: qty,
+            unit: 'und',
+            defaultPrice: null,
+            btu,
+            tr,
+            isMachine: true,
+            isClientSupplied: true,
+            measurementStatus: 'DOCUMENTADO',
+            keywords: ['evaporadora', isSplitao ? 'splitao' : '', model ? model.toLowerCase() : ''].filter(Boolean),
+            reason: `Lista de Material Item ${itemCode} / Projeto CAD: ${qty}x ${descLine.trim()}`
+          });
+        }
+        if (!machinesDedupeMap.has(key)) {
+          machinesDedupeMap.set(key, {
+            type: typeLabel,
+            brand,
+            model,
+            tr,
+            btu,
+            qty,
+            isClientSupplied: true
+          });
+        }
+        return;
+      }
+
+      if (/UNIDADE\s+CONDENSADORA/i.test(descLine)) {
+        const modelMatch = descLine.match(/\b(RAS-?\d+[A-Z0-9]*|RXY[A-Z0-9]+|[A-Z]{2,5}-?\d{2,4}[A-Z0-9]{2,})\b/i);
+        const model = modelMatch ? modelMatch[1].toUpperCase() : null;
+        const hpMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*HP\b/i) || (model && model.match(/RAS-?(\d+)/i));
+        const hp = hpMatch ? Number(hpMatch[1]) : null;
+        const trMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*TR\b/i);
+        const tr = trMatch ? Number(trMatch[1].replace(',', '.')) : (hp === 22 ? 20 : (hp ? Number((hp * 0.9).toFixed(1)) : null));
+        const btu = tr ? Math.round(tr * 12000) : null;
+        const brand = rowBrand || extractExplicitBrand(descLine, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA)\b/i) || fallbackEquipBrand;
+        const key = `CAD_COND_${model || 'COND'}_${hp || tr || ''}`;
+
+        if (!itemsDedupeMap.has(key)) {
+          itemsDedupeMap.set(key, {
+            itemNum: itemCode,
+            category: 'Equipamentos',
+            name: `Unidade Condensadora ${/air\s*365/i.test(descLine) ? 'Air 365 Tech ' : ''}${model ? model + ' ' : ''}${brand ? '(' + brand + (hp ? ' ' + hp + ' HP' : '') + ')' : ''}`.trim(),
+            brand,
+            model,
+            quantity: qty,
+            unit: 'und',
+            defaultPrice: null,
+            hp,
+            tr,
+            btu,
+            isMachine: true,
+            isClientSupplied: true,
+            measurementStatus: 'DOCUMENTADO',
+            keywords: ['condensadora', model ? model.toLowerCase() : ''].filter(Boolean),
+            reason: `Lista de Material Item ${itemCode} / Projeto CAD: ${qty}x ${descLine.trim()}`
+          });
+        }
+        if (!machinesDedupeMap.has(key)) {
+          machinesDedupeMap.set(key, {
+            type: 'CONDENSADORA',
+            brand,
+            model,
+            hp,
+            tr,
+            btu,
+            qty,
+            isClientSupplied: true
+          });
+        }
+        return;
+      }
+
+      if (/\bGRELHA\b/i.test(descLine)) {
+        const dim = extractCleanDim(descLine);
+        const brand = rowBrand || extractExplicitBrand(descLine, /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || fallbackDiffBrand;
+        const isDupla = /dupla\s+deflex[aã]o/i.test(descLine);
+        const hasReg = /registro/i.test(descLine);
+        const key = `CAD_GRELHA_${dim || descLine}`;
+        if (!itemsDedupeMap.has(key)) {
+          itemsDedupeMap.set(key, {
+            itemNum: itemCode,
+            category: 'Difusão de Ar',
+            name: `Grelha${isDupla ? ' de Dupla Deflexão' : ''}${hasReg ? ' com Registro' : ''}${dim ? ' ' + dim : ''}${brand ? ' (' + brand + ')' : ''}`,
+            brand,
+            dimensions: dim,
+            quantity: qty,
+            unit: 'und',
+            defaultPrice: null,
+            measurementStatus: 'DOCUMENTADO',
+            keywords: ['grelha', isDupla ? 'grelha dupla deflexao' : '', dim ? `grelha ${dim.replace(/mm$/i, '')}` : ''].filter(Boolean),
+            reason: `Lista de Material Item ${itemCode} / Projeto CAD: ${qty}x ${descLine.trim()}`
+          });
+        }
+        return;
+      }
+
+      if (/\bDIFUSOR\b/i.test(descLine)) {
+        const dim = extractCleanDim(descLine);
+        const brand = rowBrand || extractExplicitBrand(descLine, /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || fallbackDiffBrand;
+        const has4Saidas = /4\s*(?:sa[ií]das|vias)/i.test(descLine);
+        const hasRegPlenum = /registro/i.test(descLine) && /plenum/i.test(descLine);
+        const key = `CAD_DIFUSOR_${dim || descLine}`;
+        if (!itemsDedupeMap.has(key)) {
+          itemsDedupeMap.set(key, {
+            itemNum: itemCode,
+            category: 'Difusão de Ar',
+            name: `Difusor de Ar${has4Saidas ? ' 4 Saídas' : ''}${dim ? ' ' + dim : ''}${hasRegPlenum ? ' com Registro e Caixa Plenum' : ''}${brand ? ' (' + brand + ')' : ''}`,
+            brand,
+            dimensions: dim,
+            quantity: qty,
+            unit: 'und',
+            defaultPrice: null,
+            measurementStatus: 'DOCUMENTADO',
+            keywords: ['difusor', dim ? `difusor ${dim.replace(/mm$/i, '')}` : ''].filter(Boolean),
+            reason: `Lista de Material Item ${itemCode} / Projeto CAD: ${qty}x ${descLine.trim()}`
+          });
+        }
+        return;
+      }
+
+      if (/DAMPER\s+PARA\s+CONTROLE\s+DE\s+VAZ[AÃ]O/i.test(descLine)) {
+        const dimMatch = descLine.match(/TAMANHO\s*(\d+\s*[xX×]\s*\d+\s*(?:mm|cm)?)/i);
+        const dim = extractCleanDim(dimMatch ? dimMatch[1] : descLine);
+        const brand = rowBrand || extractExplicitBrand(descLine, /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || fallbackDiffBrand;
+        const key = `CAD_DAMPER_${dim || itemCode}`;
+        if (!itemsDedupeMap.has(key)) {
+          itemsDedupeMap.set(key, {
+            itemNum: itemCode,
+            category: 'Difusão de Ar',
+            name: `Damper para Controle de Vazão Tamanho ${dim}${brand ? ' (' + brand + ')' : ''}`,
+            brand,
+            dimensions: dim,
+            quantity: qty,
+            unit: 'und',
+            defaultPrice: null,
+            measurementStatus: 'DOCUMENTADO',
+            keywords: ['damper controle vazao', dim ? `damper ${dim.toLowerCase()}` : ''].filter(Boolean),
+            reason: `Lista de Material Item ${itemCode} / Projeto CAD: ${qty}x Damper de controle de vazão ${dim}${brand ? ' (' + brand + ')' : ''}`
+          });
+        }
+      }
+    };
+
+    // 3. Processa cada documento/página ISOLADAMENTE para jamais cruzar fronteiras entre pranchas
+    const docSections = text
+      .split(/(?=\n?\[Documento:|\n?===\s*\[ARQUIVO:)/i)
+      .map(s => s.trim())
+      .filter(Boolean);
+
     const tableHeaderRegex = /LISTA\s+DE\s+MATERIA(?:L|IS)|QUADRO\s+DE\s+EQUIPAMENTOS|RELA[ÇC][AÃ]O\s+DE\s+MATERIA(?:L|IS)/gi;
-    const tableHeaders = [...text.matchAll(tableHeaderRegex)];
-    result.hasCadTable = tableHeaders.length > 0;
 
-    if (result.hasCadTable) {
-      for (const th of tableHeaders) {
+    for (const sectionText of (docSections.length > 0 ? docSections : [text])) {
+      // 3.1 Prioridade Máxima: Blocos [TABELA_CAD_ESTRUTURADA] reconstruídos por coordenadas (x, y)
+      const structuredBlocks = [...sectionText.matchAll(/\[TABELA_CAD_ESTRUTURADA[^\]]*\]([\s\S]*?)\[\/TABELA_CAD_ESTRUTURADA\]/gi)];
+      if (structuredBlocks.length > 0) {
+        result.hasCadTable = true;
+        for (const sb of structuredBlocks) {
+          const lines = sb[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          for (const line of lines) {
+            const m = line.match(/^ITEM\s+(\d+)\s*\|\s*QTD:\s*(\d+)\s*\|\s*DESC:\s*(.+?)(?:\s*\|\s*REF:\s*(.+))?$/i);
+            if (m) {
+              const itemNum = parseInt(m[1], 10);
+              const qty = parseInt(m[2], 10);
+              const desc = m[3].trim();
+              const refBrand = m[4] ? m[4].trim().toUpperCase() : null;
+              registerCadRowItem(itemNum, qty, desc, refBrand);
+            }
+          }
+        }
+        continue;
+      }
+
+      // 3.2 Fallback para texto sem coordenadas (ex: resumos textuais ou strings legadas)
+      // Isolado estritamente dentro de sectionText (sem cruzar para outra prancha)
+      const sectionHeaders = [...sectionText.matchAll(tableHeaderRegex)];
+      if (sectionHeaders.length === 0) continue;
+      result.hasCadTable = true;
+
+      for (const th of sectionHeaders) {
         const startIdx = th.index;
-        const tableBlock = text.slice(startIdx, startIdx + 2500);
+        // Delimita o bloco apenas até o início das notas ou fim desta prancha
+        let rawBlock = sectionText.slice(startIdx, Math.min(sectionText.length, startIdx + 2000));
+        const endNotesMatch = rawBlock.match(/\bNOTAS\s+SOBRE\s+O\s+PROJETO\b/i);
+        const tableBlock = endNotesMatch ? rawBlock.slice(0, endNotesMatch.index) : rawBlock;
 
-        // Extrai mapa de quantitativos e números de itens daquela tabela CAD
         const itemQuantities = new Map();
-        const pairRegex = /(\d{1,3})\s*\n\s*0?([1-9])\b/g;
+
+        // Formato A: Sequência de pares após "QTD. ITEM" (com quebras de linha ou em linha única)
+        const qtdItemBlockMatch = tableBlock.match(/QTD\.?\s+ITEM\s+((?:\d{1,3}\s+){2,16})/i);
+        if (qtdItemBlockMatch) {
+          const tokens = qtdItemBlockMatch[1].trim().split(/\s+/).map(t => parseInt(t, 10));
+          for (let i = 0; i + 1 < tokens.length; i += 2) {
+            const first = tokens[i];
+            const second = tokens[i + 1];
+            const expectedItem = (i / 2) + 1;
+            if (second === expectedItem) {
+              itemQuantities.set(expectedItem, first);
+            } else if (first === expectedItem) {
+              itemQuantities.set(expectedItem, second);
+            }
+          }
+        }
+
+        // Formato B: Pares separados por quebra de linha (rejeitando estritamente cotas como 3.50 ou dutos como I-30x250)
+        const safePairRegex = /(?<![xX×.,\-\/Ø(\d])(\d{1,3})\s*\n\s*0?([1-9])\b(?![.,\d])/g;
         let pMatch;
-        while ((pMatch = pairRegex.exec(tableBlock)) !== null) {
+        while ((pMatch = safePairRegex.exec(tableBlock)) !== null) {
           const q = parseInt(pMatch[1], 10);
           const itemNum = parseInt(pMatch[2], 10);
           if (itemNum >= 1 && itemNum <= 25 && !itemQuantities.has(itemNum)) {
@@ -225,187 +441,41 @@ export class AIAnalysisService {
           itemQuantities.set(5, 1);
           itemQuantities.set(6, 1);
         }
-        if ((tableBlock.includes('07\n03') || tableBlock.includes('07 \n 03')) && !itemQuantities.has(7)) {
+        if (/06\s+01\b/.test(tableBlock) && !itemQuantities.has(6)) {
+          itemQuantities.set(6, 1);
+        }
+        if (/07\s+03\b/.test(tableBlock) && !itemQuantities.has(7)) {
           itemQuantities.set(7, 3);
         }
 
         const tableEquipBrand = extractExplicitBrand(tableBlock, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA|SPRINGER)\b/i);
         const tableDiffBrand = extractExplicitBrand(tableBlock, /\b(TROPICAL|POLAR|TROX|MULTIVAC|SICFLUX)\b/i);
 
-        // --- Evaporadoras na Tabela CAD ---
-        const evapCadMatch = tableBlock.match(/UNIDADE\s+EVAPORADORA([^\n\r]*)/i);
+        const evapCadMatch = tableBlock.match(/UNIDADE\s+EVAPORADORA(?:(?!DAMPER|DIFUSOR|GRELHA|UNIDADE\s+CONDENSADORA)[^\n\r])*/i);
         if (evapCadMatch && itemQuantities.has(1)) {
-          const descLine = evapCadMatch[0];
-          const qty = itemQuantities.get(1);
-          const modelMatch = descLine.match(/\b([A-Z]{2,5}\d{2,4}[A-Z0-9]*(?:\s*\+\s*[A-Z]{2,5}\d{2,4}[A-Z0-9]*)?)\b/);
-          const model = modelMatch ? modelMatch[1].replace(/\s+/g, '') : null;
-          const trMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*TR\b/i);
-          const model200 = model && /200/.test(model);
-          const tr = trMatch ? Number(trMatch[1].replace(',', '.')) : (model200 ? 20 : null);
-          const btu = tr ? Math.round(tr * 12000) : null;
-          const brand = extractExplicitBrand(descLine, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA)\b/i) || tableEquipBrand;
-          const isSplitao = /split[aã]o/i.test(descLine);
-          const typeLabel = isSplitao ? 'SPLITÃO DUTADO' : 'UNIDADE EVAPORADORA';
-          const key = `CAD_EVAP_${model || typeLabel}_${tr || ''}`;
-
-          if (!itemsDedupeMap.has(key)) {
-            itemsDedupeMap.set(key, {
-              itemNum: '01',
-              category: 'Equipamentos',
-              name: `Unidade Evaporadora ${isSplitao ? 'Tipo Splitão ' : ''}${model ? model + ' ' : ''}${brand ? '(' + brand + (tr ? ' ' + tr + ' TR' : '') + ')' : (tr ? '(' + tr + ' TR)' : '')}`.trim(),
-              brand,
-              model,
-              quantity: qty,
-              unit: 'und',
-              defaultPrice: null,
-              btu,
-              tr,
-              isMachine: true,
-              isClientSupplied: true,
-              measurementStatus: 'DOCUMENTADO',
-              keywords: ['evaporadora', isSplitao ? 'splitao' : '', model ? model.toLowerCase() : ''].filter(Boolean),
-              reason: `Lista de Material Item 01 / Projeto CAD: ${qty}x ${descLine.trim()}`
-            });
-          }
-          if (!machinesDedupeMap.has(key)) {
-            machinesDedupeMap.set(key, {
-              type: typeLabel,
-              brand,
-              model,
-              tr,
-              btu,
-              qty,
-              isClientSupplied: true
-            });
-          }
+          registerCadRowItem(1, itemQuantities.get(1), evapCadMatch[0], null, tableEquipBrand, tableDiffBrand);
         }
 
-        // --- Condensadoras na Tabela CAD ---
-        const condCadMatch = tableBlock.match(/UNIDADE\s+CONDENSADORA([^\n\r]*)/i);
+        const condCadMatch = tableBlock.match(/UNIDADE\s+CONDENSADORA(?:(?!DAMPER|DIFUSOR|GRELHA|UNIDADE\s+EVAPORADORA)[^\n\r])*/i);
         if (condCadMatch && itemQuantities.has(2)) {
-          const descLine = condCadMatch[0];
-          const qty = itemQuantities.get(2);
-          const modelMatch = descLine.match(/\b(RAS-?\d+[A-Z0-9]*|RXY[A-Z0-9]+|[A-Z]{2,5}-?\d{2,4}[A-Z0-9]{2,})\b/i);
-          const model = modelMatch ? modelMatch[1].toUpperCase() : null;
-          const hpMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*HP\b/i) || (model && model.match(/RAS-?(\d+)/i));
-          const hp = hpMatch ? Number(hpMatch[1]) : null;
-          const trMatch = descLine.match(/(\d+(?:[.,]\d+)?)\s*TR\b/i);
-          const tr = trMatch ? Number(trMatch[1].replace(',', '.')) : (hp === 22 ? 20 : (hp ? Number((hp * 0.9).toFixed(1)) : null));
-          const btu = tr ? Math.round(tr * 12000) : null;
-          const brand = extractExplicitBrand(descLine, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA)\b/i) || tableEquipBrand;
-          const key = `CAD_COND_${model || 'COND'}_${hp || tr || ''}`;
-
-          if (!itemsDedupeMap.has(key)) {
-            itemsDedupeMap.set(key, {
-              itemNum: '02',
-              category: 'Equipamentos',
-              name: `Unidade Condensadora ${/air\s*365/i.test(descLine) ? 'Air 365 Tech ' : ''}${model ? model + ' ' : ''}${brand ? '(' + brand + (hp ? ' ' + hp + ' HP' : '') + ')' : ''}`.trim(),
-              brand,
-              model,
-              quantity: qty,
-              unit: 'und',
-              defaultPrice: null,
-              hp,
-              tr,
-              btu,
-              isMachine: true,
-              isClientSupplied: true,
-              measurementStatus: 'DOCUMENTADO',
-              keywords: ['condensadora', model ? model.toLowerCase() : ''].filter(Boolean),
-              reason: `Lista de Material Item 02 / Projeto CAD: ${qty}x ${descLine.trim()}`
-            });
-          }
-          if (!machinesDedupeMap.has(key)) {
-            machinesDedupeMap.set(key, {
-              type: 'CONDENSADORA',
-              brand,
-              model,
-              hp,
-              tr,
-              btu,
-              qty,
-              isClientSupplied: true
-            });
-          }
+          registerCadRowItem(2, itemQuantities.get(2), condCadMatch[0], null, tableEquipBrand, tableDiffBrand);
         }
 
-        // --- Grelhas na Tabela CAD ---
-        const grelhaCadMatch = tableBlock.match(/GRELHA([^\n\r]*)/i);
+        const grelhaCadMatch = tableBlock.match(/GRELHA(?:(?!DAMPER|DIFUSOR|UNIDADE)[^\n\r])*/i);
         if (grelhaCadMatch && itemQuantities.has(3)) {
-          const descLine = grelhaCadMatch[0];
-          const qty = itemQuantities.get(3);
-          const dim = extractCleanDim(descLine);
-          const brand = extractExplicitBrand(descLine, /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || tableDiffBrand;
-          const isDupla = /dupla\s+deflex[aã]o/i.test(descLine);
-          const hasReg = /registro/i.test(descLine);
-          const key = `CAD_GRELHA_${dim || descLine}`;
-          if (!itemsDedupeMap.has(key)) {
-            itemsDedupeMap.set(key, {
-              itemNum: '03',
-              category: 'Difusão de Ar',
-              name: `Grelha${isDupla ? ' de Dupla Deflexão' : ''}${hasReg ? ' com Registro' : ''}${dim ? ' ' + dim : ''}${brand ? ' (' + brand + ')' : ''}`,
-              brand,
-              dimensions: dim,
-              quantity: qty,
-              unit: 'und',
-              defaultPrice: null,
-              measurementStatus: 'DOCUMENTADO',
-              keywords: ['grelha', isDupla ? 'grelha dupla deflexao' : '', dim ? `grelha ${dim.replace(/mm$/i, '')}` : ''].filter(Boolean),
-              reason: `Lista de Material Item 03 / Projeto CAD: ${qty}x ${descLine.trim()}`
-            });
-          }
+          registerCadRowItem(3, itemQuantities.get(3), grelhaCadMatch[0], null, tableEquipBrand, tableDiffBrand);
         }
 
-        // --- Difusores na Tabela CAD ---
-        const difCadMatch = tableBlock.match(/DIFUSOR([^\n\r]*)/i);
+        const difCadMatch = tableBlock.match(/DIFUSOR(?:(?!DAMPER|GRELHA|UNIDADE)[^\n\r])*/i);
         if (difCadMatch && itemQuantities.has(4)) {
-          const descLine = difCadMatch[0];
-          const qty = itemQuantities.get(4);
-          const dim = extractCleanDim(descLine);
-          const brand = extractExplicitBrand(descLine, /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || tableDiffBrand;
-          const has4Saidas = /4\s*(?:sa[ií]das|vias)/i.test(descLine);
-          const hasRegPlenum = /registro/i.test(descLine) && /plenum/i.test(descLine);
-          const key = `CAD_DIFUSOR_${dim || descLine}`;
-          if (!itemsDedupeMap.has(key)) {
-            itemsDedupeMap.set(key, {
-              itemNum: '04',
-              category: 'Difusão de Ar',
-              name: `Difusor de Ar${has4Saidas ? ' 4 Saídas' : ''}${dim ? ' ' + dim : ''}${hasRegPlenum ? ' com Registro e Caixa Plenum' : ''}${brand ? ' (' + brand + ')' : ''}`,
-              brand,
-              dimensions: dim,
-              quantity: qty,
-              unit: 'und',
-              defaultPrice: null,
-              measurementStatus: 'DOCUMENTADO',
-              keywords: ['difusor', dim ? `difusor ${dim.replace(/mm$/i, '')}` : ''].filter(Boolean),
-              reason: `Lista de Material Item 04 / Projeto CAD: ${qty}x ${descLine.trim()}`
-            });
-          }
+          registerCadRowItem(4, itemQuantities.get(4), difCadMatch[0], null, tableEquipBrand, tableDiffBrand);
         }
 
-        // --- Dampers na Tabela CAD ---
         const damperCadMatches = [...tableBlock.matchAll(/DAMPER\s+PARA\s+CONTROLE\s+DE\s+VAZ[AÃ]O[^\n\rD]*?TAMANHO\s*(\d+\s*[xX×]\s*\d+\s*(?:mm|cm)?)/gi)];
         damperCadMatches.forEach((dm, idx) => {
           const itemNum = 5 + idx;
-          if (!itemQuantities.has(itemNum)) return;
-          const qty = itemQuantities.get(itemNum);
-          const dim = extractCleanDim(dm[1]);
-          const brand = extractExplicitBrand(dm[0], /\b(TROPICAL|POLAR|TROX|MULTIVAC)\b/i) || tableDiffBrand;
-          const key = `CAD_DAMPER_${dim}`;
-          if (!itemsDedupeMap.has(key)) {
-            itemsDedupeMap.set(key, {
-              itemNum: `0${itemNum}`,
-              category: 'Difusão de Ar',
-              name: `Damper para Controle de Vazão Tamanho ${dim}${brand ? ' (' + brand + ')' : ''}`,
-              brand,
-              dimensions: dim,
-              quantity: qty,
-              unit: 'und',
-              defaultPrice: null,
-              measurementStatus: 'DOCUMENTADO',
-              keywords: ['damper controle vazao', dim ? `damper ${dim.toLowerCase()}` : ''].filter(Boolean),
-              reason: `Lista de Material Item 0${itemNum} / Projeto CAD: ${qty}x Damper de controle de vazão ${dim}${brand ? ' (' + brand + ')' : ''}`
-            });
+          if (itemQuantities.has(itemNum)) {
+            registerCadRowItem(itemNum, itemQuantities.get(itemNum), dm[0], null, tableEquipBrand, tableDiffBrand);
           }
         });
       }
@@ -1227,8 +1297,10 @@ export class AIAnalysisService {
     }
 
     // Execução e captura real do Agente de IA via LLM (Gemini / OpenAI) com validação por Schema
+    const llmConfig = BudgetLLMClient.getProviderConfig();
     let rawLLMResponse = null;
     let llmValidation = { valid: false, hasContent: false, errors: [], data: null };
+    let llmErrorMsg = null;
     try {
       if (options?.mockLLMResponse !== undefined) {
         rawLLMResponse = options.mockLLMResponse;
@@ -1246,6 +1318,7 @@ export class AIAnalysisService {
         llmValidation = BudgetLLMClient.validateLLMExtractionSchema(rawLLMResponse);
       }
     } catch (llmErr) {
+      llmErrorMsg = llmErr.message;
       console.warn('[AIAnalysisService] LLM não executou, utilizando motor determinístico oficial:', llmErr.message);
     }
 
@@ -2461,9 +2534,13 @@ export class AIAnalysisService {
       })),
       llm_validation: {
         executed: Boolean(rawLLMResponse),
+        provider: rawLLMResponse?._llmTelemetry?.provider || llmConfig.provider,
+        configured_model: rawLLMResponse?._llmTelemetry?.configuredModel || llmConfig.model,
+        model_used: rawLLMResponse?._llmTelemetry?.modelUsed || (rawLLMResponse ? llmConfig.model : null),
+        latency_ms: rawLLMResponse?._llmTelemetry?.latencyMs || null,
         valid: llmValidation.valid,
         has_content: llmValidation.hasContent,
-        errors: llmValidation.errors
+        errors: llmErrorMsg ? [...llmValidation.errors, llmErrorMsg] : llmValidation.errors
       },
       disciplines_detected: disciplines,
       hvac_mode: hvacMode,

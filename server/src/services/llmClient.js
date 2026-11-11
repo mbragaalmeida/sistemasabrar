@@ -126,7 +126,7 @@ export class BudgetLLMClient {
       return {
         provider: 'gemini',
         apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
       };
     }
 
@@ -446,18 +446,44 @@ export class BudgetLLMClient {
   }
 
   /**
+   * Descobre dinamicamente os modelos Flash/Pro mais recentes habilitados na chave da API Gemini
+   */
+  static async discoverAvailableGeminiModels(apiKey) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(6000)
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const models = Array.isArray(data?.models) ? data.models : [];
+      return models
+        .filter(m =>
+          m?.name &&
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent')
+        )
+        .map(m => m.name.replace(/^models\//, ''))
+        .filter(name => /^gemini-(?:3|2\.5|2\.0)-flash/i.test(name) && !/tts|image|audio|thinking/i.test(name))
+        .sort((a, b) => b.localeCompare(a));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /**
    * Chamada à API Google Gemini com saída JSON estruturada, suporte multimodal (PDF/Imagem inlineData)
-   * e tolerância a versões de modelo
+   * e tolerância a versões de modelo (priorizando sempre os modelos Gemini Flash mais recentes)
    */
   static async callGemini(config, fullPrompt, pdfAttachments = []) {
-    const candidateModels = [
+    const initialCandidates = [
       config.model,
-      'gemini-1.5-flash',
+      'gemini-2.5-flash',
       'gemini-2.0-flash',
-      'gemini-1.5-pro',
+      'gemini-2.5-pro',
       'gemini-2.0-flash-lite'
     ].filter(Boolean);
-    const uniqueModels = [...new Set(candidateModels)];
+    const uniqueModels = [...new Set(initialCandidates)];
 
     const parts = [{ text: fullPrompt }];
     if (Array.isArray(pdfAttachments)) {
@@ -474,8 +500,12 @@ export class BudgetLLMClient {
     }
 
     let lastError = null;
+    const attemptedModels = [];
+    let discoveredAdded = false;
 
-    for (const model of uniqueModels) {
+    for (let i = 0; i < uniqueModels.length; i++) {
+      const model = uniqueModels[i];
+      const t0 = Date.now();
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
 
@@ -499,25 +529,54 @@ export class BudgetLLMClient {
           signal: AbortSignal.timeout(28000)
         });
 
+        const latencyMs = Date.now() - t0;
+
         if (!res.ok) {
           const errText = await res.text();
-          if ((res.status === 404 || res.status === 503 || res.status === 429) && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
-            console.warn(`[BudgetLLMClient] Modelo ${model} retornou status ${res.status}, tentando alternativa...`);
+          attemptedModels.push({ model, status: res.status, latencyMs, error: errText.slice(0, 200) });
+
+          if (res.status === 404 && !discoveredAdded) {
+            discoveredAdded = true;
+            const discovered = await this.discoverAvailableGeminiModels(config.apiKey);
+            for (const dm of discovered) {
+              if (!uniqueModels.includes(dm)) uniqueModels.push(dm);
+            }
+          }
+
+          if ((res.status === 404 || res.status === 503 || res.status === 429) && i < uniqueModels.length - 1) {
+            console.warn(`[BudgetLLMClient] Modelo ${model} retornou status ${res.status}, tentando alternativa (${uniqueModels[i + 1]})...`);
             continue;
           }
-          throw new Error(`Gemini API Error (${res.status}): ${errText}`);
+          throw new Error(`Gemini API Error (${res.status} em ${model}): ${errText}`);
         }
 
         const data = await res.json();
         const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawJson) throw new Error('Resposta vazia da API do Gemini');
+        if (!rawJson) throw new Error(`Resposta vazia da API do Gemini (${model})`);
 
-        return JSON.parse(rawJson);
+        const parsed = JSON.parse(rawJson);
+        if (parsed && typeof parsed === 'object') {
+          Object.defineProperty(parsed, '_llmTelemetry', {
+            value: {
+              provider: 'gemini',
+              configuredModel: config.model,
+              modelUsed: model,
+              latencyMs,
+              status: 'SUCCESS',
+              attemptedModels: [...attemptedModels, { model, status: 200, latencyMs }]
+            },
+            enumerable: false,
+            configurable: true
+          });
+        }
+        console.log(`[BudgetLLMClient] Sucesso na análise com modelo ${model} (${latencyMs}ms)`);
+        return parsed;
       } catch (err) {
+        const latencyMs = Date.now() - t0;
         lastError = err;
         const isRetryable = err.name === 'TimeoutError' || err.message?.includes('404') || err.message?.includes('503') || err.message?.includes('429');
-        if (isRetryable && uniqueModels.indexOf(model) < uniqueModels.length - 1) {
-          console.warn(`[BudgetLLMClient] Falha com modelo ${model} (${err.message}), tentando alternativa...`);
+        if (isRetryable && i < uniqueModels.length - 1) {
+          console.warn(`[BudgetLLMClient] Falha com modelo ${model} (${err.message}), tentando alternativa (${uniqueModels[i + 1]})...`);
           continue;
         }
         throw err;
@@ -584,9 +643,9 @@ export class BudgetLLMClient {
         ? [targetModel]
         : [
             config.model,
-            'gemini-1.5-flash',
+            'gemini-2.5-flash',
             'gemini-2.0-flash',
-            'gemini-1.5-pro',
+            'gemini-2.5-pro',
             'gemini-2.0-flash-lite'
           ];
       const uniqueModels = [...new Set(candidateModels.filter(Boolean))];
