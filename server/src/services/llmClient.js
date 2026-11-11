@@ -126,7 +126,7 @@ export class BudgetLLMClient {
       return {
         provider: 'gemini',
         apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+        model: process.env.GEMINI_MODEL || 'gemini-3.8-flash'
       };
     }
 
@@ -473,15 +473,17 @@ export class BudgetLLMClient {
 
   /**
    * Chamada à API Google Gemini com saída JSON estruturada, suporte multimodal (PDF/Imagem inlineData)
-   * e tolerância a versões de modelo (priorizando sempre os modelos Gemini Flash mais recentes)
+   * e tolerância a versões de modelo (priorizando sempre Gemini 3.8 Flash e família 3.x Flash)
    */
   static async callGemini(config, fullPrompt, pdfAttachments = []) {
     const initialCandidates = [
       config.model,
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.5-pro',
-      'gemini-2.0-flash-lite'
+      'gemini-3.8-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash'
     ].filter(Boolean);
     const uniqueModels = [...new Set(initialCandidates)];
 
@@ -526,7 +528,7 @@ export class BudgetLLMClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(28000)
+          signal: AbortSignal.timeout(18000)
         });
 
         const latencyMs = Date.now() - t0;
@@ -643,10 +645,12 @@ export class BudgetLLMClient {
         ? [targetModel]
         : [
             config.model,
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.5-pro',
-            'gemini-2.0-flash-lite'
+            'gemini-3.8-flash',
+            'gemini-3.5-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'gemini-3.7-flash',
+            'gemini-3.6-flash'
           ];
       const uniqueModels = [...new Set(candidateModels.filter(Boolean))];
 
