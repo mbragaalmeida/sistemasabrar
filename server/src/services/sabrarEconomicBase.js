@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { normalizeUnit } from '../utils/unitConversion.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -540,195 +541,168 @@ export function findSabrarEconomicPrice(itemName, options = {}) {
   };
 }
 
-/**
- * Pesquisa candidatos na base viva de materiais (banco de dados PostgreSQL/Supabase),
- * utilizando código, aliases, sinônimos e atributos técnicos rigorosos (Regra 4 e 5 Codex).
- * Rejeita famílias incompatíveis antes de comparar preços e preserva pendências para o engenheiro.
- */
-export async function searchLiveMaterialBase(db, itemDef, options = {}) {
-  const commercialMarkupPercent = Number(options.commercialMarkupPercent || 0);
-  const applyMarkup = (basePrice) => {
-    if (basePrice === null || basePrice === undefined || Number(basePrice) <= 0) return null;
-    return Number((Number(basePrice) * (1 + commercialMarkupPercent / 100)).toFixed(2));
+// ---------------------------------------------------------------------------
+// FAMÍLIA TÉCNICA, UNIDADES E EMBALAGENS (base viva)
+// ---------------------------------------------------------------------------
+
+const FAMILY_RULES = [
+  ['tubo_cobre', n => /\bcobre\b/.test(n) && /\b(tubo|tubulacao)\b/.test(n) && !/\b(cambota|abracadeira|porca|curva|luva|uniao|reducao|isolamento|armaflex)\b/.test(n)],
+  ['cambota', n => /^cambota\b/.test(n)],
+  ['isolamento_elastomerico', n => /\b(espuma elastomerica|armaflex)\b/.test(n) && !/\b(fita|adesivo|cola|cinta)\b/.test(n)],
+  ['armafix', n => /^armafix\b/.test(n)],
+  ['painel_mpu', n => /^painel\b/.test(n) && /\bmpu\b/.test(n)],
+  ['perfil_mpu', n => /^perfil de conexao\b/.test(n)],
+  ['perfilado', n => /^perfilado\b/.test(n)],
+  ['barra_roscada', n => /^(barra roscada|tirante)\b/.test(n)],
+  ['alongador', n => /^(alongador|prolongador)\b/.test(n)],
+  ['chumbador', n => /^chumbador\b/.test(n)],
+  ['porca', n => /^porca\b/.test(n)],
+  ['arruela', n => /^arruela\b/.test(n)],
+  ['parafuso', n => /^parafuso\b/.test(n)],
+  ['tela', n => /^tela\b/.test(n)],
+  ['arame', n => /^arame\b/.test(n)],
+  ['cola', n => /^(cola|adesivo)\b/.test(n)],
+  ['selante', n => /^(selante|silicone)\b/.test(n)],
+  ['fita', n => /^fita\b/.test(n)],
+  ['canto', n => /^canto\b/.test(n)],
+  ['cabo', n => /^cabo\b/.test(n)],
+  ['gas_refrigerante', n => /^gas refrigerante\b/.test(n)],
+  ['grelha', n => /^grelha\b/.test(n)],
+  ['difusor', n => /^difusor\b/.test(n)],
+  ['damper', n => /^damper\b/.test(n)],
+  ['veneziana', n => /^veneziana\b/.test(n)],
+  ['duto_flexivel', n => /^duto flexivel\b/.test(n)],
+  ['chapa', n => /^chapa\b/.test(n)]
+];
+
+/** Família técnica pelo nome (cabeça da descrição). Sinônimos não alteram a família. */
+export function materialFamily(name) {
+  const n = normalizeTechString(name).replace(/^[\d.,\/"'\s–-]+(?=[a-z])/, '').trim();
+  const full = normalizeTechString(name);
+  for (const [fam, test] of FAMILY_RULES) {
+    if (test(n) || (fam === 'tubo_cobre' && test(full))) return fam;
+  }
+  return n.split(' ')[0] || null;
+}
+
+const UNIT_CLASS = { M: 'length', 'M²': 'area', KG: 'mass', L: 'volume' };
+
+/** Classe física e conteúdo da embalagem de uma unidade de compra cadastrada. */
+export function describePurchaseUnit(entry = {}) {
+  const rawUnit = String(entry.unit || '').trim();
+  const norm = normalizeUnit(rawUnit);
+  const pkgContent = Number(entry.package_content) > 0 ? Number(entry.package_content) : null;
+  const pkgUnit = entry.converted_unit ? normalizeUnit(entry.converted_unit) : null;
+  if (pkgContent && pkgUnit && UNIT_CLASS[pkgUnit]) {
+    return { purchaseUnit: rawUnit, contentPerUnit: pkgContent, contentClass: UNIT_CLASS[pkgUnit], source: 'package_content' };
+  }
+  // Embalagem declarada na própria unidade: "peça c/ 3 mt", "rolo c/ 1kg", "botija c/ 11,3kg"
+  const m = rawUnit.match(/c\/\s*(\d+(?:[.,]\d+)?)\s*(mts?|metros?|m|kg|l|lt|litros?)\b/i);
+  if (m) {
+    const u = normalizeUnit(m[2]);
+    return { purchaseUnit: rawUnit, contentPerUnit: Number(m[1].replace(',', '.')), contentClass: UNIT_CLASS[u] || 'count', source: 'unit_text' };
+  }
+  if (UNIT_CLASS[norm]) return { purchaseUnit: rawUnit, contentPerUnit: 1, contentClass: UNIT_CLASS[norm], source: 'unit' };
+  // Unidade de contagem: verifica conteúdo linear explícito no nome (ex.: "BARRA C/ 3MTS", "-1/4x3MT", "50MMx50M")
+  const nameLen = String(entry.name || '').match(/(?:c\/\s*|x\s*)(\d+(?:[.,]\d+)?)\s*(?:mts?|metros?|m)(?![m²2a-z])/i);
+  return {
+    purchaseUnit: rawUnit || 'un',
+    contentPerUnit: 1,
+    contentClass: 'count',
+    lengthPerUnitM: nameLen ? Number(nameLen[1].replace(',', '.')) : null,
+    source: 'count'
   };
+}
 
-  const rawName = String(itemDef.name || itemDef.material || '').trim();
-  const searchNorm = normalizeTechString(rawName);
-  const qGauges = extractExactGauges(searchNorm);
-
-  // 1. Busca prioritária por código oficial se fornecido (ex: SAB-0315, SAB-1153)
-  if (itemDef.code) {
-    const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
-    if (byCode && checkTechnicalCompatibility(rawName, byCode.name, byCode.category || '', byCode.synonyms || '', qGauges, null)) {
-      const baseCost = Number(byCode.reference_price) > 0 ? Number(byCode.reference_price) : null;
-      return {
-        ...byCode,
-        id: byCode.id,
-        code: byCode.code,
-        name: byCode.name,
-        category: byCode.category,
-        unit: byCode.unit,
-        base_cost: baseCost,
-        commercial_markup_percent: commercialMarkupPercent,
-        reference_price: applyMarkup(baseCost),
-        supplier: byCode.supplier || 'Catálogo Oficial SABRAR',
-        reference_date: '2026-01',
-        price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
-        is_genuine_match: true,
-        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
-        failure_reason: baseCost ? null : 'Material localizado por código porém sem preço de referência cadastrado.'
-      };
-    }
+/**
+ * Converte a quantidade técnica (unidade física) na quantidade de compra da unidade cadastrada.
+ * Retorna null quando as unidades não são conversíveis (associação incompatível).
+ */
+export function convertToPurchase(technicalQty, technicalUnit, entry) {
+  const q = Number(technicalQty) || 0;
+  const tClass = UNIT_CLASS[normalizeUnit(technicalUnit)] || 'count';
+  const p = describePurchaseUnit(entry);
+  if (tClass === 'count' && p.contentClass === 'count') {
+    return { purchaseQuantity: Math.ceil(q - 1e-9), purchaseUnit: p.purchaseUnit, factor: 1, note: null };
   }
-
-  // 2. Busca por nome exato na base viva
-  const byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(rawName.toLowerCase());
-  if (byName && checkTechnicalCompatibility(rawName, byName.name, byName.category || '', byName.synonyms || '', qGauges, null)) {
-    const baseCost = Number(byName.reference_price) > 0 ? Number(byName.reference_price) : null;
+  if (tClass === p.contentClass) {
+    const exact = p.contentPerUnit === 1;
     return {
-      ...byName,
-      id: byName.id,
-      code: byName.code,
-      name: byName.name,
-      category: byName.category,
-      unit: byName.unit,
-      base_cost: baseCost,
-      commercial_markup_percent: commercialMarkupPercent,
-      reference_price: applyMarkup(baseCost),
-      supplier: byName.supplier || 'Catálogo Oficial SABRAR',
-      reference_date: '2026-01',
-      price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
-      is_genuine_match: true,
-      price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
-      failure_reason: baseCost ? null : 'Material localizado por nome exato porém sem preço de referência cadastrado.'
+      purchaseQuantity: exact ? Number(q.toFixed(2)) : Math.ceil(q / p.contentPerUnit - 1e-9),
+      purchaseUnit: p.purchaseUnit,
+      factor: p.contentPerUnit,
+      note: exact ? null : `${q} ${technicalUnit} ÷ ${p.contentPerUnit} por ${p.purchaseUnit} (arredondado para cima)`
     };
   }
-
-  // 3. Busca por alias cadastrado
-  const byAlias = await db.prepare(`
-    SELECT m.* FROM material_aliases ma
-    JOIN materials m ON m.id = ma.material_id
-    WHERE LOWER(ma.alias_name) = ?
-  `).get(rawName.toLowerCase());
-  if (byAlias && checkTechnicalCompatibility(rawName, byAlias.name, byAlias.category || '', byAlias.synonyms || '', qGauges, null)) {
-    const baseCost = Number(byAlias.reference_price) > 0 ? Number(byAlias.reference_price) : null;
+  if (tClass === 'length' && p.contentClass === 'count' && p.lengthPerUnitM) {
     return {
-      ...byAlias,
-      id: byAlias.id,
-      code: byAlias.code,
-      name: byAlias.name,
-      category: byAlias.category,
-      unit: byAlias.unit,
-      base_cost: baseCost,
-      commercial_markup_percent: commercialMarkupPercent,
-      reference_price: applyMarkup(baseCost),
-      supplier: byAlias.supplier || 'Catálogo Oficial SABRAR',
-      reference_date: '2026-01',
-      price_source: baseCost ? 'CATALOGO_ALIAS_SABRAR' : null,
-      is_genuine_match: true,
-      price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
-      failure_reason: baseCost ? null : 'Alias localizado porém material base não possui preço cadastrado.'
+      purchaseQuantity: Math.ceil(q / p.lengthPerUnitM - 1e-9),
+      purchaseUnit: p.purchaseUnit,
+      factor: p.lengthPerUnitM,
+      note: `${q} m ÷ ${p.lengthPerUnitM} m por unidade (descrição cadastrada)`
     };
   }
+  return null;
+}
 
-  // 4. Busca multi-termo na base viva (materials)
-  const STOP_WORDS = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'seu', 'sua', 'tamanho', 'dimensao', 'medida', 'fabricante', 'ref', 'modelo', 'de', 'da', 'do', 'em']);
-  const words = searchNorm.split(' ').filter(w => w.length > 2 && !STOP_WORDS.has(w));
-  if (words.length > 0) {
-    const firstWord = words[0];
-    const dbCandidates = await db.prepare(`
-      SELECT m.* FROM materials m
-      WHERE unaccent(m.name) ILIKE unaccent(?) 
-         OR unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?)
-      LIMIT 80
-    `).all(`%${firstWord}%`, `%${firstWord}%`);
-
-    let bestCandidate = null;
-    let bestScore = -1;
-
-    for (const cand of dbCandidates) {
-      if (!cand.name) continue;
-      // Rejeita famílias incompatíveis antes de comparar preços (Regra 4)
-      if (!checkTechnicalCompatibility(rawName, cand.name, cand.category || '', cand.synonyms || '', qGauges, null)) {
-        continue;
-      }
-
-      const candNorm = normalizeTechString(cand.name);
-      const candSyn = normalizeTechString(cand.synonyms || '');
-      let score = 0;
-      for (const w of words) {
-        if (candNorm.includes(w)) score += 25;
-        else if (candSyn.includes(w)) score += 30;
-      }
-
-      const entGauges = extractExactGauges(`${candNorm} ${candSyn}`);
-      if (qGauges.length > 0 && entGauges.length > 0 && qGauges.some(qg => entGauges.includes(qg))) {
-        score += 40;
-      }
-
-      if (score > bestScore && score >= 45) {
-        bestScore = score;
-        bestCandidate = cand;
-      }
-    }
-
-    if (bestCandidate) {
-      const baseCost = Number(bestCandidate.reference_price) > 0 ? Number(bestCandidate.reference_price) : null;
-      return {
-        ...bestCandidate,
-        id: bestCandidate.id,
-        code: bestCandidate.code,
-        name: bestCandidate.name,
-        category: bestCandidate.category,
-        unit: bestCandidate.unit,
-        base_cost: baseCost,
-        commercial_markup_percent: commercialMarkupPercent,
-        reference_price: applyMarkup(baseCost),
-        supplier: bestCandidate.supplier || 'Catálogo Oficial SABRAR',
-        reference_date: '2026-01',
-        price_source: baseCost ? 'CATALOGO_DB_SABRAR' : null,
-        is_genuine_match: true,
-        price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
-        failure_reason: baseCost ? null : 'Material compatível localizado na base viva porém sem preço cadastrado.'
-      };
+/**
+ * Compatibilidade completa: família + atributos técnicos (dimensão, diâmetro, espessura) + unidade conversível.
+ */
+export function isSafeMaterialMatch(itemDef, cand) {
+  const qName = String(itemDef.name || '');
+  const qFam = materialFamily(qName);
+  const cFam = materialFamily(cand.name);
+  if (!qFam || qFam !== cFam) return { ok: false, reason: `família incompatível (${qFam} ≠ ${cFam})` };
+  if (!checkTechnicalCompatibility(qName, cand.name, cand.category || '', '', null, null)) {
+    return { ok: false, reason: 'atributo técnico divergente (dimensão/diâmetro/espessura)' };
+  }
+  // Atributos exigidos pela consulta precisam estar presentes no candidato (não basta "não conflitar")
+  const qa = extractTechnicalAttributes(qName);
+  const ca = extractTechnicalAttributes(cand.name);
+  for (const key of ['nominalDiameters', 'wallThicknesses', 'rectDimensions', 'thicknessMm', 'sheetGauges']) {
+    if (qa[key].length && !qa[key].every(v => ca[key].includes(v))) {
+      return { ok: false, reason: `atributo ${key} exigido (${qa[key].join(', ')}) ausente no cadastro` };
     }
   }
-
-  // 5. Fallback para a Base Econômica JSON oficial (somente se não encontrou na base viva)
-  const economic = findSabrarEconomicPrice(rawName, {
-    context: options.systemContext || '',
-    unit: itemDef.unit,
-    spec: itemDef.spec,
-    commercialMarkupPercent
-  });
-
-  if (economic.matched) {
-    const baseCost = economic.price;
-    return {
-      id: economic.id || null,
-      code: economic.code || null,
-      name: itemDef.name,
-      category: economic.category || itemDef.category || 'Climatização',
-      unit: economic.unit || itemDef.unit || 'und',
-      base_cost: baseCost,
-      commercial_markup_percent: commercialMarkupPercent,
-      reference_price: economic.commercialPrice || applyMarkup(baseCost),
-      supplier: economic.supplier || 'Catálogo Oficial SABRAR 2026',
-      reference_date: '2026-09-28',
-      price_source: 'BASE_ECONOMICA_SABRAR_2026',
-      is_genuine_match: true,
-      price_status: 'PRECIFICADO_CATALOGO',
-      failure_reason: null
-    };
+  if (qFam === 'tubo_cobre' && qa.copperTemper && qa.copperTemper !== 'AMBOS' && ca.copperTemper !== qa.copperTemper) {
+    return { ok: false, reason: `têmpera do cobre divergente (${qa.copperTemper} ≠ ${ca.copperTemper || 'não informada'})` };
   }
+  if (itemDef.unit && !convertToPurchase(1, itemDef.unit, cand)) {
+    return { ok: false, reason: `unidade incompatível (${itemDef.unit} → ${cand.unit})` };
+  }
+  return { ok: true };
+}
 
-  // 6. Não encontrou correspondência segura ou preço: preserva descrição, quantidade e marca preço pendente (Regra 5)
+function pricedResult(itemDef, cand, source, commercialMarkupPercent) {
+  const baseCost = Number(cand.reference_price) > 0 ? Number(cand.reference_price) : null;
+  const conv = convertToPurchase(itemDef.quantity ?? 0, itemDef.unit || cand.unit, cand);
+  return {
+    ...cand,
+    id: cand.id,
+    code: cand.code,
+    name: cand.name,
+    category: cand.category,
+    unit: cand.unit,
+    base_cost: baseCost,
+    commercial_markup_percent: commercialMarkupPercent,
+    reference_price: baseCost ? Number((baseCost * (1 + commercialMarkupPercent / 100)).toFixed(2)) : null,
+    supplier: cand.supplier || 'Base viva SABRAR',
+    reference_date: cand.updated_at ? new Date(cand.updated_at).toISOString().slice(0, 10) : null,
+    price_source: baseCost ? `BASE_VIVA_${source}` : null,
+    is_genuine_match: true,
+    conversion: conv,
+    price_status: baseCost ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
+    failure_reason: baseCost ? null : 'Material compatível localizado na base viva porém sem preço de referência cadastrado.'
+  };
+}
+
+function pendingResult(itemDef, commercialMarkupPercent, reason, rejected = []) {
   return {
     id: null,
     code: null,
     name: itemDef.name,
-    category: itemDef.category || 'Climatização',
-    unit: itemDef.unit || 'und',
+    category: itemDef.category || null,
+    unit: itemDef.unit || 'un',
     base_cost: null,
     commercial_markup_percent: commercialMarkupPercent,
     reference_price: null,
@@ -736,9 +710,118 @@ export async function searchLiveMaterialBase(db, itemDef, options = {}) {
     reference_date: null,
     price_source: null,
     is_genuine_match: false,
+    conversion: null,
     price_status: 'PENDENTE_COTACAO',
     classification: 'PRECO_PENDENTE',
-    failure_reason: economic.failureReason || 'Item documental sem correspondência cadastrada na base viva SABRAR. Preço pendente para o engenheiro.'
+    rejected_candidates: rejected.slice(0, 5),
+    failure_reason: reason
   };
 }
 
+/**
+ * Pesquisa na base viva (tabela materials) por código, nome exato, alias e busca por termos,
+ * aceitando somente correspondências seguras (família + atributos + unidade conversível).
+ * O preço é o preço de referência do cadastro (nunca média entre produtos diferentes).
+ * Sem correspondência segura: preserva descrição/quantidade e retorna PENDENTE_COTACAO.
+ * O catálogo JSON não é usado para preencher preços automaticamente.
+ */
+export async function searchLiveMaterialBase(db, itemDef, options = {}) {
+  const commercialMarkupPercent = Number(options.commercialMarkupPercent || 0);
+  const rawName = String(itemDef.name || itemDef.material || '').trim();
+  const rejected = [];
+  const tryCandidate = (cand, source) => {
+    if (!cand || !cand.name) return null;
+    const chk = isSafeMaterialMatch({ ...itemDef, name: rawName }, cand);
+    if (!chk.ok) {
+      rejected.push({ code: cand.code, name: cand.name, reason: chk.reason });
+      return null;
+    }
+    return pricedResult({ ...itemDef, name: rawName }, cand, source, commercialMarkupPercent);
+  };
+
+  if (itemDef.code) {
+    const byCode = await db.prepare('SELECT * FROM materials WHERE code = ?').get(itemDef.code);
+    const r = tryCandidate(byCode, 'CODIGO');
+    if (r) return r;
+  }
+
+  const byName = await db.prepare('SELECT * FROM materials WHERE LOWER(name) = ?').get(rawName.toLowerCase());
+  const rn = tryCandidate(byName, 'NOME_EXATO');
+  if (rn) return rn;
+
+  const byAlias = await db.prepare(`
+    SELECT m.* FROM material_aliases ma
+    JOIN materials m ON m.id = ma.material_id
+    WHERE LOWER(ma.alias_name) = ?
+  `).get(rawName.toLowerCase());
+  const ra = tryCandidate(byAlias, 'ALIAS');
+  if (ra) return ra;
+
+  const STOP = new Set(['para', 'com', 'por', 'linha', 'tipo', 'obra', 'das', 'dos', 'uma', 'tamanho', 'dimensao', 'medida', 'fabricante', 'ref', 'modelo', 'de', 'da', 'do', 'em']);
+  const searchNorm = normalizeTechString(rawName);
+  const words = searchNorm.split(/[\s–-]+/).filter(w => w.length > 2 && !STOP.has(w) && /[a-z]/.test(w));
+  if (words.length > 0) {
+    const fam = materialFamily(rawName);
+    const probe = fam === 'tubo_cobre' ? 'cobre' : words[0];
+    const dbCandidates = await db.prepare(`
+      SELECT m.* FROM materials m
+      WHERE unaccent(m.name) ILIKE unaccent(?)
+         OR unaccent(coalesce(m.synonyms, '')) ILIKE unaccent(?)
+      LIMIT 200
+    `).all(`%${probe}%`, `%${probe}%`);
+
+    const scored = [];
+    for (const cand of dbCandidates) {
+      const chk = isSafeMaterialMatch({ ...itemDef, name: rawName }, cand);
+      if (!chk.ok) {
+        rejected.push({ code: cand.code, name: cand.name, reason: chk.reason });
+        continue;
+      }
+      const candNorm = normalizeTechString(cand.name);
+      const candSyn = normalizeTechString(cand.synonyms || '');
+      let score = 0;
+      for (const w of words) {
+        if (candNorm.includes(w)) score += 25;
+        else if (candSyn.includes(w)) score += 15;
+      }
+      if (score >= 50) scored.push({ cand, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    if (scored.length > 0) {
+      const top = scored.filter(s => s.score === scored[0].score);
+      const distinctPrices = new Set(top.map(t => Number(t.cand.reference_price || 0)));
+      if (top.length > 1 && distinctPrices.size > 1) {
+        return pendingResult(itemDef, commercialMarkupPercent,
+          `Correspondência ambígua na base viva: ${top.map(t => `${t.cand.code} ${t.cand.name}`).join(' | ')}. Escolha manual necessária (não se calcula média entre produtos diferentes).`,
+          rejected);
+      }
+      return pricedResult({ ...itemDef, name: rawName }, top[0].cand, 'BUSCA_TECNICA', commercialMarkupPercent);
+    }
+  }
+
+  return pendingResult(
+    itemDef,
+    commercialMarkupPercent,
+    'Item sem correspondência técnica segura na base viva SABRAR (família, atributos e unidade). Preço PENDENTE_COTACAO.',
+    rejected
+  );
+}
+
+/**
+ * Tarifa de serviço/mão de obra cadastrada na base de serviços SABRAR (descrição + unidade + contexto).
+ * Retorna null quando não há tarifa cadastrada (serviço fica PENDENTE_COTACAO, quantidade preservada).
+ */
+export function findServiceTariff(description, unit, context = '') {
+  const d = normalizeTechString(description);
+  const u = normalizeUnit(unit);
+  const matches = rawServices.filter(s => normalizeTechString(s.item) === d && normalizeUnit(s.unit) === u && Number(s.price) > 0);
+  if (!matches.length) return null;
+  const byContext = matches.filter(s => s.context === context);
+  const pool = byContext.length ? byContext : matches;
+  const prices = [...new Set(pool.map(s => Number(s.price)))];
+  if (prices.length > 1) {
+    return { ambiguous: true, candidates: pool.map(s => ({ item: s.item, unit: s.unit, price: s.price, context: s.context })) };
+  }
+  const s = pool[0];
+  return { price: Number(s.price), unit: s.unit, item: s.item, context: s.context, source: 'BASE_SERVICOS_SABRAR' };
+}

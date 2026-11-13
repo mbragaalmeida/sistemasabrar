@@ -296,7 +296,8 @@ export class BudgetLLMClient {
         materialType: String(d.material_type || d.materialType || 'MPU').trim(),
         insulationMm: Number(d.insulation_mm ?? d.insulationMm ?? 20) || 20,
         isExternal: Boolean(d.is_external ?? d.isExternal ?? false),
-        measurementStatus: lengthM ? 'MEDIDO' : 'PENDENTE_MEDICAO',
+        // Extensão informada pelo modelo não é medição: só a geometria/cota documental confirma MEDIDO
+        measurementStatus: lengthM ? 'DECLARADO_IA' : 'PENDENTE_MEDICAO',
         sourceFile: d.source_file || d.sourceFile || 'Documento do Projeto',
         sourcePage: Number(d.source_page || d.sourcePage || 1) || 1,
         evidence: String(d.evidence || `${widthCm}x${heightCm}`).trim()
@@ -317,7 +318,8 @@ export class BudgetLLMClient {
         circuitsQty: Number(r.circuits_qty ?? r.circuitsQty ?? 1) || 1,
         insulationType: r.insulation_type || r.insulationType || 'Elastômero',
         insulationThicknessMm: Number(r.insulation_thickness_mm ?? r.insulationThicknessMm ?? 19) || 19,
-        measurementStatus: lengthM ? 'MEDIDO' : 'PENDENTE_MEDICAO',
+        // Extensão informada pelo modelo não é medição: só a geometria/cota documental confirma MEDIDO
+        measurementStatus: lengthM ? 'DECLARADO_IA' : 'PENDENTE_MEDICAO',
         sourceFile: r.source_file || r.sourceFile || 'Documento do Projeto',
         sourcePage: Number(r.source_page || r.sourcePage || 1) || 1,
         evidence: String(r.evidence || '').trim()

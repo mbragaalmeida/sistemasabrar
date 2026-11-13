@@ -51,8 +51,9 @@ export function determineDuctGauge(widthCm, heightCm, isBlackSteel = false, isPr
  * KG Total = Área × Fator da bitola × 1,20
  */
 export function calculateDuctKg(areaSqm, gauge) {
-  const factor = DUCT_GAUGE_FACTORS[gauge] || 5.2;
-  return Number((Number(areaSqm) * factor * 1.20).toFixed(2));
+  const factor = DUCT_GAUGE_FACTORS[gauge];
+  if (!factor) return null;
+  return Number((Number(areaSqm) * factor * COMPANY_COEFFICIENTS.sheetLossFactor.value).toFixed(2));
 }
 
 /**
@@ -64,183 +65,241 @@ export function calculateDuctInsulation(areaSqm) {
 }
 
 /**
- * Insumos e Quantitativos para Dutos em Painel Pré-Isolado de Poliuretano/PIR (MPU)
- * Conforme NBR 16401 e critérios técnicos Sabrar para sistema MPU:
- * - Painéis MPU 20mm (interno) e MPU 30mm (externo) com 20% de perda da OP (fator 1,20)
- * - Peças de painel: chapa padrão 2,0m x 1,2m = 2,40 m² por peça
- * - Perfil de conexão em alumínio: barras de 3 metros (junta a cada 1,20m)
- * - Cola adesiva para MPU: 1 lata de 1L por 20 m² de duto
- * - Fita adesiva de alumínio 50mm x 50m: 1 rolo por 40 m² de duto
- * - Selante / silicone neutro interno para MPU: 1 tubo por 25 m² de duto
- * - Cantos de reforço estrutural MPU: 4 por junta/trecho
+ * COEFICIENTES EMPRESARIAIS EXPLÍCITOS
+ * Cada coeficiente informa valor, unidade, fonte e se está VALIDADO pela empresa.
+ * Itens cuja quantidade depende de coeficiente não validado são classificados como PREVISAO,
+ * com a premissa visível. Os valores podem ser substituídos por opções da análise
+ * (options.companyCoefficients = { chave: { value, validated, source } }).
  */
-export function calculateMPUDuctPanels(totalAreaSqm, options = {}) {
-  const opts = typeof options === 'boolean' ? { hasExternalDeckNote: options } : (options || {});
-  const area = Math.max(0, Number(totalAreaSqm) || 0);
-  const lossFactor = Number(opts.lossFactor) || 1.40;
-  const packagingMode = opts.packagingMode || 'CAIXA_FECHADA_10'; // 'CAIXA_FECHADA_10' | 'AVULSO'
-  const panelAreaSqm = 2.40; // Painel padrão 2,00m x 1,20m = 2,40 m²
-  const boxSize = 10; // Caixa fechada padrão do fornecedor com 10 painéis
+export const COMPANY_COEFFICIENTS = Object.freeze({
+  sheetLossFactor: { value: 1.20, unit: 'fator', validated: true, source: 'OP Passo 8 (perda de chapa TDC)' },
+  tdcInsulationFactor: { value: 1.40, unit: 'fator', validated: true, source: 'OP Passo 9 (isolamento de duto TDC)' },
+  supportSpacingM: { value: 1.50, unit: 'm', validated: true, source: 'OP Passo 12 (suportes a cada 1,50 m)' },
+  perfiladoExtraWidthM: { value: 0.10, unit: 'm', validated: true, source: 'OP Passo 12 (perfilado = largura do duto + 10 cm)' },
+  rodsPerSupport: { value: 2, unit: 'un/suporte', validated: true, source: 'OP Passo 12 (2 tirantes)' },
+  rodBarsPerRod: { value: 1, unit: 'barra 3 m/tirante', validated: true, source: 'OP Passo 12 ("2 tirantes barras 3m")' },
+  anchorsPerSupport: { value: 2, unit: 'un/suporte', validated: true, source: 'OP Passo 12 (2 chumbadores)' },
+  nutsPerSupport: { value: 4, unit: 'un/suporte', validated: true, source: 'OP Passo 12 (4 porcas)' },
+  washersPerSupport: { value: 4, unit: 'un/suporte', validated: true, source: 'OP Passo 12 (4 arruelas)' },
+  copperLossFactor: { value: 1.25, unit: 'fator', validated: true, source: 'OP Passo 13 (perda de 25% do cobre)' },
+  insulationPerCopperMeter: { value: 1.0, unit: 'm/m', validated: true, source: 'OP Passo 13.3 (isolamento elastomérico 1:1 com a linha)' },
+  tdcPieceLengthM: { value: 1.10, unit: 'm', validated: true, source: 'OP Passo 11 (divisor 1,1 m)' },
+  tdcCornersPerJoint: { value: 8, unit: 'un/junta', validated: true, source: 'OP Passo 11.1' },
+  tdcWasteFactor: { value: 1.15, unit: 'fator', validated: true, source: 'OP Passo 11 (+15%)' },
+  tdcTapeRollM: { value: 10, unit: 'm/rolo', validated: true, source: 'OP Passo 11.4 (rolos de 10 m)' },
+  mpuPanelLossFactor: { value: 1.20, unit: 'fator', validated: false, source: 'Critério MPU citado no código anterior (20% de perda); aguardando validação' },
+  mpuPanelAreaM2: { value: 2.40, unit: 'm²/painel', validated: true, source: 'Especificação comercial do painel 2,0 x 1,2 m' },
+  mpuPanelsPerBox: { value: 10, unit: 'painel/caixa', validated: false, source: 'Embalagem do fornecedor (caixa com 10); confirmar' },
+  mpuJointSpacingM: { value: 1.20, unit: 'm', validated: false, source: 'Junta transversal a cada 1,20 m (largura do painel); confirmar' },
+  mpuProfileWasteFactor: { value: 1.15, unit: 'fator', validated: false, source: 'Margem de perfil +15%; confirmar' },
+  mpuCornersPerJoint: { value: 4, unit: 'un/junta', validated: false, source: '4 cantos de reforço por junta; confirmar' },
+  mpuGlueM2PerUnit: { value: 20, unit: 'm²/un', validated: false, source: '1 cola por 20 m² de duto; confirmar' },
+  mpuSealantM2PerUnit: { value: 25, unit: 'm²/un', validated: false, source: '1 selante por 25 m² de duto; confirmar' },
+  mpuTapeWasteFactor: { value: 1.15, unit: 'fator', validated: false, source: 'Fita nas arestas longitudinais e juntas +15%; confirmar' },
+  armafixSpacingM: { value: 1.50, unit: 'm', validated: false, source: 'Abraçadeira isolada a cada 1,50 m de linha; confirmar' },
+  shieldCablePerRouteM: { value: 1.25, unit: 'm/m', validated: false, source: 'Cabo de comando acompanha o percurso frigorígeno com 25% de sobra; confirmar' },
+  ductLaborAreaFactor: { value: 1.0, unit: 'fator', validated: false, source: 'Mão de obra de duteiro sobre a área líquida medida; confirmar' },
+  liftingUnitsPerDay: { value: 3, unit: 'equip./diária', validated: false, source: 'Produtividade de içamento; confirmar com logística' },
+  ductInstallM2PerDay: { value: 12, unit: 'm²/dia', validated: false, source: 'Produtividade de equipe de duteiros; confirmar' },
+  systemInstallDays: { value: 2, unit: 'dia/sistema', validated: false, source: 'Instalação/interligação por sistema; confirmar' },
+  workDaysPerMonth: { value: 22, unit: 'dia/mês', validated: true, source: 'Supervisor 6 h - 22 dias/mês (base de serviços)' }
+});
 
-  const areaWithLoss = Number((area * lossFactor).toFixed(2));
-  const lossAreaSqm = Number((areaWithLoss - area).toFixed(2));
-
-  const externalAreaMeasured = Math.max(0, Number(opts.externalAreaMeasured) || 0);
-  let externalArea = 0;
-  let internalArea = areaWithLoss;
-  let internalNetArea = area;
-  let externalNetArea = 0;
-
-  if (externalAreaMeasured > 0) {
-    externalNetArea = Math.min(area, externalAreaMeasured);
-    internalNetArea = Math.max(0, Number((area - externalNetArea).toFixed(2)));
-    externalArea = Number((externalNetArea * lossFactor).toFixed(2));
-    internalArea = Math.max(0, Number((areaWithLoss - externalArea).toFixed(2)));
+export function resolveCoefficients(overrides = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(COMPANY_COEFFICIENTS)) {
+    const o = overrides?.[k];
+    out[k] = o == null
+      ? { ...v }
+      : (typeof o === 'object' ? { ...v, ...o } : { ...v, value: Number(o), validated: false, source: 'Parâmetro informado na análise' });
   }
+  return out;
+}
 
-  const internalRequiredPieces = internalArea > 0 ? Math.ceil(internalArea / panelAreaSqm) : 0;
-  const externalRequiredPieces = externalArea > 0 ? Math.ceil(externalArea / panelAreaSqm) : 0;
-  const requiredPieces = internalRequiredPieces + externalRequiredPieces;
+const r2 = n => Number((Number(n) || 0).toFixed(2));
 
-  const internalBoxesOf10 = internalRequiredPieces > 0 ? Math.ceil(internalRequiredPieces / boxSize) : 0;
-  const externalBoxesOf10 = externalRequiredPieces > 0 ? Math.ceil(externalRequiredPieces / boxSize) : 0;
-  const standardBoxesOf10 = internalBoxesOf10 + externalBoxesOf10;
-
-  const internalCommercialPieces = packagingMode === 'AVULSO' ? internalRequiredPieces : (internalBoxesOf10 * boxSize);
-  const externalCommercialPieces = packagingMode === 'AVULSO' ? externalRequiredPieces : (externalBoxesOf10 * boxSize);
-  const commercialPieces = internalCommercialPieces + externalCommercialPieces;
-
-  const pendingExternalLocation = Boolean(externalAreaMeasured === 0 && opts.hasExternalDeckNote);
-
+/** Premissas e status derivados dos coeficientes efetivamente usados. */
+export function premisesFor(coefs, keys) {
+  const used = keys.map(k => ({ key: k, ...coefs[k] }));
   return {
-    netAreaSqm: Number(area.toFixed(2)),
-    totalAreaSqm: Number(area.toFixed(2)),
-    lossFactor,
-    lossAreaSqm,
-    totalAreaWithLoss: areaWithLoss,
-    internalNetAreaSqm: internalNetArea,
-    externalNetAreaSqm: externalNetArea,
-    internalArea,
-    externalArea,
-    panelAreaSqm,
-    internalRequiredPieces,
-    externalRequiredPieces,
-    requiredPieces,
-    packagingMode,
-    boxSize,
-    internalBoxesOf10,
-    externalBoxesOf10,
-    standardBoxesOf10,
-    internalCommercialPieces,
-    externalCommercialPieces,
-    commercialPieces,
-    internalPieces: internalRequiredPieces,
-    externalPieces: externalRequiredPieces,
-    totalPieces: requiredPieces,
-    pendingExternalLocation,
-    notes: pendingExternalLocation
-      ? 'Legenda/notas mencionam espessura 30mm em área externa/patamar técnico, porém os trechos externos não possuem delimitação/cota separada em planta.'
-      : null
+    premises: used.map(u => `${u.key}=${u.value} ${u.unit} (${u.validated ? 'validado' : 'NÃO VALIDADO'}: ${u.source})`),
+    allValidated: used.every(u => u.validated)
   };
 }
 
-export function calculateMPUSupplies(totalAreaSqm, totalPerimeterM, totalLengthM = 0) {
-  const rawArea = Number(totalAreaSqm) || 0;
-  const perimeter = Number(totalPerimeterM) || 0;
+/**
+ * Geometria por trecho: perímetro e área líquida (sem perdas).
+ * Base única para materiais, acessórios e mão de obra.
+ */
+export function computeSectionGeometry(sections = []) {
+  const rows = sections
+    .filter(s => Number(s.lengthM) > 0 && Number(s.widthCm) > 0 && Number(s.heightCm) > 0)
+    .map(s => {
+      const perimeterM = calculateDuctPerimeter(s.widthCm, s.heightCm);
+      return { ...s, perimeterM, netAreaM2: Number((perimeterM * Number(s.lengthM)).toFixed(4)) };
+    });
+  return {
+    rows,
+    totalLinearM: r2(rows.reduce((a, s) => a + Number(s.lengthM), 0)),
+    totalNetAreaM2: r2(rows.reduce((a, s) => a + s.netAreaM2, 0)),
+    // Σ perímetro × comprimento = área; Σ perímetro isolado só tem sentido por junta (ver acessórios)
+    weightedAvgWidthCm: rows.length
+      ? r2(rows.reduce((a, s) => a + s.widthCm * s.lengthM, 0) / rows.reduce((a, s) => a + Number(s.lengthM), 0))
+      : 0
+  };
+}
 
-  if (rawArea <= 0 && perimeter <= 0) {
+/**
+ * Painéis MPU: área líquida → perda (uma única vez) → área de compra → peças → caixas.
+ * O fator de isolamento 1,40 (TDC) NÃO é usado aqui.
+ */
+export function calculateMPUDuctPanels(netAreaSqm, options = {}) {
+  const coefs = options.coefficients || resolveCoefficients();
+  const area = Math.max(0, Number(netAreaSqm) || 0);
+  const lossFactor = Number(options.lossFactor ?? coefs.mpuPanelLossFactor.value);
+  const panelAreaSqm = coefs.mpuPanelAreaM2.value;
+  const boxSize = coefs.mpuPanelsPerBox.value;
+  const packagingMode = options.packagingMode || 'AVULSO';
+
+  // Aceita os dois nomes históricos do parâmetro (corrige divergência externalAreaSqm x externalAreaMeasured)
+  const externalNet = Math.min(area, Math.max(0, Number(options.externalAreaSqm ?? options.externalAreaMeasured ?? 0) || 0));
+  const internalNet = Math.max(0, area - externalNet);
+
+  const build = (net) => {
+    const purchaseArea = net * lossFactor;
+    const pieces = purchaseArea > 0 ? Math.ceil(purchaseArea / panelAreaSqm) : 0;
+    const boxes = pieces > 0 ? Math.ceil(pieces / boxSize) : 0;
     return {
-      totalProfileMeters: 0,
-      profileBars3m: 0,
-      colaLatas: 0,
-      fitaAluminioRolos: 0,
-      selanteTubos: 0,
-      cantosReforco: 0
+      netAreaSqm: r2(net),
+      lossAreaSqm: r2(purchaseArea - net),
+      purchaseAreaSqm: r2(purchaseArea),
+      requiredPieces: pieces,
+      boxes,
+      commercialPieces: packagingMode === 'CAIXA_FECHADA' || packagingMode === 'CAIXA_FECHADA_10' ? boxes * boxSize : pieces
     };
+  };
+  const internal = build(internalNet);
+  const external = build(externalNet);
+  return {
+    netAreaSqm: r2(area),
+    lossFactor,
+    panelAreaSqm,
+    boxSize,
+    packagingMode,
+    internal,
+    external,
+    pendingExternalLocation: Boolean(options.hasExternalDeckNote && externalNet === 0)
+  };
+}
+
+/**
+ * Insumos MPU por trecho (perfis, cantos, fita, cola, selante) — quantidades técnicas
+ * em unidades físicas (m, un); a conversão para barras/rolos/latas é feita na precificação
+ * pela embalagem cadastrada.
+ */
+export function calculateMPUSupplies(sections = [], coefs = resolveCoefficients()) {
+  const geo = computeSectionGeometry(sections);
+  const s = coefs.mpuJointSpacingM.value;
+  let joints = 0;
+  let profileM = 0;
+  let longitudinalEdgesM = 0;
+  for (const row of geo.rows) {
+    const j = Math.ceil(Number(row.lengthM) / s);
+    joints += j;
+    profileM += row.perimeterM * j;
+    longitudinalEdgesM += 4 * Number(row.lengthM);
   }
-
-  const areaWithLoss = rawArea * 1.20;
-
-  // Perfil de conexão alumínio: juntas a cada 1,20m + 15% de margem
-  const totalProfileMeters = Number(((perimeter / 1.20) * 1.15).toFixed(1));
-  const profileBars3m = Math.ceil(totalProfileMeters / 3);
-
-  // Cola adesiva para MPU: 1L a cada 20 m²
-  const colaLatas = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 20)) : 0;
-
-  // Fita de alumínio 50mmx50m: 1 rolo a cada 40 m²
-  const fitaAluminioRolos = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 40)) : 0;
-
-  // Selante para dutos MPU: 1 tubo a cada 25 m²
-  const selanteTubos = areaWithLoss > 0 ? Math.max(1, Math.ceil(areaWithLoss / 25)) : 0;
-
-  // Cantoneiras de reforço para MPU (4 cantos por junta)
-  const numJoints = Math.ceil(perimeter / 1.20);
-  const cantosReforco = numJoints > 0 ? numJoints * 4 : 0;
-
+  const tapeM = (longitudinalEdgesM + profileM) * coefs.mpuTapeWasteFactor.value;
   return {
-    totalProfileMeters,
-    profileBars3m,
-    colaLatas,
-    fitaAluminioRolos,
-    selanteTubos,
-    cantosReforco
+    joints,
+    profileMeters: r2(profileM * coefs.mpuProfileWasteFactor.value),
+    cornerPieces: joints * coefs.mpuCornersPerJoint.value,
+    tapeMeters: r2(tapeM),
+    glueUnits: geo.totalNetAreaM2 > 0 ? Math.ceil(geo.totalNetAreaM2 / coefs.mpuGlueM2PerUnit.value) : 0,
+    sealantUnits: geo.totalNetAreaM2 > 0 ? Math.ceil(geo.totalNetAreaM2 / coefs.mpuSealantM2PerUnit.value) : 0,
+    netAreaM2: geo.totalNetAreaM2,
+    linearM: geo.totalLinearM
   };
 }
 
 /**
- * Passo 11: Insumos para instalação dos dutos TDC
+ * Passo 11: insumos TDC por trecho (juntas a cada 1,10 m).
  */
-export function calculateDuctTDCSupplies(totalPerimeterM) {
-  const p = Number(totalPerimeterM) || 0;
-  // 11.1 Cantos: (Somatório do perímetro / 1,1) * 8 arredondado para cima + 15%
-  const baseCantos = Math.ceil((p / 1.1) * 8);
-  const cantos = Math.ceil(baseCantos * 1.15);
-
-  // 11.3 Silicone para TDC: ((Somatório do perímetro / 1,1) / 3) + 15%
-  const silicone = Number((((p / 1.1) / 3) * 1.15).toFixed(1));
-
-  // 11.4 Fita TDC: (Somatório do perímetro / 10) + 15% (rolos de 10m)
-  const fitaTDC = Number(((p / 10) * 1.15).toFixed(1));
-
+export function calculateDuctTDCSupplies(sections = [], coefs = resolveCoefficients()) {
+  const geo = computeSectionGeometry(sections);
+  let joints = 0;
+  let jointPerimeterM = 0;
+  for (const row of geo.rows) {
+    const j = Number(row.lengthM) / coefs.tdcPieceLengthM.value;
+    joints += j;
+    jointPerimeterM += row.perimeterM * j;
+  }
+  const w = coefs.tdcWasteFactor.value;
   return {
-    cantos,
-    silicone,
-    fitaTDC
+    joints: r2(joints),
+    corners: Math.ceil(Math.ceil(joints * coefs.tdcCornersPerJoint.value) * w),
+    siliconeUnits: Math.ceil((joints / 3) * w),
+    tapeMeters: r2(jointPerimeterM * w),
+    tapeRolls: Math.ceil((jointPerimeterM * w) / coefs.tdcTapeRollM.value)
   };
 }
 
 /**
- * Passo 12: Levantamento da suportação dos dutos
- * Suportes a cada 1,50 m
- * Cada conjunto contém:
- * - 1 perfilado (largura do duto + 10 cm);
- * - 2 tirantes barras 3m (1/4" para dutos);
- * - 2 chumbadores 1/4";
- * - 4 porcas 1/4";
- * - 4 arruelas 1/4".
+ * Passo 12: suportação por trecho (cada trecho com sua largura).
  */
-export function calculateDuctSupports(lengthM, averageWidthCm = 60) {
-  const len = Number(lengthM) || 0;
-  const numSupports = Math.ceil(len / 1.50);
-  const widthM = (Number(averageWidthCm) || 60) / 100;
-  const perfiladoPerSupport = widthM + 0.10; // 10 cm a mais que a largura
-  const totalPerfiladoMeters = Number((numSupports * perfiladoPerSupport).toFixed(2));
-  const numTirantes = numSupports * 2;
-  const tirantesMeters = numTirantes * 3; // Tirante padrão de 3 metros
-  const chumbadores = numSupports * 2; // 1/4" para dutos
-  const porcas = numSupports * 4;
-  const arruelas = numSupports * 4;
-
+export function calculateDuctSupports(sections = [], coefs = resolveCoefficients()) {
+  const geo = computeSectionGeometry(sections);
+  let supports = 0;
+  let perfiladoM = 0;
+  for (const row of geo.rows) {
+    const n = Math.ceil(Number(row.lengthM) / coefs.supportSpacingM.value);
+    supports += n;
+    perfiladoM += n * (row.widthCm / 100 + coefs.perfiladoExtraWidthM.value);
+  }
+  const rods = supports * coefs.rodsPerSupport.value;
   return {
-    numSupports,
-    totalPerfiladoMeters,
-    numTirantes,
-    tirantesMeters,
-    chumbadores,
-    porcas,
-    arruelas,
-    perfiladoPerSupport: Number(perfiladoPerSupport.toFixed(2))
+    numSupports: supports,
+    perfiladoMeters: r2(perfiladoM),
+    rods,
+    rodBars: Math.ceil(rods * coefs.rodBarsPerRod.value),
+    anchors: supports * coefs.anchorsPerSupport.value,
+    nuts: supports * coefs.nutsPerSupport.value,
+    washers: supports * coefs.washersPerSupport.value
+  };
+}
+
+/**
+ * Passo 13: linhas frigorígenas por circuito. Perda de 25% aplicada UMA vez sobre o percurso.
+ * @param {Array<{circuit:number, runM:number, status:string}>} circuits
+ */
+export function calculateRefrigerantTakeoff(circuits = [], coefs = resolveCoefficients()) {
+  const loss = coefs.copperLossFactor.value;
+  const rows = circuits.map(c => {
+    const run = Number(c.runM) || 0;
+    const pipeM = r2(run * loss);
+    return {
+      ...c,
+      runM: r2(run),
+      liquidLineM: pipeM,
+      suctionLineM: pipeM,
+      liquidInsulationM: r2(pipeM * coefs.insulationPerCopperMeter.value),
+      suctionInsulationM: r2(pipeM * coefs.insulationPerCopperMeter.value),
+      liquidClamps: pipeM > 0 ? Math.ceil(pipeM / coefs.armafixSpacingM.value) : 0,
+      suctionClamps: pipeM > 0 ? Math.ceil(pipeM / coefs.armafixSpacingM.value) : 0,
+      shieldCableM: r2(run * coefs.shieldCablePerRouteM.value)
+    };
+  });
+  const sum = k => r2(rows.reduce((a, r) => a + (r[k] || 0), 0));
+  return {
+    rows,
+    totalRunM: sum('runM'),
+    liquidLineM: sum('liquidLineM'),
+    suctionLineM: sum('suctionLineM'),
+    liquidInsulationM: sum('liquidInsulationM'),
+    suctionInsulationM: sum('suctionInsulationM'),
+    liquidClamps: rows.reduce((a, r) => a + r.liquidClamps, 0),
+    suctionClamps: rows.reduce((a, r) => a + r.suctionClamps, 0),
+    shieldCableM: sum('shieldCableM')
   };
 }
 

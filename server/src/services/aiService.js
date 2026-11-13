@@ -3,7 +3,6 @@ import { LearningService } from './learningService.js';
 import { SABRAR_BUDGET_AGENT_SYSTEM_PROMPT, buildAgentContextPrompt } from '../prompts/budgetAgentPrompt.js';
 import { convertMaterialUnits, normalizeUnit, areUnitsCompatible } from '../utils/unitConversion.js';
 import {
-  findSabrarEconomicPrice,
   SABRAR_MATERIALS_2026,
   checkTechnicalCompatibility,
   extractTechnicalAttributes,
@@ -22,11 +21,17 @@ import {
   calculateMPUSupplies,
   calculateDuctTDCSupplies,
   calculateDuctSupports,
+  computeSectionGeometry,
   calculateCopperMeters,
   calculateHydraulicMeters,
   extractDuctSegmentsFromText,
   DUCT_GAUGE_FACTORS
 } from '../utils/hvacCalculations.js';
+import { extractPdfVectorData } from '../utils/pdfVectorGeometry.js';
+import { measureProjectDucts, measureRefrigerantCircuits, hashBuffer } from './ductGeometryMeasurement.js';
+import { resolveDuctSections, buildDuctItems, buildRefrigerantItems, buildServices, STATUS as TAKEOFF_STATUS } from './hvacTakeoff.js';
+import { resolveCoefficients } from '../utils/hvacCalculations.js';
+import { reconcileExtractions } from './extractionReconciler.js';
 
 /**
  * SERVIÇO DE ANÁLISE E ORÇAMENTO DA IA — SISTEMA SABRAR
@@ -57,6 +62,7 @@ export class AIAnalysisService {
     const documentsAnalyzed = [];
     const structuredDocuments = [];
     const pdfAttachments = [];
+    const vectorDocuments = [];
 
     for (const f of files) {
       const fileName = f.original_name || `arquivo_${f.id}.pdf`;
@@ -65,6 +71,15 @@ export class AIAnalysisService {
       let structuredDoc = null;
       if (f.file_data && Buffer.isBuffer(f.file_data) && f.file_data.length > 0 && fileName.toLowerCase().endsWith('.pdf')) {
         structuredDoc = await extractStructuredPdfData(f.file_data, fileName);
+        if (!options?.skipVectorGeometry) {
+          try {
+            const vec = await extractPdfVectorData(f.file_data, fileName);
+            vec.hash = hashBuffer(f.file_data);
+            vectorDocuments.push(vec);
+          } catch (vecErr) {
+            console.warn('[AIAnalysisService] Falha na leitura vetorial:', fileName, vecErr.message);
+          }
+        }
         if (f.file_data.length <= 4 * 1024 * 1024 && pdfAttachments.length < 2) {
           pdfAttachments.push({
             fileName,
@@ -103,7 +118,8 @@ export class AIAnalysisService {
       documentsAnalyzed,
       documentContent,
       structuredDocuments,
-      pdfAttachments
+      pdfAttachments,
+      vectorDocuments
     };
   }
 
@@ -126,7 +142,8 @@ export class AIAnalysisService {
       returnMeshCalloutsCount: 0,
       circularDuctCallouts: [],
       cadItems: [],
-      machines: []
+      machines: [],
+      documentTables: []
     };
 
     if (!text || !String(text).trim()) return result;
@@ -170,7 +187,8 @@ export class AIAnalysisService {
           plantCallouts += 1;
         }
       }
-      result.returnMeshCalloutsCount = plantCallouts > 0 ? Math.min(plantCallouts, 3) : 1;
+      // Quantidade = chamadas efetivamente encontradas na planta (sem teto nem valor padrão)
+      result.returnMeshCalloutsCount = plantCallouts;
     }
 
     // Detecta chamadas de duto circular / colarinho Ø250
@@ -380,6 +398,9 @@ export class AIAnalysisService {
       const structuredBlocks = [...sectionText.matchAll(/\[TABELA_CAD_ESTRUTURADA[^\]]*\]([\s\S]*?)\[\/TABELA_CAD_ESTRUTURADA\]/gi)];
       if (structuredBlocks.length > 0) {
         result.hasCadTable = true;
+        const docName = (sectionText.match(/^\[Documento:\s*([^\]|]+)/) || [])[1]?.trim() || 'Documento';
+        const docTable = { document: docName, rows: [] };
+        result.documentTables.push(docTable);
         for (const sb of structuredBlocks) {
           const lines = sb[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean);
           for (const line of lines) {
@@ -389,6 +410,7 @@ export class AIAnalysisService {
               const qty = parseInt(m[2], 10);
               const desc = m[3].trim();
               const refBrand = m[4] ? m[4].trim().toUpperCase() : null;
+              docTable.rows.push({ itemNum: String(itemNum).padStart(2, '0'), quantity: qty, description: desc, brand: refBrand });
               registerCadRowItem(itemNum, qty, desc, refBrand);
             }
           }
@@ -438,16 +460,6 @@ export class AIAnalysisService {
           }
         }
 
-        if (tableBlock.includes('0506') && !itemQuantities.has(5)) {
-          itemQuantities.set(5, 1);
-          itemQuantities.set(6, 1);
-        }
-        if (/06\s+01\b/.test(tableBlock) && !itemQuantities.has(6)) {
-          itemQuantities.set(6, 1);
-        }
-        if (/07\s+03\b/.test(tableBlock) && !itemQuantities.has(7)) {
-          itemQuantities.set(7, 3);
-        }
 
         const tableEquipBrand = extractExplicitBrand(tableBlock, /\b(HITACHI|CARRIER|DAIKIN|TRANE|YORK|LG|SAMSUNG|MIDEA|SPRINGER)\b/i);
         const tableDiffBrand = extractExplicitBrand(tableBlock, /\b(TROPICAL|POLAR|TROX|MULTIVAC|SICFLUX)\b/i);
@@ -472,13 +484,15 @@ export class AIAnalysisService {
           registerCadRowItem(4, itemQuantities.get(4), difCadMatch[0], null, tableEquipBrand, tableDiffBrand);
         }
 
-        const damperCadMatches = [...tableBlock.matchAll(/DAMPER\s+PARA\s+CONTROLE\s+DE\s+VAZ[AÃ]O[^\n\rD]*?TAMANHO\s*(\d+\s*[xX×]\s*\d+\s*(?:mm|cm)?)/gi)];
-        damperCadMatches.forEach((dm, idx) => {
-          const itemNum = 5 + idx;
-          if (itemQuantities.has(itemNum)) {
-            registerCadRowItem(itemNum, itemQuantities.get(itemNum), dm[0], null, tableEquipBrand, tableDiffBrand);
+        // Cada linha de damper traz "ITEM QTD" imediatamente antes da descrição (sem numeração presumida)
+        const damperCadMatches = [...tableBlock.matchAll(/\b(\d{2})\s+(\d{1,3})\s+(DAMPER\s+PARA\s+CONTROLE\s+DE\s+VAZ[AÃ]O[^\n\rD]*?TAMANHO\s*\d+\s*[xX×]\s*\d+\s*(?:mm|cm)?)/gi)];
+        for (const dm of damperCadMatches) {
+          const itemNum = parseInt(dm[1], 10);
+          const qty = parseInt(dm[2], 10);
+          if (itemNum > 0 && qty > 0) {
+            registerCadRowItem(itemNum, qty, dm[3], null, tableEquipBrand, tableDiffBrand);
           }
-        });
+        }
       }
     }
 
@@ -1096,7 +1110,8 @@ export class AIAnalysisService {
    * antes de qualquer JSON ou fallback (Codex Regras 4 e 5).
    */
   static async findOrCreateMaterial(itemDef, systemContext = '', options = {}) {
-    return await searchLiveMaterialBase(db, itemDef, {
+    // options.materialDb permite consultar uma base isolada (testes / simulação) sem tocar a produção
+    return await searchLiveMaterialBase(options.materialDb || db, itemDef, {
       ...options,
       systemContext
     });
@@ -1121,8 +1136,10 @@ export class AIAnalysisService {
       documentsAnalyzed,
       documentContent,
       structuredDocuments,
-      pdfAttachments
+      pdfAttachments,
+      vectorDocuments
     } = await this.readProjectDocuments(projectId, customText, options);
+    const coefficients = resolveCoefficients(options?.companyCoefficients);
 
     // Validação estrita: se não há documentos nem anotações técnicas, não gera orçamento fictício
     if ((!files || files.length === 0) && (!documentContent || !documentContent.trim())) {
@@ -1283,79 +1300,60 @@ export class AIAnalysisService {
     const thermalLoad = this.calculateThermalLoad(estimatedArea, project.project_type, normalizedDoc, eqData.totalBtu);
 
     // =========================================================================
-    // GEOMETRIA UNIFICADA E VALIDADA (CONSUMIDA POR MATERIAIS E POR SERVIÇOS)
+    // GEOMETRIA UNIFICADA (BASE ÚNICA PARA MATERIAIS, ACESSÓRIOS E MÃO DE OBRA)
+    // Prioridade: revisão manual > geometria vetorial com escala validada > cota textual > IA (PREVISAO)
     // =========================================================================
-    const rawDuctSegments = [...(eqData.explicitDuctSegments || [])];
-    if (llmData && Array.isArray(llmData.ductSegments) && llmData.ductSegments.length > 0) {
-      // Incorpora trechos de duto medidos pelo LLM somente se não houver conflito ou se possuírem comprimento explícito
-      for (const lSeg of llmData.ductSegments) {
-        if (lSeg.lengthM && lSeg.lengthM > 0) {
-          const perim = calculateDuctPerimeter(lSeg.widthCm, lSeg.heightCm);
-          const area = calculateDuctArea(perim, lSeg.lengthM) * (lSeg.qty || 1);
-          const gauge = determineDuctGauge(lSeg.widthCm, lSeg.heightCm, false, false);
-          rawDuctSegments.push({
-            ...lSeg,
-            perimeterM: perim,
-            areaM2: area,
-            gauge,
-            weightKg: calculateDuctKg(area, gauge),
-            insulationM2: calculateDuctInsulation(area, true),
-            measurementStatus: 'MEDIDO'
-          });
+    const ductMeasurement = options?.precomputedDuctMeasurement || measureProjectDucts(vectorDocuments || []);
+    const sectionBase = resolveDuctSections({
+      reviewedSections: options?.reviewedDuctSections,
+      measuredSections: ductMeasurement.sections,
+      textSegments: eqData.explicitDuctSegments || [],
+      llmSegments: llmData?.ductSegments || []
+    });
+    const rawDuctSegments = sectionBase.sections;
+
+    const modelsOf = (re) => eqData.machines.filter(m => re.test(m.type || '')).map(m => m.model).filter(Boolean);
+    const refrigerantGeometry = measureRefrigerantCircuits(vectorDocuments || [], {
+      evaporatorModels: modelsOf(/EVAPORADORA|SPLIT/i),
+      condenserModels: modelsOf(/CONDENSADORA/i)
+    });
+
+    // Diâmetros documentados: somente quando o texto do projeto contém os diâmetros citados
+    const llmSpecLine = (llmData?.refrigerantLines || []).find(r => r.liquidDiameter && r.suctionDiameter);
+    const documentedCopperSpec = llmSpecLine &&
+      documentContent.includes(String(llmSpecLine.liquidDiameter).replace(/"/g, '')) &&
+      documentContent.includes(String(llmSpecLine.suctionDiameter).replace(/"/g, ''))
+      ? {
+          liquid: llmSpecLine.liquidDiameter,
+          suction: llmSpecLine.suctionDiameter,
+          liquidWall: llmSpecLine.wallThickness || '1/32"',
+          suctionWall: llmSpecLine.wallThickness || '1/16"',
+          liquidTemper: 'FLEXÍVEL',
+          suctionTemper: 'RÍGIDO'
         }
-      }
-    }
+      : null;
 
-    const measuredDuctSegments = rawDuctSegments.filter(s => s.measurementStatus === 'MEDIDO' && s.areaM2 > 0);
-    const unmeasuredDuctSegments = rawDuctSegments.filter(s => s.measurementStatus === 'PENDENTE_MEDICAO' || !s.areaM2);
-
-    const explicitMeasuredDuctArea = options?.measuredDuctAreaSqm != null && Number(options.measuredDuctAreaSqm) > 0
-      ? Number(options.measuredDuctAreaSqm)
-      : (measuredDuctSegments.length > 0
-          ? measuredDuctSegments.reduce((sum, s) => sum + (s.areaM2 || 0), 0)
-          : (cadData.explicitMpuAreaSqm > 0 ? Number(cadData.explicitMpuAreaSqm) : 0));
-
-    const explicitMeasuredDuctMeters = options?.measuredDuctMeters != null && Number(options.measuredDuctMeters) > 0
-      ? Number(options.measuredDuctMeters)
-      : (measuredDuctSegments.length > 0
-          ? measuredDuctSegments.reduce((sum, s) => sum + (s.lengthM || 0), 0)
-          : (explicitMeasuredDuctArea > 0 ? Number((explicitMeasuredDuctArea / 2.2).toFixed(2)) : 0));
-
-    const explicitMeasuredDuctPerimeter = measuredDuctSegments.length > 0
-      ? Number(measuredDuctSegments.reduce((sum, s) => sum + (s.areaM2 || 0), 0).toFixed(2))
-      : (explicitMeasuredDuctArea > 0
-          ? Number(explicitMeasuredDuctArea.toFixed(2))
-          : 0);
-
-    // Percurso frigorígeno: NUNCA usa 3.0m fixo quando não estiver documentado ou medido
-    const explicitDistanceMatch = documentContent.match(/(?:comprimento\s+da\s+linha\s+frigor[ií]gena|percurso\s+frigor[ií]geno|dist[aâ]ncia\s+entre\s+evaporadora\s+e\s+condensadora)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*m\b/i);
-    const llmMeasuredRefLine = llmData?.refrigerantLines?.find(r => r.measurementStatus === 'MEDIDO' && r.lengthM > 0);
-    const measuredRefrigerantRunMeters = options?.measuredRefrigerantRunMeters != null && Number(options.measuredRefrigerantRunMeters) > 0
-      ? Number(options.measuredRefrigerantRunMeters)
-      : (explicitDistanceMatch
-          ? Number(explicitDistanceMatch[1].replace(',', '.'))
-          : (llmMeasuredRefLine ? Number(llmMeasuredRefLine.lengthM) : null));
-
+    const ductGeo = computeSectionGeometry(rawDuctSegments);
     const validatedGeometry = {
+      ductSource: sectionBase.source,
+      ductSections: rawDuctSegments,
+      ductViews: ductMeasurement.views,
+      ductExcluded: ductMeasurement.excluded,
+      ductMeasurementSummary: ductMeasurement.summary,
       totalDuctOccurrences: rawDuctSegments.length,
-      measuredDuctCount: measuredDuctSegments.length,
-      unmeasuredDuctCount: unmeasuredDuctSegments.length,
-      ductNetAreaSqm: explicitMeasuredDuctArea,
-      ductLinearMeters: explicitMeasuredDuctMeters,
-      ductPerimeterM: explicitMeasuredDuctPerimeter,
-      ductMeasurementStatus: explicitMeasuredDuctArea > 0
-        ? 'MEDIDO'
-        : (rawDuctSegments.length > 0 || cadData.isMPU ? 'PENDENTE_MEDICAO' : 'NAO_APLICAVEL'),
+      ductNetAreaSqm: ductGeo.totalNetAreaM2,
+      ductLinearMeters: ductGeo.totalLinearM,
+      ductMeasurementStatus: rawDuctSegments.length > 0
+        ? (sectionBase.source === 'DECLARACAO_IA' ? 'PREVISAO' : 'MEDIDO')
+        : ((eqData.explicitDuctSegments || []).length > 0 || cadData.isMPU ? 'PENDENTE_MEDICAO' : 'NAO_APLICAVEL'),
+      documentedMpuAreaSqm: cadData.explicitMpuAreaSqm || null,
       hasExternal30mmDuctNote: Boolean(cadData.hasExternalDeck || llmData?.scopeFlags?.hasExternal30mmDuctNote),
       externalDuctAreaSqm: options?.measuredExternalDuctAreaSqm != null ? Number(options.measuredExternalDuctAreaSqm) : null,
-      externalDuctStatus: (cadData.hasExternalDeck || llmData?.scopeFlags?.hasExternal30mmDuctNote)
-        ? (options?.measuredExternalDuctAreaSqm > 0 ? 'MEDIDO' : 'LOCALIZACAO_TRECHO_EXTERNO_PENDENTE')
-        : 'NAO_APLICAVEL',
-      refrigerantRunMetersPerCircuit: measuredRefrigerantRunMeters,
-      refrigerantMeasurementStatus: measuredRefrigerantRunMeters && measuredRefrigerantRunMeters > 0
-        ? 'MEDIDO'
-        : (cadData.refrigerantType === 'COBRE_EXPANSAO_DIRETA' ? 'PENDENTE_MEDICAO' : 'NAO_APLICAVEL'),
-      packagingMode
+      refrigerantCircuits: refrigerantGeometry.circuits,
+      refrigerantMeasurementStatus: refrigerantGeometry.status,
+      refrigerantNotes: refrigerantGeometry.notes,
+      packagingMode,
+      coefficients
     };
 
     // Estruturas de saída das 2 camadas (Seção 29, 30 e 31)
@@ -1378,60 +1376,20 @@ export class AIAnalysisService {
 
     let requiredItems = [];
 
+    let ductTakeoff = null;
+    let refrigerantTakeoff = null;
+    const interpretationIssues = [];
+
     if (isHVAC) {
-      if (isHeavyKitchenVRVSystem) {
-        requiredItems = [
-          {
-            name: 'Chapa Preta - Exaustão (Dutos Soldados #16 para Gordura)',
-            category: 'Dutos',
-            unit: 'KG',
-            quantity: 1400,
-            defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            keywords: ['chapa preta exaustao', 'chapa 16'],
-            reason: 'Rede de dutos de exaustão de gordura fabricada em chapa de aço preta #16 com solda estanque NBR 14518'
-          },
-          {
-            name: 'Isolamento Fibra Cerâmica - 38 mm - 96 kg/m3 - 3,05m² (Kaowool)',
-            category: 'Isolamento',
-            unit: 'm²',
-            quantity: 160,
-            defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            keywords: ['fibra ceramica', 'kaowool', 'isolamento 38mm'],
-            reason: 'Isolamento corta-fogo em manta de fibra cerâmica Kaowool 38mm (128 kg/m³) com proteção em filme de alumínio'
-          },
-          {
-            name: 'Chapa Galvanizada - Matéria Prima e Fabricação',
-            category: 'Dutos',
-            unit: 'kg',
-            quantity: 800,
-            defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            keywords: ['chapa galvanizada', 'materia prima'],
-            reason: 'Dutos de insuflamento e renovação de ar exterior em chapa de aço galvanizada'
-          },
-          {
-            name: 'Damper Corta-Fogo Motorizado com Chave Fim de Curso e Solenoide',
-            category: 'Ventilação e Exaustão',
-            unit: 'un',
-            quantity: eqData.numDampers || 3,
-            defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            keywords: ['damper corta fogo', 'solenoide'],
-            reason: 'Dampers corta-fogo motorizados com acionamento por solenoide intertravados ao sensor Firestat Honeywell'
-          }
-        ];
-      } else if (hvacMode === 'MODO_A_DIRETO') {
+      if (hvacMode === 'MODO_A_DIRETO' || isHeavyKitchenVRVSystem) {
         // =========================================================================
-        // MODO A — PROJETO EXECUTIVO HVAC (ZERO ESTIMATIVA POR ÁREA QUANDO SEM MEDIÇÃO)
+        // MODO A — PROJETO EXECUTIVO: DOCUMENTADO → MEDIDO → CALCULADO → PREVISÃO → PENDENTE
         // =========================================================================
         requiredItems = [];
         const isMPU = cadData.isMPU || eqData.isMPU;
 
-        // 1. DIFUSÃO DE AR E ELEMENTOS DOCUMENTADOS EM TABELA CAD OU TEXTO
-        const cadDiffusionItems = (cadData.cadItems || []).filter(item => item.category === 'Difusão de Ar');
-        for (const cItem of cadDiffusionItems) {
+        // 1. DIFUSÃO E ELEMENTOS DOCUMENTADOS NA LISTA DE MATERIAL (uma ocorrência física, mesmo repetida em pranchas)
+        for (const cItem of (cadData.cadItems || []).filter(item => item.category === 'Difusão de Ar')) {
           requiredItems.push({
             itemNum: cItem.itemNum || null,
             name: cItem.name,
@@ -1441,572 +1399,87 @@ export class AIAnalysisService {
             dimensions: cItem.dimensions || null,
             brand: cItem.brand || null,
             defaultPrice: null,
-            measurementStatus: cItem.measurementStatus || 'DOCUMENTADO',
+            measurementStatus: 'DOCUMENTADO',
+            origin: cItem.reason,
             sourceFiles: documentsAnalyzed,
             keywords: cItem.keywords,
             reason: cItem.reason,
-            evidence: cItem.reason,
-            classification: 'PRECO_PENDENTE',
-            price_status: 'PENDENTE_COTACAO'
+            evidence: cItem.reason
           });
         }
 
-        // Chamadas de Tela Metálica para Retorno de Ar na planta (ex: 3 unidades para 3 Splitões)
+        // Chamadas "DUTO DOTADO DE TELA METÁLICA PARA RETORNO" na planta (contagem real de chamadas)
         if (cadData.hasReturnMeshNote) {
+          const n = cadData.returnMeshCalloutsCount || 0;
           requiredItems.push({
-            name: 'TELA MOEDA EM INOX PARA DUTO DE RETORNO',
+            name: 'TELA METÁLICA PARA DUTO DE RETORNO DE AR',
             category: 'Difusão de Ar',
-            unit: 'unid',
-            quantity: cadData.returnMeshCalloutsCount || 3,
+            unit: 'un',
+            quantity: n > 0 ? n : null,
             defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            sourceFiles: documentsAnalyzed,
-            keywords: ['tela moeda', 'tela metalica retorno'],
-            reason: `Planta Baixa & Legenda CAD: ${cadData.returnMeshCalloutsCount || 3}x Duto dotado de tela metálica para retorno de ar`
+            measurementStatus: n > 0 ? 'DOCUMENTADO' : 'PENDENTE_MEDICAO',
+            origin: 'Chamadas na planta: "DUTO DOTADO DE TELA METÁLICA PARA RETORNO DE AR"',
+            premises: ['Dimensão da tela = seção do duto de retorno indicado; confirmar especificação da malha.'],
+            reason: n > 0 ? `${n} chamada(s) na planta` : 'Nota de legenda sem chamada localizada na planta'
           });
         }
 
-        // Chamadas de Duto Flexível / Circular Ø250 na planta
-        if (cadData.circularDuctCallouts && cadData.circularDuctCallouts.includes(250)) {
+        // Conexões circulares Ø (colarinhos/flexíveis): quantidade de conexões documentada; comprimento de flexível pendente
+        const phiCount = (cadData.circularDuctCallouts || []).length;
+        if (phiCount > 0) {
+          const diam = [...new Set(cadData.circularDuctCallouts)].join('/');
           requiredItems.push({
-            name: 'DUTO FLEXIVEL ISOLADO - SONODEC - 10"-250MM - CX 10M',
-            category: 'ISOLAMENTO',
-            unit: 'caixa c/ 10 metros',
-            quantity: 1,
+            name: `DUTO FLEXIVEL ISOLADO Ø${diam}MM`,
+            category: 'Dutos',
+            unit: 'm',
+            quantity: null,
             defaultPrice: null,
-            measurementStatus: 'DOCUMENTADO',
-            sourceFiles: documentsAnalyzed,
-            keywords: ['sonodec 250', 'duto flexivel isolado 250mm'],
-            reason: `Planta Baixa CAD: ${cadData.circularDuctCallouts.filter(d => d === 250).length}x chamadas Ø250 para conexões flexíveis isoladas (1 caixa c/ 10m)`
+            measurementStatus: 'PENDENTE_MEDICAO',
+            origin: `${phiCount} chamada(s) Ø${diam} na planta`,
+            reason: `${phiCount} conexão(ões) circulares Ø${diam} localizadas; comprimento do flexível não cotado`
           });
+          unmeasuredItems.push({ item: `Duto flexível Ø${diam}`, reason: 'PENDENTE_MEDICAO', details: `${phiCount} conexões localizadas; informar comprimento por conexão na revisão.` });
         }
 
-        // 2. REDE DE DUTOS (CONSOME ESTRITAMENTE validatedGeometry — NUNCA SUBSTITUI POR estimatedArea * 0.35)
-        if (isMPU || rawDuctSegments.length > 0) {
-          if (isMPU) {
-            const mpuPanels = calculateMPUDuctPanels(validatedGeometry.ductNetAreaSqm, {
-              hasExternalDeckNote: validatedGeometry.hasExternal30mmDuctNote,
-              externalAreaSqm: validatedGeometry.externalDuctAreaSqm,
-              packagingMode: validatedGeometry.packagingMode
-            });
-            const mpuSupplies = calculateMPUSupplies(
-              validatedGeometry.ductNetAreaSqm,
-              validatedGeometry.ductPerimeterM,
-              validatedGeometry.ductLinearMeters
-            );
-            const isDuctMeasured = validatedGeometry.ductMeasurementStatus === 'MEDIDO';
-            const ductStatus = isDuctMeasured ? 'MEDIDO' : 'PENDENTE_MEDICAO';
-
-            // Registra cada ocorrência de seção sem comprimento na lista de pendências de medição
-            if (!isDuctMeasured && unmeasuredDuctSegments.length > 0) {
-              unmeasuredItems.push({
-                item: `Rede de Dutos em Painel MPU (${unmeasuredDuctSegments.length} seções identificadas sem comprimento linear na prancha)`,
-                reason: 'PENDENTE_MEDICAO',
-                occurrences_count: unmeasuredDuctSegments.length,
-                sections_sample: unmeasuredDuctSegments.slice(0, 12).map(s => `${s.evidence} (${s.type})`),
-                details: `Foram identificadas ${unmeasuredDuctSegments.length} chamadas de seção de duto (ex: I-60x45, R-100x70) sem cota de comprimento linear em metros. Em Modo Executivo (Modo A), a ausência de medição não é substituída por estimativa de área da obra.`
-              });
-            }
-
-            // Pendência específica para trecho externo 30mm quando citado em nota/legenda sem delimitação
-            if (mpuPanels.pendingExternalLocation) {
-              unmeasuredItems.push({
-                item: 'PAINEL MPU 30MM x 2,0 x 1,2M (2,4m²) (Trecho Externo / Patamar Técnico)',
-                reason: 'LOCALIZACAO_TRECHO_EXTERNO_PENDENTE',
-                details: 'A legenda especifica dutos em MPU 30mm para área externa, porém as pranchas não delimitam o perímetro/comprimento do trecho externo separadamente do trecho interno.'
-              });
-            }
-
-            requiredItems.push({
-              name: 'PAINEL MPU 20MM x 2,0 x 1,2M (2,4m²)',
-              category: 'ISOLAMENTO',
-              unit: 'PÇ',
-              quantity: isDuctMeasured ? mpuPanels.internalCommercialPieces : 0,
-              technicalCalculation: isDuctMeasured ? {
-                netAreaSqm: mpuPanels.netAreaSqm,
-                lossFactor: mpuPanels.lossFactor,
-                lossAreaSqm: mpuPanels.lossAreaSqm,
-                totalAreaWithLoss: mpuPanels.totalAreaWithLoss,
-                requiredPieces: mpuPanels.internalRequiredPieces,
-                commercialBoxesOf10: mpuPanels.internalBoxesOf10,
-                commercialPieces: mpuPanels.internalCommercialPieces,
-                packagingMode: mpuPanels.packagingMode
-              } : null,
-              defaultPrice: null,
-              measurementStatus: ductStatus,
-              keywords: ['painel mpu 20mm', 'mpu 20mm', 'mpu'],
-              reason: isDuctMeasured
-                ? `Geometria validada de dutos MPU 20mm: área líquida ${mpuPanels.netAreaSqm} m² × fator ${mpuPanels.lossFactor} (perda ${mpuPanels.lossAreaSqm} m²) = ${mpuPanels.totalAreaWithLoss} m² -> ${mpuPanels.internalRequiredPieces} peças necessárias -> compra comercial ${mpuPanels.internalCommercialPieces} painéis (${mpuPanels.internalBoxesOf10} caixas fechadas c/ 10 un)`
-                : `PENDENTE DE MEDIÇÃO: ${unmeasuredDuctSegments.length} seções de dutos identificadas nas pranchas sem cota de comprimento linear.`
-            });
-
-            if (validatedGeometry.hasExternal30mmDuctNote) {
-              const hasExtMeas = mpuPanels.externalCommercialPieces > 0;
-              requiredItems.push({
-                name: 'PAINEL MPU 30MM x 2,0 x 1,2M (2,4m²)',
-                category: 'ISOLAMENTO',
-                unit: 'PÇ',
-                quantity: hasExtMeas ? mpuPanels.externalCommercialPieces : 0,
-                defaultPrice: null,
-                measurementStatus: hasExtMeas ? 'MEDIDO' : 'LOCALIZACAO_TRECHO_EXTERNO_PENDENTE',
-                keywords: ['painel mpu 30mm', 'mpu 30mm', 'mpu'],
-                reason: hasExtMeas
-                  ? `Trecho externo medido: ${mpuPanels.externalArea} m² c/ perda = ${mpuPanels.externalCommercialPieces} painéis`
-                  : 'PENDENTE DE LOCALIZAÇÃO/MEDIÇÃO DE TRECHO EXTERNO: Legenda cita MPU 30mm para área externa sem delimitação na prancha.'
-              });
-            }
-
-            // Acessórios MPU e Suportação (acompanham estritamente o status de medição dos dutos)
-            requiredItems.push(
-              {
-                name: 'PERFIL DE CONEXÃO ALUMINIO PARA PAINEL DE MPU 20MM BARRA C/ 3MTS',
-                category: 'MPU E ACESSÓRIOS',
-                unit: 'barra c/ 3 metros',
-                quantity: isDuctMeasured ? mpuSupplies.profileBars3m : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['perfil conexao aluminio mpu', 'perfil mpu'],
-                reason: isDuctMeasured
-                  ? `Acessórios MPU: ${mpuSupplies.totalProfileMeters}m lineares = ${mpuSupplies.profileBars3m} barras de 3m`
-                  : 'PENDENTE DE MEDIÇÃO da rede de dutos MPU.'
-              },
-              {
-                name: 'COLA ADESIVA PARA PERFIL DE MPU',
-                category: 'MPU E ACESSÓRIOS',
-                unit: 'und',
-                quantity: isDuctMeasured ? mpuSupplies.colaLatas : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['cola adesiva mpu', 'adesivo mpu'],
-                reason: isDuctMeasured
-                  ? `Acessórios MPU: Cola adesiva para montagem dos perfis MPU = ${mpuSupplies.colaLatas} latas`
-                  : 'PENDENTE DE MEDIÇÃO da rede de dutos MPU.'
-              },
-              {
-                name: 'FITA ALUMINIO 50MMx50M MPU',
-                category: 'MPU E ACESSÓRIOS',
-                unit: 'und',
-                quantity: isDuctMeasured ? mpuSupplies.fitaAluminioRolos : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['fita aluminio mpu', 'fita aluminio 50mmx50m'],
-                reason: isDuctMeasured
-                  ? `Acessórios MPU: Fita de alumínio adesiva 50mmx50m = ${mpuSupplies.fitaAluminioRolos} rolos`
-                  : 'PENDENTE DE MEDIÇÃO da rede de dutos MPU.'
-              },
-              {
-                name: 'SELANTE PARA DUTOS MPU',
-                category: 'MPU E ACESSÓRIOS',
-                unit: 'und',
-                quantity: isDuctMeasured ? mpuSupplies.selanteTubos : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['selante dutos mpu', 'silicone mpu'],
-                reason: isDuctMeasured
-                  ? `Acessórios MPU: Selante para calafetação dos dutos MPU = ${mpuSupplies.selanteTubos} tubos`
-                  : 'PENDENTE DE MEDIÇÃO da rede de dutos MPU.'
-              },
-              {
-                name: 'CANTO DE REFORÇO PARA MPU - 20MM',
-                category: 'MPU E ACESSÓRIOS',
-                unit: 'und',
-                quantity: isDuctMeasured ? mpuSupplies.cantosReforco : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['canto reforco mpu', 'cantoneira mpu'],
-                reason: isDuctMeasured
-                  ? `Acessórios MPU: Cantos de reforço para dutos MPU = ${mpuSupplies.cantosReforco} un`
-                  : 'PENDENTE DE MEDIÇÃO da rede de dutos MPU.'
-              }
-            );
-
-            const avgWidth = rawDuctSegments.length > 0
-              ? (rawDuctSegments.reduce((s, d) => s + (d.widthCm || 60), 0) / rawDuctSegments.length)
-              : 60;
-            const supports = isDuctMeasured
-              ? calculateDuctSupports(validatedGeometry.ductLinearMeters, avgWidth)
-              : { numSupports: 0, totalPerfiladoMeters: 0, chumbadores: 0, porcas: 0 };
-
-            requiredItems.push(
-              {
-                name: 'Perfilado Galvanizado 38x38 Chapa #14 para Suportação de Dutos',
-                category: 'Fixação e Suportação',
-                unit: 'm',
-                quantity: isDuctMeasured ? Math.ceil(supports.totalPerfiladoMeters) : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['perfilado galvanizado', 'perfilado 38x38'],
-                reason: isDuctMeasured
-                  ? `Passo 11.5: Suportes a cada 1,50m = ${Math.ceil(supports.totalPerfiladoMeters)} m`
-                  : 'PENDENTE DE MEDIÇÃO linear da rede de dutos.'
-              },
-              {
-                name: 'Tirante Roscado Galvanizado 1/4 pol (Barra de 3 metros)',
-                category: 'Fixação e Suportação',
-                unit: 'und',
-                quantity: isDuctMeasured ? Math.ceil(supports.numSupports) : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['tirante 1/4', 'barra roscada 1/4'],
-                reason: isDuctMeasured
-                  ? `Passo 11.5: Tirantes de sustentação aérea a cada 1,50m = ${Math.ceil(supports.numSupports)} barras`
-                  : 'PENDENTE DE MEDIÇÃO linear da rede de dutos.'
-              },
-              {
-                name: 'Chumbador CBA 1/4 pol com Cone e Jaqueta para Ancoragem em Laje',
-                category: 'Fixação e Suportação',
-                unit: 'und',
-                quantity: isDuctMeasured ? supports.chumbadores : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['chumbador 1/4', 'cone e jaqueta'],
-                reason: isDuctMeasured
-                  ? `Passo 11.5: Ancoragem mecânica em laje (2 por suporte) = ${supports.chumbadores} un`
-                  : 'PENDENTE DE MEDIÇÃO linear da rede de dutos.'
-              },
-              {
-                name: 'Conjunto Porca Sextavada e Arruela Lisa 1/4 pol',
-                category: 'Fixação e Suportação',
-                unit: 'cj',
-                quantity: isDuctMeasured ? supports.porcas : 0,
-                defaultPrice: null,
-                measurementStatus: ductStatus,
-                keywords: ['porca 1/4', 'arruela 1/4'],
-                reason: isDuctMeasured
-                  ? `Passo 11.5: Porcas e arruelas 1/4 pol = ${supports.porcas} cj`
-                  : 'PENDENTE DE MEDIÇÃO linear da rede de dutos.'
-              }
-            );
-          } else {
-            // Dutos em Chapa Galvanizada TDC (somente para trechos medidos; se não medidos, registra pendência)
-            const isDuctMeasured = measuredDuctSegments.length > 0;
-            if (!isDuctMeasured) {
-              unmeasuredItems.push({
-                item: `Rede de Dutos de Chapa Galvanizada TDC (${unmeasuredDuctSegments.length} seções sem comprimento linear)`,
-                reason: 'PENDENTE_MEDICAO',
-                occurrences_count: unmeasuredDuctSegments.length,
-                details: 'Seções de duto identificadas sem cota de comprimento linear em metros.'
-              });
-              requiredItems.push({
-                name: 'Duto de Chapa Galvanizada TDC',
-                category: 'Dutos',
-                unit: 'KG',
-                quantity: 0,
-                defaultPrice: null,
-                measurementStatus: 'PENDENTE_MEDICAO',
-                keywords: ['chapa galvanizada', 'duto tdc'],
-                reason: `PENDENTE DE MEDIÇÃO: ${unmeasuredDuctSegments.length} seções de duto sem comprimento linear.`
-              });
-            } else {
-              const gaugeGroups = new Map();
-              for (const seg of measuredDuctSegments) {
-                const key = `${seg.isBlackSteel ? 'CHAPA_PRETA' : 'GALVANIZADO'}_${seg.gauge}`;
-                if (!gaugeGroups.has(key)) {
-                  gaugeGroups.set(key, { gauge: seg.gauge, isBlackSteel: seg.isBlackSteel, totalMeters: 0, totalAreaSqm: 0, totalKg: 0, count: 0 });
-                }
-                const g = gaugeGroups.get(key);
-                g.totalMeters += seg.lengthM;
-                g.totalAreaSqm += seg.areaM2;
-                g.totalKg += seg.weightKg;
-                g.count++;
-              }
-              for (const [, g] of gaugeGroups.entries()) {
-                const cleanKg = Math.round(g.totalKg);
-                requiredItems.push({
-                  name: g.isBlackSteel
-                    ? 'Dutos Soldados de Chapa de Aço Preta #16 para Exaustão de Gordura'
-                    : `Duto de Chapa Galvanizada TDC Bitola ${g.gauge}`,
-                  category: 'Dutos',
-                  unit: 'KG',
-                  quantity: cleanKg,
-                  defaultPrice: null,
-                  measurementStatus: 'MEDIDO',
-                  keywords: ['chapa galvanizada', 'duto tdc', g.gauge.toLowerCase()],
-                  reason: `Passo 3 a 8: ${g.count} trechos medidos (${g.totalMeters.toFixed(1)}m lineares, ${g.totalAreaSqm.toFixed(2)} m² = ${cleanKg} KG)`
-                });
-              }
-            }
-          }
+        // 2. DUTOS, ACESSÓRIOS E SUPORTAÇÃO — mesma base de trechos
+        if (isMPU || rawDuctSegments.length > 0 || (eqData.explicitDuctSegments || []).length > 0) {
+          ductTakeoff = buildDuctItems({
+            sections: rawDuctSegments,
+            isMPU,
+            isBlackSteel: Boolean(cadData.isBlackSteel && !isMPU),
+            hasExternalNote: validatedGeometry.hasExternal30mmDuctNote,
+            externalAreaSqm: validatedGeometry.externalDuctAreaSqm,
+            coefficients,
+            packagingMode
+          });
+          requiredItems.push(...ductTakeoff.items);
+          unmeasuredItems.push(...ductTakeoff.pending);
         }
 
-        // 3. TUBULAÇÃO FRIGORÍGENA (SOMENTE SE DOCUMENTADA OU COM MÁQUINAS E NOTA DE TUBULAÇÃO)
+        // 3. REDE FRIGORÍGENA — por circuito
         const hasRefrigerantScope = cadData.refrigerantType === 'COBRE_EXPANSAO_DIRETA' ||
-          (eqData.machines.length > 0 && /refrigerante|cobre|condensadora/i.test(documentContent));
-
+          (eqData.machines.some(m => /CONDENSADORA/i.test(m.type)) && /refrigerante|cobre/i.test(documentContent));
         if (hasRefrigerantScope) {
-          const evapMachines = eqData.machines.filter(m => !m.type.includes('CONDENSADORA'));
-          const condMachines = eqData.machines.filter(m => m.type.includes('CONDENSADORA'));
-          const numSystems = (evapMachines.reduce((s, m) => s + (m.qty || 1), 0)) ||
-            (condMachines.reduce((s, m) => s + (m.qty || 1), 0)) || 1;
-          const maxUnitTr = evapMachines.length > 0
-            ? Math.max(...evapMachines.map(m => m.tr || (m.btu ? m.btu / 12000 : 10)))
-            : 10;
-
-          // Bitolas técnicas conforme capacidade real da máquina (ex: 20 TR usa 1.1/8" e=1/16" e 5/8" e=1/16" rígido)
-          let suctionSpec = '1.1/8" – 28,57mm – e=1/16" tubulação de cobre RÍGIDO';
-          let liquidSpec = '5/8" – 15,88mm – e=1/16" tubulação de cobre RÍGIDO';
-          let armaflexSuction = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - M028 (para linha de sucção 1.1/8")';
-          let armaflexLiquid = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - H015 (para linha de líquido 5/8")';
-
-          if (maxUnitTr < 3) {
-            suctionSpec = '5/8" – 15,88mm – e=1/32" tubulação de cobre FLEXÍVEL';
-            liquidSpec = '3/8" – 9,53mm – e=1/32" tubulação de cobre FLEXÍVEL';
-            armaflexSuction = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - M015';
-            armaflexLiquid = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - H010';
-          } else if (maxUnitTr <= 12) {
-            suctionSpec = '7/8" – 22,22mm – e=1/16" tubulação de cobre RÍGIDO';
-            liquidSpec = '1/2" – 12,70mm – e=1/32" tubulação de cobre FLEXÍVEL';
-            armaflexSuction = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - M022';
-            armaflexLiquid = 'ESPUMA ELASTOMÉRICA DO TIPO ARMAFLEX - H012';
-          }
-
-          const isRefMeasured = validatedGeometry.refrigerantMeasurementStatus === 'MEDIDO' &&
-            validatedGeometry.refrigerantRunMetersPerCircuit > 0;
-          const refStatus = isRefMeasured ? 'MEDIDO' : 'PENDENTE_MEDICAO';
-          const runMeters = isRefMeasured ? validatedGeometry.refrigerantRunMetersPerCircuit : 0;
-          const totalLinearPerLine = isRefMeasured ? Number((numSystems * runMeters * 1.25).toFixed(2)) : 0;
-
-          if (!isRefMeasured) {
-            unmeasuredItems.push({
-              item: `Rede Frigorígena em Cobre (${suctionSpec} e ${liquidSpec}) + Isolamento Armaflex + Cabo de Comando`,
-              reason: 'PENDENTE_MEDICAO',
-              details: 'A prancha/legenda indica tubulação de gás refrigerante com isolamento térmico, porém não informa o comprimento linear (m) dos caminhamentos frigorígenos.'
-            });
-          }
-
-          requiredItems.push(
-            {
-              name: suctionSpec,
-              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: totalLinearPerLine,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['tubo cobre 1.1/8', 'cobre 1.1/8'],
-              reason: isRefMeasured
-                ? `Passo 13: ${numSystems} circuito(s) × ${runMeters}m com 25% de perda da OP = ${totalLinearPerLine}m de linha de sucção`
-                : 'PENDENTE DE MEDIÇÃO: Comprimento linear da linha de sucção não cotado na prancha.'
-            },
-            {
-              name: liquidSpec,
-              category: 'Linha frigorígena',
-              unit: 'm',
-              quantity: totalLinearPerLine,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['tubo cobre 5/8', 'cobre 5/8'],
-              reason: isRefMeasured
-                ? `Passo 13: ${numSystems} circuito(s) × ${runMeters}m com 25% de perda da OP = ${totalLinearPerLine}m de linha de líquido`
-                : 'PENDENTE DE MEDIÇÃO: Comprimento linear da linha de líquido não cotado na prancha.'
-            },
-            {
-              name: armaflexSuction,
-              category: 'Isolamento',
-              unit: 'm',
-              quantity: totalLinearPerLine,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['armaflex m028', 'espuma elastomerica 28mm'],
-              reason: isRefMeasured
-                ? `Passo 13.3: Isolamento elastomérico Armaflex 1:1 com a linha de sucção (${totalLinearPerLine}m)`
-                : 'PENDENTE DE MEDIÇÃO: Aguardando metragem linear da linha de sucção.'
-            },
-            {
-              name: armaflexLiquid,
-              category: 'Isolamento',
-              unit: 'm',
-              quantity: totalLinearPerLine,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['armaflex h015', 'espuma elastomerica 15mm'],
-              reason: isRefMeasured
-                ? `Passo 13.3: Isolamento elastomérico Armaflex 1:1 com a linha de líquido (${totalLinearPerLine}m)`
-                : 'PENDENTE DE MEDIÇÃO: Aguardando metragem linear da linha de líquido.'
-            },
-            {
-              name: 'ARMAFIX H/M 025/028',
-              category: 'Linha frigorígena',
-              unit: 'unid',
-              quantity: isRefMeasured ? Math.max(4, Math.ceil(numSystems * (runMeters / 1.5) * 2)) : 0,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['armafix 028', 'armafix'],
-              reason: isRefMeasured
-                ? 'Suportação isolada Armafix para a linha de sucção 1.1/8"'
-                : 'PENDENTE DE MEDIÇÃO da linha frigorígena.'
-            },
-            {
-              name: 'ARMAFIX H/M 012/015',
-              category: 'Linha frigorígena',
-              unit: 'unid',
-              quantity: isRefMeasured ? Math.max(4, Math.ceil(numSystems * (runMeters / 1.5) * 2)) : 0,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['armafix 015', 'armafix'],
-              reason: isRefMeasured
-                ? 'Suportação isolada Armafix para a linha de líquido 5/8"'
-                : 'PENDENTE DE MEDIÇÃO da linha frigorígena.'
-            },
-            {
-              name: 'GÁS REFRIGERANTE R410A - 11,3KG - FREON',
-              category: 'Linha frigorígena',
-              unit: 'pç',
-              quantity: isRefMeasured ? Math.max(1, numSystems) : 0,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['gas refrigerante r410a', 'freon r410a', 'r410a'],
-              reason: isRefMeasured
-                ? 'Carga adicional de fluido refrigerante R410A proporcional à linha medida'
-                : 'PENDENTE DE MEDIÇÃO do comprimento das linhas frigorígenas para cálculo da carga adicional de gás.'
-            },
-            {
-              name: 'CABO SHIELD AFT 300V 3X18 AWG BLINDADO',
-              category: 'Elétrica',
-              unit: 'm',
-              quantity: isRefMeasured ? Number((totalLinearPerLine * 1.5).toFixed(2)) : 0,
-              defaultPrice: null,
-              measurementStatus: refStatus,
-              keywords: ['cabo shield', 'cabo aft', 'cabo blindado'],
-              reason: isRefMeasured
-                ? 'Cabo de sinal e comunicação entre evaporadoras e condensadoras'
-                : 'PENDENTE DE MEDIÇÃO do encaminhamento entre unidades evaporadoras e condensadoras.'
-            }
-          );
+          refrigerantTakeoff = buildRefrigerantItems({
+            circuits: validatedGeometry.refrigerantCircuits,
+            machines: eqData.machines,
+            documentedSpec: documentedCopperSpec,
+            reviewedRuns: options?.reviewedRefrigerantRuns,
+            coefficients
+          });
+          requiredItems.push(...refrigerantTakeoff.items);
+          unmeasuredItems.push(...refrigerantTakeoff.pending);
         }
 
-        // 4. INTEGRAÇÃO DIRETA DOS MATERIAIS EXTRAÍDOS E VALIDADOS DO MODELO DE IA (LLM)
-        // Implementa validação estrita de evidência documental e deduplicação técnica (Codex Regras 1 e 2)
-        if (llmData && Array.isArray(llmData.materials) && llmData.materials.length > 0) {
-          const getMaterialFamily = (name = '') => {
-            const n = String(name).toLowerCase();
-            if (/\bgrelha\b/i.test(n)) return 'grelha';
-            if (/\bdifusor\b/i.test(n)) return 'difusor';
-            if (/\bdamper\b/i.test(n)) return 'damper';
-            if (/\bveneziana\b/i.test(n)) return 'veneziana';
-            if (/\bplenum\b/i.test(n)) return 'plenum';
-            if (/\bcobre|tubula[çc][aã]o\s+de\s+cobre|tubo\s+de\s+cobre\b/i.test(n)) return 'cobre';
-            if (/\bmpu|painel\s+mpu\b/i.test(n)) return 'mpu';
-            if (/\barmaflex|isolamento\b/i.test(n)) return 'isolamento';
-            if (/\bcabo\b/i.test(n)) return 'cabo';
-            if (/\bchumbador\b/i.test(n)) return 'chumbador';
-            if (/\bperfilado\b/i.test(n)) return 'perfilado';
-            if (/\btirante\b/i.test(n)) return 'tirante';
-            return 'outro';
-          };
-
-          for (const llmMat of llmData.materials) {
-            // Rejeita estimativas por área para dutos/cobre quando a geometria do documento está pendente
-            const isDuctOrPipeItem = /\bmpu\b|painel\s+mpu|tubula[çc][aã]o\s+de\s+cobre|tubo\s+de\s+cobre/i.test(llmMat.name);
-            const isUnverifiedAreaEstimate = isDuctOrPipeItem &&
-              /estimad|0[.,]35|por\s+[aá]rea/i.test(llmMat.evidence || '') &&
-              validatedGeometry.ductMeasurementStatus === 'PENDENTE_MEDICAO';
-
-            const effectiveQty = isUnverifiedAreaEstimate ? 0 : Number(llmMat.quantity || 0);
-            const effectiveStatus = isUnverifiedAreaEstimate ? 'PENDENTE_MEDICAO' : (llmMat.measurementStatus || 'DOCUMENTADO');
-            const normLlmUnit = normalizeUnit(llmMat.unit);
-
-            const llmAttrs = extractTechnicalAttributes(llmMat.name);
-            const llmFamily = getMaterialFamily(llmMat.name);
-            const evidenceText = String(llmMat.evidence || '');
-            const evAttrs = extractTechnicalAttributes(evidenceText);
-            const itemNumMatch = evidenceText.match(/ITEM\s*0?(\d+)/i);
-            const citedItemNum = itemNumMatch ? String(parseInt(itemNumMatch[1], 10)).padStart(2, '0') : null;
-
-            // 1. Validação estrita de atributos contra a linha documental citada (Codex Regra 2)
-            let hasAttributeConflict = false;
-            let conflictDescription = null;
-
-            if (llmAttrs.rectDimensions.length > 0 && evAttrs.rectDimensions.length > 0) {
-              const normLlmDim = llmAttrs.rectDimensions[0];
-              const normEvDim = evAttrs.rectDimensions[0];
-              if (normLlmDim !== normEvDim) {
-                hasAttributeConflict = true;
-                conflictDescription = `Conflito de interpretação: Item extraído como "${llmMat.name}" (${normLlmDim}) mas a evidência documental citada (${evidenceText}) refere-se à dimensão ${normEvDim} (Item ${citedItemNum || 'documental'}).`;
-              }
-            }
-
-            if (hasAttributeConflict) {
-              documentConflicts.push({
-                item_name: llmMat.name,
-                cited_evidence: evidenceText,
-                extracted_dimension: llmAttrs.rectDimensions.join(', '),
-                evidence_dimension: evAttrs.rectDimensions.join(', '),
-                conflict_type: 'CONFLITO_DOCUMENTAL',
-                description: conflictDescription,
-                recommended_action: 'Preservado item documental original; verificação humana recomendada.'
-              });
-
-              // Localiza o item documental citado e marca com conflito sem substituir silenciosamente
-              const citedItem = requiredItems.find(r =>
-                (citedItemNum && r.itemNum === citedItemNum) ||
-                (r.dimensions && evAttrs.rectDimensions.includes(r.dimensions))
-              );
-              if (citedItem) {
-                citedItem.classification = 'CONFLITO_DOCUMENTAL';
-                citedItem.conflict_description = conflictDescription;
-                citedItem.evidence = `${citedItem.reason || ''} | [CONFLITO DETECTADO]: ${conflictDescription}`;
-              }
-              // Não adiciona a linha com atributo falso
-              continue;
-            }
-
-            // 2. Relaciona à mesma ocorrência documental antes de consolidar quantidades (Codex Regra 1)
-            // Não deduplica apenas por prefixo do nome ou SKU!
-            const existingIdx = requiredItems.findIndex(r => {
-              // Unidades devem ser compatíveis
-              if (!areUnitsCompatible(r.unit, llmMat.unit)) return false;
-
-              // Mesma família técnica
-              const rFamily = getMaterialFamily(r.name);
-              if (rFamily !== 'outro' && rFamily !== llmFamily) return false;
-
-              // Caso A: mesmo código ou número de item documental
-              if (citedItemNum && r.itemNum && r.itemNum === citedItemNum) return true;
-
-              // Caso B: mesmas dimensões retangulares explícitas (ex: 600x300, 15x15)
-              const rDims = r.dimensions ? [r.dimensions] : extractTechnicalAttributes(r.name).rectDimensions;
-              if (rDims.length > 0 && llmAttrs.rectDimensions.length > 0) {
-                return rDims.some(d => llmAttrs.rectDimensions.includes(d));
-              }
-
-              // Caso C: mesmos diâmetros nominais
-              const rDiams = extractTechnicalAttributes(r.name).nominalDiameters;
-              if (rDiams.length > 0 && llmAttrs.nominalDiameters.length > 0) {
-                return rDiams.some(d => llmAttrs.nominalDiameters.includes(d));
-              }
-
-              // Caso D: nome idêntico
-              return r.name.toLowerCase() === llmMat.name.toLowerCase();
-            });
-
-            if (existingIdx !== -1) {
-              // Ocorrência documental já existe: consolida dados sem duplicar linha
-              const existing = requiredItems[existingIdx];
-              if (effectiveQty > 0 && (!existing.quantity || existing.quantity === 0)) {
-                existing.quantity = effectiveQty;
-                existing.measurementStatus = effectiveStatus;
-              }
-              if (llmMat.evidence && !existing.evidence?.includes(llmMat.evidence)) {
-                existing.evidence = `${existing.evidence || existing.reason || ''} | Extraído IA: ${llmMat.evidence}`;
-              }
-            } else {
-              requiredItems.push({
-                name: llmMat.name,
-                category: llmMat.category || 'Materiais Extraídos (IA)',
-                unit: normLlmUnit,
-                quantity: effectiveQty,
-                defaultPrice: null,
-                measurementStatus: effectiveStatus,
-                sourceFiles: [llmMat.sourceFile || 'Documento do Projeto'],
-                keywords: [llmMat.name.toLowerCase()],
-                reason: `Extraído pela IA (${llmMat.sourceFile} pág. ${llmMat.sourcePage}): ${llmMat.evidence}`,
-                evidence: llmMat.evidence || null,
-                classification: effectiveQty <= 0 ? 'QUANTIDADE_PENDENTE' : 'PRECO_PENDENTE',
-                price_status: 'PENDENTE_COTACAO'
-              });
-            }
-          }
-        }
+        // 4. RECONCILIAÇÃO PARSER × IA × PDFs (identidade técnica e ocorrência física)
+        const reconciliation = reconcileExtractions({
+          requiredItems,
+          llmMaterials: llmData?.materials || [],
+          documentTables: cadData.documentTables || [],
+          geometryOwnedFamilies: ['mpu', 'cobre', 'isolamento', 'perfilado', 'tirante', 'chumbador', 'cabo']
+        });
+        documentConflicts.push(...reconciliation.documentConflicts);
+        interpretationIssues.push(...reconciliation.interpretationIssues);
       } else {
         // MODO B — Engenharia Reversa por Arquitetura & NBR 16401 (Somente quando o documento NÃO tem itens executivos)
         const modeExplanation = `Engenharia reversa por arquitetura (Carga Térmica: ${thermalLoad.totalTR} TR / ${thermalLoad.totalBtu.toLocaleString('pt-BR')} BTU/h segundo NBR 16401)`;
@@ -2017,7 +1490,8 @@ export class AIAnalysisService {
             unit: 'PÇ',
             quantity: Math.ceil((estimatedArea * 0.35 * 1.40) / 2.4),
             defaultPrice: null,
-            measurementStatus: 'ESTIMADO_MODO_B',
+            measurementStatus: 'PREVISAO',
+            premises: ['Modo B: estimativa preliminar por área da edificação (sem projeto executivo)'],
             keywords: ['mpu', 'painel duto', 'pre-isolado'],
             reason: `Estimativa Preliminar Modo B: ${estimatedArea}m² × 0.35 × 1.40 / 2.4m² (${modeExplanation})`
           },
@@ -2027,7 +1501,8 @@ export class AIAnalysisService {
             unit: 'm',
             quantity: Math.round(estimatedArea * 0.22),
             defaultPrice: null,
-            measurementStatus: 'ESTIMADO_MODO_B',
+            measurementStatus: 'PREVISAO',
+            premises: ['Modo B: estimativa preliminar por área da edificação (sem projeto executivo)'],
             keywords: ['cobre 3/8', 'tubo cobre 3/8'],
             reason: `Estimativa Preliminar Modo B: Linha de líquido frigorígeno (${Math.round(estimatedArea * 0.22)} m)`
           },
@@ -2037,7 +1512,8 @@ export class AIAnalysisService {
             unit: 'm',
             quantity: Math.round(estimatedArea * 0.16),
             defaultPrice: null,
-            measurementStatus: 'ESTIMADO_MODO_B',
+            measurementStatus: 'PREVISAO',
+            premises: ['Modo B: estimativa preliminar por área da edificação (sem projeto executivo)'],
             keywords: ['cobre 5/8', 'tubo cobre 5/8'],
             reason: `Estimativa Preliminar Modo B: Linha de sucção frigorígena (${Math.round(estimatedArea * 0.16)} m)`
           },
@@ -2047,7 +1523,8 @@ export class AIAnalysisService {
             unit: 'pç',
             quantity: Math.max(1, Math.round(thermalLoad.totalTR * 0.20)),
             defaultPrice: null,
-            measurementStatus: 'ESTIMADO_MODO_B',
+            measurementStatus: 'PREVISAO',
+            premises: ['Modo B: estimativa preliminar por área da edificação (sem projeto executivo)'],
             keywords: ['r-410a', 'r410a', 'fluido refrigerante'],
             reason: `Estimativa Preliminar Modo B: Fluido refrigerante R-410A`
           }
@@ -2089,80 +1566,67 @@ export class AIAnalysisService {
       }
     }
 
-    // Processa cada material necessário, buscando na Base Central SABRAR
-    // REGRA 8 (Codex): NUNCA multiplicar quantidades documentadas/medidas pelo fator histórico!
+    // Processa cada material: identidade técnica → base viva → conversão de embalagem → preço de referência.
+    // REGRA: quantidades documentadas/medidas nunca são multiplicadas por fator histórico; falta de preço não zera quantidade.
     for (const itemDef of requiredItems) {
-      const mat = await this.findOrCreateMaterial(itemDef, systemContext, { commercialMarkupPercent });
-      const technicalQuantity = Number(itemDef.quantity ?? 0);
+      const mat = await this.findOrCreateMaterial(itemDef, systemContext, { commercialMarkupPercent, materialDb: options?.materialDb });
+      const technicalQuantity = itemDef.quantity == null ? null : Number(itemDef.quantity);
       const measurementStatus = itemDef.measurementStatus || (technicalQuantity > 0 ? 'DOCUMENTADO' : 'PENDENTE_MEDICAO');
-      const isPendingMeasurement = measurementStatus === 'PENDENTE_MEDICAO' ||
-        measurementStatus === 'LOCALIZACAO_TRECHO_EXTERNO_PENDENTE' ||
-        technicalQuantity <= 0;
+      const isPendingMeasurement = /^PENDENTE|LOCALIZACAO/.test(measurementStatus) || !(technicalQuantity > 0);
+      const isForecast = measurementStatus === 'PREVISAO';
+      const conv = mat.conversion || null;
 
-      // Consulta histórico APENAS como sugestão informativa separada (sem alterar a quantidade técnica/medida)
-      const historyAdj = await LearningService.getHistoricalAdjustment(project.project_type, mat.id);
-      const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(mat.unit || '');
-      const finalQuantity = isPendingMeasurement
+      const purchaseQuantity = isPendingMeasurement
         ? 0
-        : (isDiscrete && Number.isInteger(technicalQuantity)
-            ? Math.round(technicalQuantity)
-            : Number(technicalQuantity.toFixed(2)));
+        : (conv ? conv.purchaseQuantity : Number(technicalQuantity.toFixed(2)));
+      const purchaseUnit = conv ? conv.purchaseUnit : (itemDef.unit || mat.unit);
 
-      if (historyAdj?.hasHistory && finalQuantity > 0 && historyAdj.factor !== 1) {
-        const suggestedHistoricalQty = isDiscrete
-          ? Math.round(finalQuantity * historyAdj.factor)
-          : Number((finalQuantity * historyAdj.factor).toFixed(2));
+      const historyAdj = mat.id && !options?.skipHistory ? await LearningService.getHistoricalAdjustment(project.project_type, mat.id) : null;
+      if (historyAdj?.hasHistory && purchaseQuantity > 0 && historyAdj.factor !== 1) {
         historicalSuggestions.push({
           material_id: mat.id,
           material_code: mat.code,
           material_name: mat.name,
-          documented_or_measured_quantity: finalQuantity,
+          documented_or_measured_quantity: purchaseQuantity,
           historical_factor: historyAdj.factor,
-          historical_suggested_quantity: suggestedHistoricalQty,
+          historical_suggested_quantity: Number((purchaseQuantity * historyAdj.factor).toFixed(2)),
           explanation: historyAdj.explanation,
           applied_to_budget: false
         });
       }
 
-      const rawPrice = mat.reference_price;
-      const hasValidPrice = (rawPrice !== null && rawPrice !== undefined && Number(rawPrice) > 0);
-      const unitPrice = hasValidPrice ? Number(Number(rawPrice).toFixed(2)) : 0.00;
-      const subtotal = (!isPendingMeasurement && hasValidPrice)
-        ? Number((finalQuantity * unitPrice).toFixed(2))
-        : 0.00;
+      const hasValidPrice = Number(mat.reference_price) > 0 && (conv != null || !itemDef.unit);
+      const unitPrice = hasValidPrice ? Number(Number(mat.reference_price).toFixed(2)) : null;
+      const subtotal = (!isPendingMeasurement && hasValidPrice) ? Number((purchaseQuantity * unitPrice).toFixed(2)) : 0.00;
 
+      const classification = itemDef.classification === 'CONFLITO_DOCUMENTAL'
+        ? 'CONFLITO_DOCUMENTAL'
+        : (isPendingMeasurement ? 'QUANTIDADE_PENDENTE' : (isForecast ? 'PREVISAO' : (!hasValidPrice ? 'PRECO_PENDENTE' : 'CONFIRMADO')));
+
+      const description = itemDef.name;
       if (isPendingMeasurement) {
         pendingItems.push({
           material_id: mat.id,
           material_code: mat.code,
-          material_name: mat.name,
-          reason: measurementStatus === 'LOCALIZACAO_TRECHO_EXTERNO_PENDENTE'
-            ? 'TRECHO EXTERNO 30MM SEM DELIMITAÇÃO E MEDIÇÃO NA PRANCHA'
-            : 'QUANTIDADE PENDENTE DE MEDIÇÃO LINEAR NA PRANCHA',
-          suggested_quantity: 0,
-          unit: mat.unit,
+          material_name: description,
+          reason: itemDef.reason || 'QUANTIDADE PENDENTE DE MEDIÇÃO',
+          suggested_quantity: technicalQuantity,
+          unit: itemDef.unit,
           type: measurementStatus,
-          price_available: hasValidPrice ? unitPrice : null,
+          price_available: unitPrice,
           failure_reason: mat.failure_reason
         });
       } else if (!hasValidPrice) {
-        const unpricedEntry = {
+        unpricedItems.push({
           material_id: mat.id,
           material_code: mat.code,
-          material_name: mat.name,
-          quantity: finalQuantity,
-          unit: mat.unit,
+          material_name: description,
+          quantity: purchaseQuantity,
+          unit: purchaseUnit,
+          technical_quantity: technicalQuantity,
+          technical_unit: itemDef.unit,
           reason: mat.failure_reason || 'PREÇO NÃO CADASTRADO NA BASE SABRAR',
-          type: 'PRECO_PENDENTE'
-        };
-        unpricedItems.push(unpricedEntry);
-        pendingItems.push({
-          material_id: mat.id,
-          material_code: mat.code,
-          material_name: mat.name,
-          reason: mat.failure_reason || 'PREÇO NÃO CADASTRADO NA BASE SABRAR',
-          suggested_quantity: finalQuantity,
-          unit: mat.unit,
+          rejected_candidates: mat.rejected_candidates || [],
           type: 'PRECO_PENDENTE'
         });
       }
@@ -2170,22 +1634,31 @@ export class AIAnalysisService {
       budgetMaterials.push({
         material_id: mat.id,
         material_code: mat.code,
-        material_name: mat.name,
-        quantity: finalQuantity,
-        unit: mat.unit,
+        // Descrição técnica preservada; o item de cadastro associado aparece em matched_catalog_name
+        material_name: description,
+        matched_catalog_name: mat.is_genuine_match ? mat.name : null,
+        quantity: purchaseQuantity,
+        unit: purchaseUnit,
+        technical_quantity: technicalQuantity,
+        technical_unit: itemDef.unit,
+        unit_conversion: conv?.note || null,
         base_cost: mat.base_cost,
         commercial_markup_percent: mat.commercial_markup_percent,
         unit_price: unitPrice,
-        subtotal: subtotal,
+        subtotal,
         supplier: mat.supplier,
         reference_date: mat.reference_date,
-        price_source: mat.price_source,
-        failure_reason: mat.failure_reason,
+        price_source: hasValidPrice ? mat.price_source : null,
+        failure_reason: hasValidPrice ? null : (mat.failure_reason || (conv == null && mat.is_genuine_match ? 'Unidade de compra não conversível' : null)),
         measurement_status: measurementStatus,
+        premises: itemDef.premises || [],
+        origin: itemDef.origin || null,
+        source_section_ids: itemDef.sourceSectionIds || null,
+        is_forecast: isForecast,
         is_pending_quote: !hasValidPrice,
         is_pending_measurement: isPendingMeasurement,
         price_status: hasValidPrice ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO',
-        classification: itemDef.classification || (itemDef.conflict_description ? 'CONFLITO_DOCUMENTAL' : (isPendingMeasurement ? 'QUANTIDADE_PENDENTE' : (!hasValidPrice ? 'PRECO_PENDENTE' : 'CONFIRMADO'))),
+        classification,
         conflict_description: itemDef.conflict_description || null,
         evidence: itemDef.evidence || itemDef.reason || null,
         technical_calculation: itemDef.technicalCalculation || null,
@@ -2195,29 +1668,27 @@ export class AIAnalysisService {
       auditItems.push({
         material_id: mat.id,
         material_code: mat.code,
-        material_name: mat.name,
+        material_name: description,
         technical_quantity: technicalQuantity,
-        final_quantity: finalQuantity,
+        technical_unit: itemDef.unit,
+        final_quantity: purchaseQuantity,
+        purchase_unit: purchaseUnit,
         measurement_status: measurementStatus,
-        match_status: isPendingMeasurement
-          ? 'MEASUREMENT_REQUIRED'
-          : (hasValidPrice ? 'EXACT' : 'REVIEW_REQUIRED'),
+        premises: itemDef.premises || [],
+        origin: itemDef.origin || null,
+        match_status: isPendingMeasurement ? 'MEASUREMENT_REQUIRED' : (hasValidPrice ? 'SAFE_MATCH' : 'REVIEW_REQUIRED'),
         supplier: mat.supplier,
         reference_date: mat.reference_date,
         price_source: mat.price_source,
         failure_reason: mat.failure_reason,
-        historical_adjustment: historyAdj?.hasHistory ? {
-          factor: historyAdj.factor,
-          explanation: historyAdj.explanation,
-          applied: false
-        } : null,
+        historical_adjustment: historyAdj?.hasHistory ? { factor: historyAdj.factor, explanation: historyAdj.explanation, applied: false } : null,
         sources: itemDef.sourceFiles || (documentsAnalyzed.length > 0 ? documentsAnalyzed : ['Documento do Projeto']),
         calculation_summary: itemDef.reason,
         notes: isPendingMeasurement
-          ? 'Item identificado no projeto, aguardando medição geométrica linear.'
+          ? 'Item identificado no projeto, aguardando medição/definição.'
           : (!hasValidPrice
-              ? `Aguardando cotação (${mat.failure_reason || 'sem preço cadastrado na base'}).`
-              : `Precificado via ${mat.price_source} (${mat.supplier}, ref. ${mat.reference_date}).`)
+              ? `Preço PENDENTE_COTACAO (${mat.failure_reason || 'sem preço cadastrado na base'}).`
+              : `Precificado pelo preço de referência do cadastro (${mat.code}).`)
       });
     }
 
@@ -2247,176 +1718,38 @@ export class AIAnalysisService {
     let defaultServices = [];
 
     if (isHVAC) {
-      if (isHeavyKitchenVRVSystem) {
-        defaultServices = [
-          {
-            category: 'MÃO DE OBRA',
-            description: 'Caldeiraria pesada, conformação e solda contínua estanque de dutos de chapa preta #16 para exaustão de gordura (NBR 14518)',
-            quantity: 1,
-            unit: 'cj',
-            unitPrice: 28000.00,
-            measurementStatus: 'DOCUMENTADO',
-            notes: 'Soldagem estanque para evitar vazamento de gordura e risco de incêndio conforme NBR 14518'
+      if (hvacMode === 'MODO_A_DIRETO' || isHeavyKitchenVRVSystem) {
+        // Serviços derivados da MESMA geometria e das máquinas documentadas; tarifas da base de serviços
+        defaultServices = buildServices({
+          geometry: ductTakeoff ? ductTakeoff.geometry : null,
+          ductBaseStatus: ductTakeoff?.baseStatus,
+          machines: eqData.machines,
+          refrigerant: refrigerantTakeoff,
+          hasLiftingScope: /patamar\s*t[eé]cnico|i[çc]amento|cobertura/i.test(documentContent),
+          context: systemContext,
+          coefficients,
+          options: { liftingDays: options?.liftingDays, supervisorMonths: options?.supervisorMonths }
+        });
+        for (const s of defaultServices) {
+          if (s.quantity == null || s.measurementStatus === TAKEOFF_STATUS.PENDENTE) {
+            pendingItems.push({ material_id: null, material_code: 'SERVICO', material_name: s.description, reason: s.notes, suggested_quantity: s.quantity, unit: s.unit, type: s.measurementStatus });
+          } else if (s.unitPrice == null) {
+            pendingItems.push({ material_id: null, material_code: 'SERVICO', material_name: s.description, reason: 'TARIFA PENDENTE_COTACAO', suggested_quantity: s.quantity, unit: s.unit, type: 'PRECO_PENDENTE' });
           }
-        ];
-      } else if (hvacMode === 'MODO_A_DIRETO') {
-        const isMPU = cadData.isMPU || eqData.isMPU;
-        const condMachines = eqData.machines.filter(m => m.type.includes('CONDENSADORA'));
-        const evapMachines = eqData.machines.filter(m => !m.type.includes('CONDENSADORA'));
-        const numCondensers = condMachines.reduce((s, m) => s + (m.qty || 1), 0) ||
-          evapMachines.reduce((s, m) => s + (m.qty || 1), 0);
-
-        defaultServices = [];
-
-        if (numCondensers > 0) {
-          defaultServices.push({
-            category: 'MÃO DE OBRA',
-            description: 'Preço Mão de Obra Unidade Condensadora (1 por sistema) (MO) - ESPECIAIS',
-            quantity: numCondensers,
-            unit: 'Unid.',
-            unitPrice: 8400.00,
-            measurementStatus: 'DOCUMENTADO',
-            classification: 'CONFIRMADO',
-            notes: `Instalação mecânica especializada de ${numCondensers} sistema(s) conforme Quadro/Lista de Material CAD`
-          });
-        }
-
-        if (isMPU || rawDuctSegments.length > 0) {
-          // USA EXATAMENTE A MESMA GEOMETRIA VALIDADA DOS MATERIAIS (ZERO FALLBACK || 267.15)
-          const isDuctMeasured = validatedGeometry.ductMeasurementStatus === 'MEDIDO' && validatedGeometry.ductNetAreaSqm > 0;
-          const mpuCalcForLabor = calculateMPUDuctPanels(validatedGeometry.ductNetAreaSqm, {
-            hasExternalDeckNote: validatedGeometry.hasExternal30mmDuctNote,
-            externalAreaSqm: validatedGeometry.externalDuctAreaSqm,
-            packagingMode: validatedGeometry.packagingMode
-          });
-          const laborDuctAreaSqm = isDuctMeasured ? mpuCalcForLabor.totalAreaWithLoss : 0;
-
-          if (!isDuctMeasured) {
-            unmeasuredItems.push({
-              item: 'Serviço de Duteiro (fabricação e montagem de dutos em m²)',
-              reason: 'PENDENTE_MEDICAO',
-              details: 'A mão de obra de fabricação e montagem de dutos utiliza a mesma área validada dos materiais de dutos, que encontra-se PENDENTE_MEDICAO.'
-            });
-            pendingItems.push({
-              material_id: null,
-              material_code: 'SERV-DUTEIRO',
-              material_name: 'Duteiro (fabricação e montagem)',
-              reason: 'ÁREA DE DUTOS PENDENTE DE MEDIÇÃO LINEAR NA PRANCHA',
-              suggested_quantity: 0,
-              unit: 'm²',
-              type: 'PENDENTE_MEDICAO'
-            });
-          }
-
-          defaultServices.push({
-            category: 'MÃO DE OBRA',
-            description: 'Duteiro (fabricação e montagem)',
-            quantity: laborDuctAreaSqm,
-            unit: 'm²',
-            unitPrice: 140.00,
-            measurementStatus: isDuctMeasured ? 'MEDIDO' : 'PENDENTE_MEDICAO',
-            classification: isDuctMeasured ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
-            notes: isDuctMeasured
-              ? `Fabricação e montagem de dutos sobre a mesma geometria validada dos materiais (${validatedGeometry.ductNetAreaSqm} m² líquidos × 1,40 = ${laborDuctAreaSqm} m²)`
-              : 'PENDENTE DE MEDIÇÃO: Aguardando medição linear dos trechos de dutos na prancha.'
-          });
-
-          if (numCondensers > 0) {
-            defaultServices.push({
-              category: 'MÃO DE OBRA',
-              description: 'Fechamento',
-              quantity: numCondensers,
-              unit: 'unid',
-              unitPrice: 280.00,
-              measurementStatus: 'DOCUMENTADO',
-              classification: 'CONFIRMADO',
-              notes: `Interligação de caixas plenum, grelhas e difusores (${numCondensers} sistemas)`
-            });
-          }
-        }
-
-        // Içamento e Supervisão: NUNCA fixar 2 diárias ou 0,27 mês sem parâmetro ou definição explícita no processo
-        const explicitLiftingDays = options?.liftingDays != null
-          ? Number(options.liftingDays)
-          : (llmData?.services?.find(s => /i[çc]amento|munck|guindaste/i.test(s.name))?.quantity || 0);
-
-        const explicitSupervisorMonths = options?.supervisorMonths != null
-          ? Number(options.supervisorMonths)
-          : (llmData?.services?.find(s => /supervisor|supervis[aã]o/i.test(s.name))?.quantity || 0);
-
-        if (/patamar\s*t[eé]cnico|i[çc]amento|cobertura|superior/i.test(documentContent) || explicitLiftingDays > 0) {
-          const hasLifting = explicitLiftingDays > 0;
-          if (!hasLifting) {
-            unmeasuredItems.push({
-              item: 'Serviço de Içamento (diárias de caminhão munck/guindaste para patamar técnico)',
-              reason: 'PENDENTE_DEFINICAO_ESCOPO',
-              details: 'O projeto prevê equipamentos em patamar técnico, porém o número de diárias de içamento deve ser parametrizado conforme logística da obra.'
-            });
-            pendingItems.push({
-              material_id: null,
-              material_code: 'SERV-ICAMENTO',
-              material_name: 'Içamento',
-              reason: 'QUANTIDADE DE DIÁRIAS DE IÇAMENTO PENDENTE DE DEFINIÇÃO OPERACIONAL',
-              suggested_quantity: 0,
-              unit: 'diária',
-              type: 'PENDENTE_DEFINICAO_ESCOPO'
-            });
-          }
-          defaultServices.push({
-            category: 'MÃO DE OBRA',
-            description: 'Içamento',
-            quantity: hasLifting ? explicitLiftingDays : 0,
-            unit: 'diária',
-            unitPrice: 9520.00,
-            measurementStatus: hasLifting ? 'PARAMETRIZADO' : 'PENDENTE_DEFINICAO_ESCOPO',
-            classification: hasLifting ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
-            notes: hasLifting
-              ? `Içamento parametrizado (${explicitLiftingDays} diária(s))`
-              : 'PENDENTE DE DEFINIÇÃO DE ESCOPO: Informar número de diárias de içamento para patamar técnico.'
-          });
-        }
-
-        if (numCondensers > 0 || explicitSupervisorMonths > 0) {
-          const hasSup = explicitSupervisorMonths > 0;
-          if (!hasSup) {
-            unmeasuredItems.push({
-              item: 'Supervisor - 6 Horas - 22 Dias/Mês (dedicação mensal de supervisão)',
-              reason: 'PENDENTE_DEFINICAO_ESCOPO',
-              details: 'A fração de mês de supervisão técnica depende do cronograma executivo da obra.'
-            });
-            pendingItems.push({
-              material_id: null,
-              material_code: 'SERV-SUPERVISOR',
-              material_name: 'Supervisor - 6 Horas - 22 Dias/ Mês',
-              reason: 'DEDICAÇÃO DE SUPERVISÃO (MÊS) PENDENTE DE CRONOGRAMA DA OBRA',
-              suggested_quantity: 0,
-              unit: 'mês',
-              type: 'PENDENTE_DEFINICAO_ESCOPO'
-            });
-          }
-          defaultServices.push({
-            category: 'MÃO DE OBRA',
-            description: 'Supervisor - 6 Horas -  22 Dias/ Mês',
-            quantity: hasSup ? explicitSupervisorMonths : 0,
-            unit: 'mês',
-            unitPrice: 16802.22,
-            measurementStatus: hasSup ? 'PARAMETRIZADO' : 'PENDENTE_DEFINICAO_ESCOPO',
-            classification: hasSup ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE',
-            notes: hasSup
-              ? `Supervisão técnica parametrizada (${explicitSupervisorMonths} mês)`
-              : 'PENDENTE DE DEFINIÇÃO DE ESCOPO: Informar fração de mês conforme cronograma.'
-          });
         }
       } else {
-        // Modo B preliminar
+        // Modo B preliminar: quantidade estimada por área (PREVISAO); tarifa não definida na base
         defaultServices = [
           {
             category: 'MÃO DE OBRA',
             description: 'Montagem mecânica preliminar estimada (Modo B)',
-            quantity: Math.max(40, Math.round(estimatedArea * 0.15)),
+            quantity: Math.round(estimatedArea * 0.15),
             unit: 'h',
-            unitPrice: 85.00,
-            measurementStatus: 'ESTIMADO_MODO_B',
+            unitPrice: null,
+            priceStatus: 'PENDENTE_COTACAO',
+            measurementStatus: 'PREVISAO',
+            classification: 'PREVISAO',
+            premises: ['Modo B: 0,15 h/m² da edificação (estimativa preliminar, coeficiente não validado)'],
             notes: 'Estimativa preliminar por área (Modo B)'
           }
         ];
@@ -2424,6 +1757,7 @@ export class AIAnalysisService {
     }
 
     const totalServicesCost = Number(defaultServices.reduce((acc, s) => acc + ((s.quantity || 0) * (s.unitPrice || 0)), 0).toFixed(2));
+    const forecastServicesSubtotal = Number(defaultServices.filter(s => s.classification === 'PREVISAO').reduce((acc, s) => acc + ((s.quantity || 0) * (s.unitPrice || 0)), 0).toFixed(2));
 
     // Faturamento Direto (Máquinas e Equipamentos Principais)
     let defaultEquipment = [];
@@ -2499,7 +1833,7 @@ export class AIAnalysisService {
     // Subtotais parciais confirmados e pendências explícitas (Codex Regras 6 e 7)
     const confirmedServicesSubtotal = Number(
       defaultServices
-        .filter(s => s.classification === 'CONFIRMADO' || s.measurementStatus === 'DOCUMENTADO')
+        .filter(s => s.classification === 'CONFIRMADO')
         .reduce((acc, s) => acc + (Number(s.quantity || 0) * Number(s.unitPrice || 0)), 0)
         .toFixed(2)
     );
@@ -2511,8 +1845,9 @@ export class AIAnalysisService {
         .toFixed(2)
     );
 
-    const hasAnyPendingItems = budgetMaterials.some(m => m.classification === 'QUANTIDADE_PENDENTE' || m.classification === 'PRECO_PENDENTE') ||
-      defaultServices.some(s => s.classification === 'QUANTIDADE_PENDENTE' || s.measurementStatus === 'PENDENTE_MEDICAO' || s.measurementStatus === 'PENDENTE_DEFINICAO_ESCOPO');
+    const hasAnyPendingItems = budgetMaterials.some(m => ['QUANTIDADE_PENDENTE', 'PRECO_PENDENTE', 'PREVISAO', 'CONFLITO_DOCUMENTAL'].includes(m.classification)) ||
+      defaultServices.some(s => ['QUANTIDADE_PENDENTE', 'PRECO_PENDENTE', 'PREVISAO'].includes(s.classification));
+    const forecastMaterialsSubtotal = Number(budgetMaterials.filter(m => m.classification === 'PREVISAO').reduce((a, m) => a + Number(m.subtotal || 0), 0).toFixed(2));
 
     const isPartialBudget = hasAnyPendingItems;
 
@@ -2525,7 +1860,11 @@ export class AIAnalysisService {
 
     const pendenciesSummary = {
       quantidade_pendente_count: budgetMaterials.filter(m => m.classification === 'QUANTIDADE_PENDENTE').length + defaultServices.filter(s => s.classification === 'QUANTIDADE_PENDENTE').length,
-      preco_pendente_count: budgetMaterials.filter(m => m.classification === 'PRECO_PENDENTE').length,
+      preco_pendente_count: budgetMaterials.filter(m => m.classification === 'PRECO_PENDENTE').length + defaultServices.filter(s => s.classification === 'PRECO_PENDENTE').length,
+      previsao_count: budgetMaterials.filter(m => m.classification === 'PREVISAO').length + defaultServices.filter(s => s.classification === 'PREVISAO').length,
+      forecast_materials_subtotal: forecastMaterialsSubtotal,
+      forecast_services_subtotal: forecastServicesSubtotal,
+      interpretation_issues_count: interpretationIssues.length,
       conflito_documental_count: documentConflicts.length,
       fornecimento_cliente_count: defaultEquipment.length,
       confirmed_services_subtotal: confirmedServicesSubtotal,
@@ -2549,6 +1888,7 @@ export class AIAnalysisService {
       partial_subtotal: budgetPartialSubtotal,
       pendencies_summary: pendenciesSummary,
       document_conflicts: documentConflicts,
+      interpretation_issues: interpretationIssues,
       completeness_status: budgetCompletenessStatus,
       unpriced_items: unpricedItems,
       unmeasured_items: unmeasuredItems,
@@ -2569,6 +1909,8 @@ export class AIAnalysisService {
         tablesDetected: d.tablesDetected || [],
         scalesDetected: d.scalesDetected || []
       })),
+      // Extração validada do LLM (reaproveitada pela revisão de geometria sem nova chamada ao modelo)
+      llm_extraction: llmData || null,
       llm_validation: {
         executed: Boolean(rawLLMResponse),
         provider: rawLLMResponse?._llmTelemetry?.provider || llmConfig.provider,
@@ -2587,7 +1929,9 @@ export class AIAnalysisService {
       completeness_status: budgetCompletenessStatus,
       items: auditItems,
       historical_suggestions: historicalSuggestions,
-      document_conflicts: documentConflicts
+      document_conflicts: documentConflicts,
+      interpretation_issues: interpretationIssues,
+      company_coefficients: coefficients
     };
 
     const modeLabel = hvacMode === 'MODO_A_DIRETO'
@@ -2631,7 +1975,7 @@ export class AIAnalysisService {
           item.material_name,
           item.quantity,
           item.unit,
-          item.unit_price,
+          item.unit_price ?? 0,
           item.subtotal,
           auditMeta?.calculation_summary || 'Sugestão calculada a partir dos projetos técnicos',
           overallCompletenessPercent
@@ -2805,13 +2149,20 @@ export class AIAnalysisService {
           const isDiscrete = /unid|und|un\b|pç|pc|peça|cx|caixa|pct|pacote|lata|rolo|barra|frasco|balde|tubo|cartucho|kit|jogo|par|duzia/i.test(m.unit || '');
           const cleanQty = m.is_pending_measurement
             ? 0
-            : (isDiscrete ? Math.ceil(Number(m.quantity || 0)) : Number(Number(m.quantity || 0).toFixed(2)));
+            : (isDiscrete ? Math.ceil(Number(m.quantity || 0) - 1e-9) : Number(Number(m.quantity || 0).toFixed(2)));
           const cleanSubtotal = Number((cleanQty * Number(m.unit_price || 0)).toFixed(2));
-          const noteText = m.is_pending_measurement
-            ? `Item identificado no projeto - ${m.measurement_status}`
-            : (m.is_pending_quote
-                ? `Item extraído da documentação técnica - PENDENTE DE COTAÇÃO (${m.failure_reason || ''})`
-                : (m.human_notes || `Item orçado pela Base Central SABRAR via ${modeLabel}`));
+          const noteText = [
+            m.is_pending_measurement
+              ? `Item identificado no projeto - ${m.measurement_status}`
+              : (m.is_pending_quote
+                  ? `PENDENTE_COTACAO (${m.failure_reason || 'sem correspondência segura'})`
+                  : (m.human_notes || `Item orçado pela Base Central SABRAR via ${modeLabel}`)),
+            m.measurement_status ? `Status: ${m.measurement_status}` : null,
+            m.technical_quantity != null && m.technical_unit ? `Qtd técnica: ${m.technical_quantity} ${m.technical_unit}` : null,
+            m.unit_conversion ? `Conversão: ${m.unit_conversion}` : null,
+            m.origin ? `Origem: ${m.origin}` : null,
+            ...((m.premises || []).map(p => `Premissa: ${p}`))
+          ].filter(Boolean).join(' | ');
 
           await insertBudgetItem.run(
             budgetId,
@@ -2819,7 +2170,7 @@ export class AIAnalysisService {
             m.material_name,
             cleanQty,
             m.unit,
-            m.unit_price,
+            m.unit_price ?? 0,
             cleanSubtotal,
             cleanQty,
             auditMeta?.calculation_summary || 'Sugestão da IA SABRAR',
@@ -2845,10 +2196,10 @@ export class AIAnalysisService {
             s.description,
             s.quantity,
             s.unit,
-            s.unitPrice,
+            s.unitPrice ?? 0,
             Number(((s.quantity || 0) * (s.unitPrice || 0)).toFixed(2)),
-            s.notes,
-            s.classification || (s.measurementStatus === 'DOCUMENTADO' ? 'CONFIRMADO' : 'QUANTIDADE_PENDENTE'),
+            [s.notes, ...(s.premises || []).map(p => `Premissa: ${p}`), s.priceStatus === 'PENDENTE_COTACAO' ? 'Tarifa PENDENTE_COTACAO' : null].filter(Boolean).join(' | '),
+            s.classification || 'QUANTIDADE_PENDENTE',
             s.measurementStatus || 'DOCUMENTADO'
           );
         }
@@ -2930,6 +2281,13 @@ export class AIAnalysisService {
         isPendingMeasurement: Boolean(m.is_pending_measurement),
         priceStatus: m.price_status || (m.unit_price > 0 ? 'PRECIFICADO_CATALOGO' : 'PENDENTE_COTACAO'),
         technicalCalculation: m.technical_calculation || null,
+        technicalQuantity: m.technical_quantity ?? null,
+        technicalUnit: m.technical_unit || null,
+        unitConversion: m.unit_conversion || null,
+        premises: m.premises || [],
+        origin: m.origin || null,
+        classification: m.classification,
+        matchedCatalogName: m.matched_catalog_name || null,
         reason: auditItems.find(a => (m.material_id && a.material_id === m.material_id) || a.material_name === m.material_name)?.calculation_summary || '',
         confidence: overallCompletenessPercent
       })),

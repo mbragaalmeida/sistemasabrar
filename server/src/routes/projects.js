@@ -5,6 +5,7 @@ import { SpreadsheetService } from '../services/spreadsheetService.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { extractTextFromPdfBuffer } from '../utils/pdfHelper.js';
 import { extractCadTextFromBuffer } from '../utils/cadHelper.js';
 import { generateUniqueProjectCode } from '../utils/codeGenerator.js';
@@ -12,9 +13,12 @@ import os from 'os';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const uploadsDir = process.env.VERCEL
   ? path.join(os.tmpdir(), 'uploads')
-  : path.join(process.cwd(), 'server', 'uploads');
+  : path.resolve(__dirname, '../../uploads');
 try {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });

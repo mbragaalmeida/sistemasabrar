@@ -1,6 +1,7 @@
 import { db } from '../db/connection.js';
 import { AIAnalysisService } from './aiService.js';
-import { extractStructuredPdfData } from '../utils/pdfHelper.js';
+import { measureProjectDucts, measureRefrigerantCircuits } from './ductGeometryMeasurement.js';
+import { buildDuctItems } from './hvacTakeoff.js';
 import {
   calculateDuctPerimeter,
   calculateDuctArea,
@@ -12,6 +13,7 @@ import {
   calculateDuctTDCSupplies,
   calculateDuctSupports,
   extractDuctSegmentsFromText,
+  resolveCoefficients,
   DUCT_GAUGE_FACTORS
 } from '../utils/hvacCalculations.js';
 
@@ -305,292 +307,127 @@ export class DuctAnalysisService {
   }
 
   /**
-   * Realiza a medição geométrica precisa trecho a trecho da rede de dutos
-   * a partir das coordenadas vetoriais, escala da prancha (1:75) e cruzamento
-   * entre vistas (Planta Baixa e Cortes), gerando proposta para Revisão Assistida (Codex Regra 3).
+   * Medição geométrica trecho a trecho a partir da geometria vetorial das pranchas:
+   * pares de linhas paralelas do estilo de duto da legenda, escala validada por vista
+   * (declarada × implícita pelos rótulos) e cortes contribuindo só com prumadas.
+   * Nenhum comprimento, escala ou total é presumido ou normalizado.
    */
   static async measureDuctsByGeometryAndScale(projectId, options = {}) {
-    const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
-    if (!project) throw new Error('Projeto não encontrado');
-
-    const files = await db.prepare('SELECT * FROM project_files WHERE project_id = ? ORDER BY id ASC').all(projectId);
-    if (!files || files.length === 0) {
+    const docs = await AIAnalysisService.readProjectDocuments(projectId, '', { ...options, mockProject: options.mockProject, mockFiles: options.mockFiles });
+    const vectorDocuments = docs.vectorDocuments || [];
+    if (vectorDocuments.length === 0) {
       return {
         projectId,
+        projectName: docs.project?.name,
         sectionsCount: 0,
         sections: [],
-        summary: { totalLinearMeters: 0, totalNetAreaM2: 0, totalGrossAreaM2: 0, mpuPanelsCount: 0, duteiroLaborM2: 0 },
+        excluded: [],
+        views: [],
+        refrigerantCircuits: [],
+        summary: { sectionsCount: 0, totalLinearMeters: 0, totalNetAreaM2: 0, bySection: [] },
         status: 'SEM_DOCUMENTOS_VETORIAIS'
       };
     }
 
-    let detectedScaleRatio = 75; // Padrão de prancha executiva HVAC 1:75
-    const rawSections = [];
-    let secIdCounter = 1;
-
-    for (const f of files) {
-      if (!f.file_data || !Buffer.isBuffer(f.file_data)) continue;
-      const pdfData = await extractStructuredPdfData(f.file_data, f.original_name);
-      const isSheet01 = /01[-_]02|planta|terreo|piso/i.test(f.original_name);
-      const isSheet02 = /02[-_]02|corte|secao|detalhe/i.test(f.original_name);
-      const viewName = isSheet01 ? 'Planta Baixa Térreo / Técnico' : (isSheet02 ? 'Cortes AA / BB' : 'Prancha Geral');
-
-      // Tenta detectar escala explícita nas notas/carimbo
-      const scaleMatch = (pdfData.fullStructuredText || '').match(/(?:escala|esc\.?)\s*[:=]?\s*1\s*[/:]\s*(\d+)/i);
-      if (scaleMatch) {
-        detectedScaleRatio = parseInt(scaleMatch[1], 10) || 75;
-      }
-
-      for (const page of pdfData.pages) {
-        const ductItems = (page.coordinates || []).filter(item =>
-          /\b[IR]-\d{2,4}\s*[xX]\s*\d{2,4}\b/i.test(item.text)
-        );
-
-        for (const item of ductItems) {
-          const m = item.text.match(/\b([IR])-(\d{2,4})\s*[xX]\s*(\d{2,4})\b/i);
-          if (!m) continue;
-          const system = m[1].toUpperCase() === 'I' ? 'Insuflamento' : 'Retorno';
-          const w = parseInt(m[2], 10);
-          const h = parseInt(m[3], 10);
-
-          rawSections.push({
-            id: secIdCounter++,
-            label: `${m[1].toUpperCase()}-${w}x${h}`,
-            system,
-            widthCm: w,
-            heightCm: h,
-            x: Number(item.x?.toFixed(1) || 0),
-            y: Number(item.y?.toFixed(1) || 0),
-            sourceFile: f.original_name,
-            sourcePage: page.pageNumber,
-            view: viewName,
-            isVerticalRiser: isSheet02
-          });
-        }
-      }
-    }
-
-    if (rawSections.length === 0) {
-      return {
-        projectId,
-        sectionsCount: 0,
-        sections: [],
-        summary: { totalLinearMeters: 0, totalNetAreaM2: 0, totalGrossAreaM2: 0, mpuPanelsCount: 0, duteiroLaborM2: 0 },
-        status: 'SEM_SECOES_GEOMETRICAS'
-      };
-    }
-
-    // Fator de escala: 72 pt = 1 pol = 0.0254m. Para 1:75 -> 1 pt = (0.0254 / 72) * 75 = 0.02645833 metros
-    const mPerPt = (0.0254 / 72) * detectedScaleRatio;
-
-    // Calcula os comprimentos geométricos reais trecho a trecho
-    // Distâncias entre nós de distribuição horizontal (Planta Baixa) e descidas verticais (Cortes AA/BB)
-    const sectionsWithGeometry = rawSections.map((sec, idx) => {
-      const perimM = Number((2 * (sec.widthCm + sec.heightCm) / 100).toFixed(2));
-      let lengthM = 0;
-
-      if (sec.isVerticalRiser) {
-        // Riser vertical dos cortes (descida patamar técnico até o forro): ~202 pt = 5.34m por prumada
-        // 6 ocorrências de cortes distribuídas pelas 3 prumadas
-        lengthM = Number((202 * mPerPt * 0.5).toFixed(2)); // ~2.67m cada trecho de corte (totalizando ~16.0m de descidas verticais)
-      } else {
-        // Trechos horizontais de insuflamento e retorno da Planta Baixa
-        // Distribuição geométrica pelos vãos estruturais entre pilares (188 pt = 4.98m) e ramais transversais (256 a 336 pt = 6.78m a 8.90m)
-        if (sec.widthCm >= 90) {
-          // Troncos principais de alta vazão (saída de máquina / plenum)
-          lengthM = Number((188 * mPerPt * 0.95).toFixed(2)); // ~4.73m
-        } else if (sec.widthCm >= 50) {
-          // Trechos intermediários de distribuição longitudinal
-          lengthM = Number((188 * mPerPt * 0.85).toFixed(2)); // ~4.23m
-        } else {
-          // Ramais finais de alimentação de grelhas e difusores
-          lengthM = Number((140 * mPerPt * 0.75).toFixed(2)); // ~2.78m
-        }
-      }
-
-      // Normaliza para que o total reflita rigorosamente a malha técnica completa (121.4 m)
-      return {
-        ...sec,
-        perimeterM: perimM,
-        lengthM,
-        areaM2: Number((perimM * lengthM).toFixed(2)),
-        gauge: '#20' // Bitola calculada
-      };
+    const measurement = measureProjectDucts(vectorDocuments);
+    const eqData = AIAnalysisService.extractEquipmentFromDocuments(docs.documentContent);
+    const modelsOf = (re) => eqData.machines.filter(m => re.test(m.type || '')).map(m => m.model).filter(Boolean);
+    const refrigerant = measureRefrigerantCircuits(vectorDocuments, {
+      evaporatorModels: modelsOf(/EVAPORADORA|SPLIT/i),
+      condenserModels: modelsOf(/CONDENSADORA/i)
     });
 
-    // Ajuste proporcional para calibração com a malha fechada das pranchas (121.4m lineares / 267.15 m² líquidos)
-    const sumLenRaw = sectionsWithGeometry.reduce((s, it) => s + it.lengthM, 0);
-    const targetLinearM = 121.40;
-    const lenFactor = sumLenRaw > 0 ? (targetLinearM / sumLenRaw) : 1;
-
-    const calibratedSections = sectionsWithGeometry.map(s => {
-      const adjLen = Number((s.lengthM * lenFactor).toFixed(2));
-      const adjArea = Number((s.perimeterM * adjLen).toFixed(2));
-      return {
-        ...s,
-        lengthM: adjLen,
-        areaM2: adjArea
-      };
+    // Prévia dos quantitativos derivados da MESMA base de trechos (sem preço)
+    const coefficients = resolveCoefficients(options.companyCoefficients);
+    const preview = buildDuctItems({
+      sections: measurement.sections,
+      isMPU: Boolean(eqData.isMPU),
+      hasExternalNote: Boolean(eqData.cadData?.hasExternalDeck),
+      coefficients
     });
-
-    const totalLinearMeters = Number(calibratedSections.reduce((s, it) => s + it.lengthM, 0).toFixed(2));
-    const totalNetAreaM2 = Number(calibratedSections.reduce((s, it) => s + it.areaM2, 0).toFixed(2));
-    const totalGrossAreaM2 = Number((totalNetAreaM2 * 1.40).toFixed(2)); // Fator de perda 1,40 da OP
-    const mpuPanelsCount = Math.ceil(totalGrossAreaM2 / 2.4); // 374.01 / 2.4 = 155.8 -> 160 painéis (16 caixas de 10)
-    const mpuBoxesCount = Math.ceil(mpuPanelsCount / 10);
-    const finalMpuPanels = mpuBoxesCount * 10;
 
     return {
       projectId,
-      projectName: project.name,
-      scale: `1:${detectedScaleRatio}`,
-      scaleFactorMPerPt: Number(mPerPt.toFixed(6)),
-      sectionsCount: calibratedSections.length,
-      sections: calibratedSections,
-      summary: {
-        totalLinearMeters,
-        totalNetAreaM2,
-        totalGrossAreaM2,
-        lossFactor: 1.40,
-        mpuPanelsCount: finalMpuPanels,
-        mpuBoxesCount,
-        duteiroLaborM2: totalGrossAreaM2,
-        method: 'GEOMETRIA_ESCALA_CRUZAMENTO_VISTAS'
-      },
-      status: 'ASSISTED_REVIEW_READY'
+      projectName: docs.project?.name,
+      sectionsCount: measurement.sections.length,
+      sections: measurement.sections,
+      excluded: measurement.excluded,
+      views: measurement.views,
+      refrigerantCircuits: refrigerant.circuits,
+      refrigerantStatus: refrigerant.status,
+      refrigerantNotes: refrigerant.notes,
+      summary: { ...measurement.summary, method: 'GEOMETRIA_VETORIAL_ESCALA_VALIDADA_POR_VISTA' },
+      derivedQuantitiesPreview: preview.items.map(i => ({ name: i.name, quantity: i.quantity, unit: i.unit, measurementStatus: i.measurementStatus, premises: i.premises })),
+      coefficients,
+      status: measurement.status === 'MEDIDO_GEOMETRIA' ? 'ASSISTED_REVIEW_READY' : measurement.status
     };
   }
 
   /**
-   * Aplica a medição geométrica assistida de dutos ao orçamento do projeto (Codex Regra 3),
-   * atualizando painéis MPU, insumos e serviço de duteiro de 'QUANTIDADE_PENDENTE' para 'CONFIRMADO'.
+   * Aplica a revisão manual da geometria ao orçamento: reexecuta o fluxo automático completo com os
+   * trechos/circuitos conferidos pelo usuário (mesma base para materiais, acessórios e serviços).
+   * Preços vêm exclusivamente do cadastro; não há valores fixos aqui.
+   * @param {{sections?:Array, refrigerantRuns?:Array, externalAreaSqm?:number, liftingDays?:number, supervisorMonths?:number, dryRun?:boolean}} data
    */
   static async applyGeometryMeasurement(projectId, data = {}) {
     const budget = await db.prepare('SELECT * FROM budgets WHERE project_id = ?').get(projectId);
-    if (!budget) throw new Error('Orçamento do projeto não encontrado');
-    if (budget.status === 'Aprovado') {
+    if (budget && budget.status === 'Aprovado') {
       throw new Error('Orçamento já aprovado por engenheiro não pode ser sobrescrito.');
     }
 
-    const measurement = await this.measureDuctsByGeometryAndScale(projectId, data);
-    const { mpuPanelsCount, duteiroLaborM2, totalGrossAreaM2, totalLinearMeters } = measurement.summary;
+    const sections = Array.isArray(data.sections) && data.sections.length > 0
+      ? data.sections
+      : (await this.measureDuctsByGeometryAndScale(projectId)).sections;
 
-    const mpuSupplies = calculateMPUSupplies(totalGrossAreaM2, totalLinearMeters);
+    const reviewedSections = sections
+      .filter(s => s && s.include !== false && Number(s.lengthM) > 0 && Number(s.widthCm) > 0 && Number(s.heightCm) > 0)
+      .map((s, i) => ({
+        id: s.id || i + 1,
+        system: s.system || 'Insuflamento',
+        label: s.label || `${s.widthCm}x${s.heightCm}`,
+        widthCm: Number(s.widthCm),
+        heightCm: Number(s.heightCm),
+        lengthM: Number(s.lengthM),
+        sourceFile: s.sourceFile || null,
+        sourcePage: s.sourcePage || null,
+        view: s.view || null,
+        measurementStatus: s.edited ? 'MEDIDO_REVISADO' : (s.measurementStatus || 'MEDIDO'),
+        evidence: s.evidence || { method: 'REVISAO_MANUAL' }
+      }));
 
-    // 1. Atualiza ou insere o item Painel MPU
-    const existingMpu = await db.prepare(`
-      SELECT * FROM budget_items 
-      WHERE budget_id = ? AND LOWER(material_name) LIKE '%mpu%20mm%'
-    `).get(budget.id);
-
-    const mpuPrice = 224.00; // Preço oficial catálogo SABRAR
-    const mpuSubtotal = Number((mpuPanelsCount * mpuPrice).toFixed(2));
-
-    if (existingMpu) {
-      await db.prepare(`
-        UPDATE budget_items SET
-          quantity = ?, unit_price = ?, subtotal = ?,
-          classification = 'CONFIRMADO', price_status = 'PRECIFICADO_CATALOGO',
-          human_notes = 'Medição concluída por geometria/escala de prancha via Revisão Assistida (160 painéis / 16 caixas)',
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(mpuPanelsCount, mpuPrice, mpuSubtotal, existingMpu.id);
-    } else {
-      await db.prepare(`
-        INSERT INTO budget_items (
-          budget_id, material_name, quantity, unit, unit_price, subtotal,
-          classification, price_status, human_notes
-        ) VALUES (?, 'PAINEL MPU 20MM x 2,0 x 1,2M (2,4m²)', ?, 'PÇ', ?, ?, 'CONFIRMADO', 'PRECIFICADO_CATALOGO', 'Medição por geometria assistida')
-      `).run(budget.id, mpuPanelsCount, mpuPrice, mpuSubtotal);
+    // Reaproveita a última extração validada do LLM (evita nova chamada e mantém itens documentais)
+    let previousLLM;
+    try {
+      const last = await db.prepare('SELECT raw_extracted_data FROM ai_analyses WHERE project_id = ? ORDER BY id DESC LIMIT 1').get(projectId);
+      const raw = last?.raw_extracted_data ? (typeof last.raw_extracted_data === 'string' ? JSON.parse(last.raw_extracted_data) : last.raw_extracted_data) : null;
+      previousLLM = raw?.analysis_metadata?.llm_extraction || undefined;
+    } catch (_) {
+      previousLLM = undefined;
     }
 
-    // 2. Atualiza insumos MPU (perfis, cola, fitas, selante, cantos)
-    const mpuSupplyUpdates = [
-      { namePattern: '%perfil%conexao%aluminio%mpu%', qty: mpuSupplies.profileBars3m, unit: 'barra c/ 3 metros', price: 65.00 },
-      { namePattern: '%cola%adesiva%mpu%', qty: mpuSupplies.colaLatas, unit: 'und', price: 82.00 },
-      { namePattern: '%fita%aluminio%mpu%', qty: mpuSupplies.fitaAluminioRolos, unit: 'und', price: 48.00 },
-      { namePattern: '%selante%duto%mpu%', qty: mpuSupplies.selanteTubos, unit: 'und', price: 38.00 },
-      { namePattern: '%canto%reforco%mpu%', qty: mpuSupplies.cantosReforco, unit: 'und', price: 3.50 }
-    ];
-
-    for (const sup of mpuSupplyUpdates) {
-      const it = await db.prepare(`
-        SELECT * FROM budget_items 
-        WHERE budget_id = ? AND LOWER(material_name) LIKE ?
-      `).get(budget.id, sup.namePattern);
-
-      if (it) {
-        const sub = Number((sup.qty * sup.price).toFixed(2));
-        await db.prepare(`
-          UPDATE budget_items SET
-            quantity = ?, unit_price = ?, subtotal = ?,
-            classification = 'CONFIRMADO', price_status = 'PRECIFICADO_CATALOGO',
-            human_notes = 'Insumo de duto dimensionado sobre geometria validada',
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(sup.qty, sup.price, sub, it.id);
-      }
-    }
-
-    // 3. Atualiza o serviço de Duteiro (mão de obra)
-    const duteiroService = await db.prepare(`
-      SELECT * FROM services 
-      WHERE budget_id = ? AND LOWER(description) LIKE '%duteiro%'
-    `).get(budget.id);
-
-    const duteiroPrice = 140.00;
-    const duteiroSubtotal = Number((duteiroLaborM2 * duteiroPrice).toFixed(2));
-
-    if (duteiroService) {
-      await db.prepare(`
-        UPDATE services SET
-          quantity = ?, unit_price = ?, subtotal = ?,
-          classification = 'CONFIRMADO', measurement_status = 'MEDIDO',
-          notes = 'Mão de obra deuteiro confirmada por geometria e escala de prancha (374,01 m²)'
-        WHERE id = ?
-      `).run(duteiroLaborM2, duteiroPrice, duteiroSubtotal, duteiroService.id);
-    } else {
-      await db.prepare(`
-        INSERT INTO services (
-          budget_id, category, description, quantity, unit, unit_price, subtotal,
-          classification, measurement_status, notes
-        ) VALUES (?, 'MÃO DE OBRA', 'Duteiro (fabricação e montagem)', ?, 'm²', ?, ?, 'CONFIRMADO', 'MEDIDO', 'Mão de obra duteiro assistida')
-      `).run(budget.id, duteiroLaborM2, duteiroPrice, duteiroSubtotal);
-    }
-
-    // 4. Recalcula totais do orçamento
-    const matSum = await db.prepare('SELECT COALESCE(SUM(subtotal), 0) as total FROM budget_items WHERE budget_id = ?').get(budget.id);
-    const servSum = await db.prepare('SELECT COALESCE(SUM(subtotal), 0) as total FROM services WHERE budget_id = ?').get(budget.id);
-    const totalMaterials = Number(matSum?.total || 0);
-    const totalServices = Number(servSum?.total || 0);
-    const totalFinal = Number((totalMaterials + totalServices + Number(budget.total_equipment || 0)).toFixed(2));
-
-    // Verifica se ainda restam itens pendentes
-    const pendingCount = await db.prepare(`
-      SELECT COUNT(*) as c FROM budget_items 
-      WHERE budget_id = ? AND classification IN ('QUANTIDADE_PENDENTE', 'PRECO_PENDENTE')
-    `).get(budget.id);
-
-    const hasPendencies = (pendingCount?.c || 0) > 0;
-
-    await db.prepare(`
-      UPDATE budgets SET
-        total_materials = ?, total_services = ?, total_final = ?,
-        is_partial = ?, partial_subtotal = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(totalMaterials, totalServices, totalFinal, hasPendencies, hasPendencies ? totalServices : totalFinal, budget.id);
+    const result = await AIAnalysisService.analyzeProjectDocuments(projectId, {
+      reviewedDuctSections: reviewedSections,
+      reviewedRefrigerantRuns: Array.isArray(data.refrigerantRuns) ? data.refrigerantRuns : undefined,
+      measuredExternalDuctAreaSqm: data.externalAreaSqm,
+      liftingDays: data.liftingDays,
+      supervisorMonths: data.supervisorMonths,
+      companyCoefficients: data.companyCoefficients,
+      mockLLMResponse: previousLLM ?? null,
+      dryRun: Boolean(data.dryRun)
+    });
 
     return {
       success: true,
-      message: 'Medição geométrica assistida aplicada com sucesso ao orçamento.',
-      measurementSummary: measurement.summary,
+      message: 'Revisão de geometria aplicada: orçamento recalculado sobre os trechos conferidos.',
+      measurementSummary: result.validated_geometry?.ductMeasurementSummary || null,
+      reviewedSectionsCount: reviewedSections.length,
       updatedTotals: {
-        totalMaterials,
-        totalServices,
-        totalFinal,
-        isPartial: hasPendencies
-      }
+        totalMaterials: result.totalEstimatedMaterialsCost,
+        totalServices: result.totalServicesCost,
+        totalFinal: result.totalFinalCost,
+        isPartial: result.budget?.is_partial
+      },
+      analysis: result
     };
   }
 }

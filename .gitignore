@@ -34,6 +34,8 @@ server/data/*.db-shm
 # Uploads temporários
 server/uploads/*
 !server/uploads/.gitkeep
+server/server/
+uploads/
 
 # IDE and Editor configs
 .vscode/

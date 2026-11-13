@@ -1610,7 +1610,14 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
                   <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-300/90 pl-1">
                     {budget.document_conflicts.map((conf: any, cIdx: number) => (
                       <li key={cIdx}>
-                        <strong>{conf.item_name || 'Item'}:</strong> {conf.conflict_description || conf.reason}
+                        <strong>{conf.item_name || (conf.item_num ? `Item ${conf.item_num}` : 'Item')}:</strong>{' '}
+                        {conf.description || conf.conflict_description || conf.reason}
+                        {Array.isArray(conf.resolution_options) && conf.resolution_options.length > 0 && (
+                          <span className="block pl-4 text-rose-200/80">
+                            Opções: {conf.resolution_options.map((o: any) => `${o.document} (${o.quantity}x)`).join(' · ')}
+                            {conf.recommended_action ? ` — ${conf.recommended_action}` : ''}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
